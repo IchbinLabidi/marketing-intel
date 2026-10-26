@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm@10.28.0", "dev"],
+      "port": 3000,
+      "url": "http://localhost:3000"
+    }
+  ]
+}
