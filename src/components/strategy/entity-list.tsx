@@ -17,6 +17,7 @@ import type { StrategyEntity } from "@/lib/validation/strategy";
 import type { StrategySection } from "@/server/ai/strategy";
 import { cn } from "@/lib/utils";
 import { AISuggest, type SuggestionNotes } from "./ai-suggest";
+import { confirm } from "@/components/ui/confirm";
 
 export type EntityField = {
   name: string;
@@ -58,7 +59,7 @@ export function EntityList<T extends Item>({
 
   const remove = (item: T) =>
     startTransition(async () => {
-      if (!window.confirm(`Delete this ${noun}?`)) return;
+      if (!(await confirm({ title: `Delete this ${noun}?`, description: "This cannot be undone.", confirmLabel: "Delete", destructive: true }))) return;
       const r = await deleteEntityAction(entity, projectId, item.id);
       if (r.ok) toast.success(r.message);
       else toast.error(r.error);
@@ -114,10 +115,10 @@ export function EntityList<T extends Item>({
       ) : (
         <ul className="grid gap-3 md:grid-cols-2">
           {items.map((item) => (
-            <li key={item.id} className="group relative rounded-xl border bg-card p-4 shadow-xs">
+            <li key={item.id} className="group relative rounded-xl border bg-card p-4.5 shadow-xs transition-shadow hover:shadow-sm">
               {renderItem(item)}
               {!readOnly ? (
-                <div className="absolute right-2 top-2 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                <div className="absolute right-2.5 top-2.5 flex gap-0.5 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
                   <Button variant="ghost" size="icon-sm" aria-label={`Edit ${noun}`} onClick={() => setEditing(item)}>
                     <Pencil />
                   </Button>
@@ -214,6 +215,9 @@ function EntityForm({
         })}
       </div>
       <DialogFooter>
+        <Button type="button" variant="outline" onClick={onDone}>
+          Cancel
+        </Button>
         <SubmitButton pending={pending} pendingLabel="Saving…">Save</SubmitButton>
       </DialogFooter>
     </form>

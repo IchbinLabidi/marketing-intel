@@ -1,6 +1,7 @@
 "use client";
 
 import { CalendarRange, Gauge, Layers, Users } from "lucide-react";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { FUNNEL_LABELS, FUNNEL_STAGES, PLATFORMS, PLATFORM_LABELS, type FunnelStage, type Platform } from "@/lib/domain/constants";
 import { saveBrandVoiceAction, saveFoundationsAction, saveFunnelAction } from "@/server/actions/strategy";
@@ -94,17 +95,36 @@ export function PersonasSection({ personas, ...c }: Common & { personas: Persona
       fields={personaFields}
       items={personas}
       renderItem={(p) => (
-        <div className="space-y-2 pr-14">
-          <div>
-            <p className="font-medium">{p.name}</p>
-            {p.demographics ? <p className="text-xs text-muted-foreground">{p.demographics}</p> : null}
+        <div className="space-y-3">
+          <div className="flex items-start gap-3 pr-14">
+            <Avatar name={p.name} className="size-9 bg-primary-soft text-[12px]" />
+            <div className="min-w-0">
+              <p className="text-[14px] font-semibold leading-snug">{p.name}</p>
+              {p.demographics ? (
+                <Facts text={p.demographics} />
+              ) : null}
+            </div>
           </div>
-          {p.description ? <p className="text-[13px]">{p.description}</p> : null}
-          {p.goals ? <p className="text-xs"><span className="text-muted-foreground">Goals: </span>{p.goals}</p> : null}
-          {p.pain_points ? <p className="text-xs"><span className="text-muted-foreground">Pains: </span>{p.pain_points}</p> : null}
+          {p.description ? <p className="text-[13px] leading-relaxed">{p.description}</p> : null}
+          {p.goals || p.pain_points ? (
+            <dl className="grid gap-3 border-t pt-3 text-xs leading-relaxed sm:grid-cols-2">
+              {p.goals ? (
+                <div>
+                  <dt className="eyebrow mb-1">Goals</dt>
+                  <dd><Lines text={p.goals} /></dd>
+                </div>
+              ) : null}
+              {p.pain_points ? (
+                <div>
+                  <dt className="eyebrow mb-1">Pain points</dt>
+                  <dd><Lines text={p.pain_points} /></dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
           {p.preferred_platforms?.length ? (
             <div className="flex flex-wrap gap-1">
-              {p.preferred_platforms.map((pl) => <Badge key={pl} variant="secondary">{PLATFORM_LABELS[pl as Platform]}</Badge>)}
+              {p.preferred_platforms.map((pl) => <Badge key={pl} variant="outline">{PLATFORM_LABELS[pl as Platform]}</Badge>)}
             </div>
           ) : null}
         </div>
@@ -222,20 +242,57 @@ export function KpisSection({ kpis, ...c }: Common & { kpis: Kpi[] }) {
       fields={kpiFields}
       items={kpis}
       renderItem={(k) => (
-        <div className="flex items-start justify-between gap-3 pr-14">
-          <div>
-            <p className="font-medium">{k.name}</p>
-            <p className="text-xs text-muted-foreground">
-              {[k.period, k.funnel_stage ? FUNNEL_LABELS[k.funnel_stage as FunnelStage] : null].filter(Boolean).join(" · ") || "—"}
+        <div className="space-y-3">
+          <div className="pr-14">
+            <p className="text-[14px] font-semibold leading-snug">{k.name}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground first-letter:uppercase">
+              {[k.period?.toLowerCase(), k.funnel_stage ? FUNNEL_LABELS[k.funnel_stage as FunnelStage] : null].filter(Boolean).join(" · ") || "No period set"}
             </p>
           </div>
           {k.target_value ? (
-            <span className="whitespace-nowrap text-sm font-semibold tabular-nums">
-              {k.target_value} <span className="text-xs font-normal text-muted-foreground">{k.unit}</span>
-            </span>
-          ) : null}
+            <p className="flex items-baseline gap-1.5">
+              <span className="text-[22px] font-semibold leading-none tracking-[-0.02em] tabular-nums">{k.target_value}</span>
+              {k.unit ? <span className="text-[13px] text-muted-foreground">{k.unit}</span> : null}
+              <span className="ml-auto text-[11px] font-medium uppercase tracking-wide text-subtle-foreground">Target</span>
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">No target set</p>
+          )}
         </div>
       )}
     />
+  );
+}
+
+/** "Age: 13–18 Location: Tunisia …" → label/value pairs, when the text follows that shape; otherwise plain text. */
+function Facts({ text }: { text: string }) {
+  const parts = text.split(/\s*(?=\b[A-Z][A-Za-z]+:\s)/).map((t) => t.trim()).filter(Boolean);
+  const pairs = parts.map((t) => t.match(/^([^:]{1,24}):\s*([\s\S]+)$/));
+  if (parts.length < 2 || pairs.some((m) => !m)) return <p className="mt-0.5 whitespace-pre-line text-xs leading-relaxed text-muted-foreground">{text}</p>;
+  return (
+    <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs leading-relaxed">
+      {pairs.map((m, i) => (
+        <div key={i} className="contents">
+          <dt className="text-subtle-foreground">{m![1]}</dt>
+          <dd className="text-muted-foreground">{m![2]}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Multi-line text as a compact bullet list (single line stays a paragraph). */
+function Lines({ text }: { text: string }) {
+  const lines = text.split(/\n+/).map((l) => l.replace(/^[-•*]\s*/, "").trim()).filter(Boolean);
+  if (lines.length < 2) return <p>{text}</p>;
+  return (
+    <ul className="space-y-1">
+      {lines.map((l, i) => (
+        <li key={i} className="flex gap-2">
+          <span className="mt-[7px] size-1 shrink-0 rounded-full bg-border-strong" aria-hidden />
+          <span>{l}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

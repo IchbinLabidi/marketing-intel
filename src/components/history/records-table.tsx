@@ -16,6 +16,7 @@ import { FUNNEL_LABELS, FUNNEL_STAGES, METRICS, METRIC_LABELS, PLATFORMS, PLATFO
 import { deleteHistoricalItemAction, updateHistoricalItemAction } from "@/server/actions/history";
 import type { HistoricalItem } from "@/types/domain";
 import { formatDateTime } from "@/lib/format";
+import { confirm } from "@/components/ui/confirm";
 
 type Option = { value: string; label: string };
 export type RecordFilters = { from?: string; to?: string; platform?: string; format?: string; pillar?: string; campaign?: string; status?: string; import?: string; q?: string };
@@ -137,7 +138,7 @@ export function RecordsTable({
                         disabled={pending}
                         onClick={() =>
                           startTransition(async () => {
-                            if (!window.confirm("Delete this record? It is removed from the analysis.")) return;
+                            if (!(await confirm({ title: "Delete this record?", description: "It is removed from the analysis.", confirmLabel: "Delete", destructive: true }))) return;
                             const r = await deleteHistoricalItemAction(projectId, i.id);
                             if (r.ok) toast.success(r.message);
                             else toast.error(r.error);

@@ -14,6 +14,7 @@ import { disconnectMetaAction, listMetaPagesAction, selectMetaPageAction, setMet
 import type { MetaConnection, MetaSyncRun } from "@/types/domain";
 import { cn } from "@/lib/utils";
 import { formatDateTime, formatDate } from "@/lib/format";
+import { confirm } from "@/components/ui/confirm";
 
 type Props = {
   projectId: string;
@@ -216,8 +217,8 @@ export function MetaConnectionPanel(props: Props) {
                   <li key={p.id}>
                     <button
                       disabled={pending || p.id === c.page_id}
-                      onClick={() => {
-                        if (window.confirm(`Switch to “${p.name}”? Posts synced from ${c.page_name} will be removed from this project.`)) run(() => selectMetaPageAction(projectId, p.id), () => setPages(null));
+                      onClick={async () => {
+                        if (await confirm({ title: `Switch to “${p.name}”?`, description: `Posts synced from ${c.page_name} will be removed from this project.`, confirmLabel: "Switch Page", destructive: true })) run(() => selectMetaPageAction(projectId, p.id), () => setPages(null));
                       }}
                       className={cn("w-full rounded-lg border p-3 text-left text-[13px] hover:bg-accent disabled:opacity-60", p.id === c.page_id && "border-primary/50")}
                     >

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { reschedulePostAction } from "@/server/actions/calendar";
 import { recheckCalendarAction } from "@/server/actions/editorial";
+import { confirm } from "@/components/ui/confirm";
 
 /** Changes a post's publication date (same rules and conflict checks as the calendar), then re-runs the optimizer. */
 export function PostDate({ projectId, calendarId, id, date, time, min, max, disabled }: {
@@ -18,7 +19,7 @@ export function PostDate({ projectId, calendarId, id, date, time, min, max, disa
     setBusy(true);
     let r = await reschedulePostAction(projectId, id, value, time?.slice(0, 5) ?? null);
     if (r.ok && r.data?.conflicts?.length) {
-      if (!window.confirm(`Another ${r.data.conflicts.length > 1 ? `${r.data.conflicts.length} posts are` : "post is"} scheduled within an hour on this platform (${r.data.conflicts.map((c) => c.title).join(", ")}). Keep both?`)) { setBusy(false); return; }
+      if (!(await confirm({ title: "Keep both posts?", description: `Another ${r.data.conflicts.length > 1 ? `${r.data.conflicts.length} posts are` : "post is"} scheduled within an hour on this platform: ${r.data.conflicts.map((c) => c.title).join(", ")}.`, confirmLabel: "Keep both" }))) { setBusy(false); return; }
       r = await reschedulePostAction(projectId, id, value, time?.slice(0, 5) ?? null, true);
     }
     if (!r.ok) { setBusy(false); return toast.error(r.error); }

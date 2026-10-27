@@ -22,7 +22,7 @@ export function TabNav({
           href={t.href}
           aria-current={t.active ? "page" : undefined}
           className={cn(
-            "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 pb-2.5 pt-1.5 text-[13px] font-medium transition-colors",
+            "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 pb-2.5 pt-1.5 text-[13px] font-medium transition-colors focus-visible:rounded-t-[5px] focus-visible:bg-accent/70 focus-visible:outline-none",
             t.active ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
           )}
         >
