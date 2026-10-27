@@ -15,6 +15,7 @@ import { Field, SubmitButton, fieldError, useFormAction, useResultToast } from "
 import { FUNNEL_LABELS, FUNNEL_STAGES, METRICS, METRIC_LABELS, PLATFORMS, PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
 import { deleteHistoricalItemAction, updateHistoricalItemAction } from "@/server/actions/history";
 import type { HistoricalItem } from "@/types/domain";
+import { formatDateTime } from "@/lib/format";
 
 type Option = { value: string; label: string };
 export type RecordFilters = { from?: string; to?: string; platform?: string; format?: string; pillar?: string; campaign?: string; status?: string; import?: string; q?: string };
@@ -207,7 +208,7 @@ function EditForm({ projectId, item, pillars, campaigns, onDone }: { projectId: 
           <p className="mb-2 text-[13px] font-medium">
             Performance metrics{" "}
             <span className="font-normal text-muted-foreground">
-              {item.source === "meta_api" ? `· synced from Meta${item.metrics_updated_at ? ` on ${new Date(item.metrics_updated_at).toLocaleString()}` : ""}, read-only` : "· leave empty when unknown"}
+              {item.source === "meta_api" ? `· synced from Meta${item.metrics_updated_at ? ` on ${formatDateTime(item.metrics_updated_at)}` : ""}, read-only` : "· leave empty when unknown"}
             </span>
           </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

@@ -18,6 +18,7 @@ import { FUNNEL_LABELS, FUNNEL_STAGES, PLATFORMS, PLATFORM_LABELS, type FunnelSt
 import { createOpportunityFromIdeaAction, gapAnalysisAction, type StoredIdea } from "@/server/actions/competitors";
 import { cn } from "@/lib/utils";
 import { Basis } from "./ui";
+import { formatDateTime } from "@/lib/format";
 
 export type StoredGap = {
   type: string; title: string; evidence: string; why: string; audience: string; pillar: string | null; pillar_id: string | null;
@@ -71,7 +72,7 @@ export function Gaps({ projectId, report, created, competitors, pillars, readOnl
         <EmptyState icon={Lightbulb} title="No gap analysis yet" description="Compares the competitors' collected posts with your own synced posts and strategy, then proposes original ideas for your brand, each linked to the competitor posts behind it." />
       ) : (
         <>
-          <p className="text-xs text-muted-foreground">{report.title} · {new Date(report.created_at).toLocaleString()} · {report.scope.competitor_posts ?? "?"} competitor posts vs {report.scope.own_posts ?? "?"} of ours. <b className="font-medium">Observed</b> = shown by the data; <b className="font-medium">Hypothesis</b> = AI interpretation.</p>
+          <p className="text-xs text-muted-foreground">{report.title} · {formatDateTime(report.created_at)} · {report.scope.competitor_posts ?? "?"} competitor posts vs {report.scope.own_posts ?? "?"} of ours. <b className="font-medium">Observed</b> = shown by the data; <b className="font-medium">Hypothesis</b> = AI interpretation.</p>
           <section className="space-y-2">
             <h3 className="text-[14px] font-semibold">Content gaps</h3>
             <div className="grid gap-3 lg:grid-cols-2">

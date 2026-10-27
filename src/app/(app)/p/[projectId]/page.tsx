@@ -12,6 +12,8 @@ import { canAdmin, canEdit, LANGUAGE_LABELS } from "@/lib/domain/constants";
 import { getBrandProfile, getProjectContext, listChannels } from "@/server/services/projects";
 import { getStrategyBundle, strategyCompleteness } from "@/server/services/strategy";
 
+export const metadata = { title: "Project overview" };
+
 export default async function ProjectOverviewPage({ params }: PageProps<"/p/[projectId]">) {
   const { projectId } = await params;
   const { project, role } = await getProjectContext(projectId);

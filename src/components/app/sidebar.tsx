@@ -143,7 +143,7 @@ function SidebarContent({
         </DropdownMenu>
       </div>
 
-      <nav className="scrollbar-thin flex-1 space-y-5 overflow-y-auto px-2.5 pb-4 pt-2">
+      <nav className="scrollbar-thin flex-1 space-y-4 overflow-y-auto px-2.5 pb-3 pt-1">
         <NavList items={GLOBAL_NAV} pathname={pathname} />
 
         <div className="space-y-2">
@@ -172,7 +172,7 @@ function SidebarContent({
           </DropdownMenu>
 
           {activeProject ? (
-            <div className="space-y-4 border-l border-sidebar-border pl-1.5 ml-[15px]">
+            <div className="ml-[15px] space-y-3 border-l border-sidebar-border pl-1.5">
               {projectNavSections(activeProject.id).map((section, i) => (
                 <div key={section.label ?? i} className="space-y-1">
                   {section.label ? <div className="eyebrow px-2 pt-0.5">{section.label}</div> : null}

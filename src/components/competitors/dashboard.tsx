@@ -17,6 +17,7 @@ import type { Competitor, CompetitorChannel, CompetitorRun } from "@/server/serv
 import { CompetitorForm, type ProviderStatus } from "./competitor-form";
 import { useLivePolling } from "./competitor-list";
 import { ago, Bars, Basis, fmt, MetricLegend, StatusBadge } from "./ui";
+import { formatDateTime } from "@/lib/format";
 
 type Statement = { category: string; text: string; basis: "fact" | "hypothesis"; refs: string[] };
 export type AnalysisReport = { id: string; created_at: string; result: { summary: string; strategy: Statement[]; performance: Statement[]; weaknesses: Statement[]; notes?: { data_limits?: string[] }; posts_analysed?: number } } | null;
@@ -158,7 +159,7 @@ export function CompetitorDashboard({ projectId, competitor, summary, followers,
       <section className="space-y-3 rounded-xl border bg-card p-4 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-[15px] font-semibold">AI analysis</h2>
-          {report ? <span className="text-xs text-muted-foreground">{new Date(report.created_at).toLocaleString()} · {report.result.posts_analysed ?? "?"} posts analysed</span> : null}
+          {report ? <span className="text-xs text-muted-foreground">{formatDateTime(report.created_at)} · {report.result.posts_analysed ?? "?"} posts analysed</span> : null}
         </div>
         {report ? (
           <div className="space-y-4 text-[13px]">
@@ -189,7 +190,7 @@ export function CompetitorDashboard({ projectId, competitor, summary, followers,
             {runs.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                 <StatusBadge status={r.status === "running" ? "synchronizing" : r.status === "succeeded" ? "synchronized" : r.status} />
-                <span className="text-muted-foreground">{new Date(r.started_at).toLocaleString()} · {r.trigger}{r.stats?.calls ? ` · ${r.stats.calls} API calls` : ""}</span>
+                <span className="text-muted-foreground">{formatDateTime(r.started_at)} · {r.trigger}{r.stats?.calls ? ` · ${r.stats.calls} API calls` : ""}</span>
                 <span className="w-full text-muted-foreground md:w-auto">{(r.stats?.outcomes ?? []).map((o) => `${PLATFORM_LABELS[o.platform as keyof typeof PLATFORM_LABELS] ?? o.platform}: ${o.posts} posts`).join(" · ")}</span>
               </li>
             ))}

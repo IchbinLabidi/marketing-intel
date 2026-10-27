@@ -13,6 +13,7 @@ import { FUNNEL_LABELS, INSIGHT_LABELS, PLATFORM_LABELS, type FunnelStage, type 
 import { generateRecommendationsAction, setRecommendationStateAction } from "@/server/actions/history-intelligence";
 import { stripRefs } from "@/lib/history/text";
 import type { Opportunity } from "@/types/domain";
+import { formatDateTime } from "@/lib/format";
 
 const INSIGHT_VARIANT: Record<InsightType, "success" | "default" | "warning"> = { data_supported: "success", hypothesis: "default", experiment: "warning" };
 const CATEGORY_LABELS: Record<string, string> = {
@@ -86,7 +87,7 @@ export function Recommendations({
               disabled={generating}
             />
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">{reportDate ? `Last analysis: ${new Date(reportDate).toLocaleString()}` : "No analysis yet."}</p>
+              <p className="text-xs text-muted-foreground">{reportDate ? `Last analysis: ${formatDateTime(reportDate)}` : "No analysis yet."}</p>
               <Button
                 onClick={generate}
                 disabled={generating || !aiEnabled || !hasHistory}

@@ -276,7 +276,7 @@ export function PostEditor({
           ) : null}
 
           <Field label="Hook" htmlFor="pe-hook"><Input id="pe-hook" value={form.hook} onChange={(e) => set("hook", e.target.value)} disabled={readOnly} /></Field>
-          <Field label="Caption" htmlFor="pe-caption" hint={limit ? `${form.caption.length} / ${limit.toLocaleString()} characters` : undefined} error={limit && form.caption.length > limit ? "Too long for this platform" : errors.caption}>
+          <Field label="Caption" htmlFor="pe-caption" hint={limit ? `${form.caption.length} / ${limit.toLocaleString("en")} characters` : undefined} error={limit && form.caption.length > limit ? "Too long for this platform" : errors.caption}>
             <Textarea id="pe-caption" rows={6} value={form.caption} onChange={(e) => set("caption", e.target.value)} disabled={readOnly} dir="auto" />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">

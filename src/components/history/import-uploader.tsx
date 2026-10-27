@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/app/form";
 import { uploadImportAction, type UploadResult } from "@/server/actions/history";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
 
 export const ACCEPT = ".xlsx,.xls,.xlsm,.csv,.txt,.pdf";
 
@@ -100,7 +101,7 @@ export function ImportUploader({ projectId, aiEnabled, variant = "default" }: { 
               <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-[13px]">
                 <p className="font-medium">This exact file was already uploaded</p>
                 <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
-                  {duplicate.map((d) => <li key={d.id}>{d.label || d.file_name} · {new Date(d.created_at).toLocaleDateString()}</li>)}
+                  {duplicate.map((d) => <li key={d.id}>{d.label || d.file_name} · {formatDate(d.created_at)}</li>)}
                 </ul>
                 <p className="mt-2 text-xs">Importing it again would double-count its content. To update an existing import, open it and use “Replace file”.</p>
               </div>

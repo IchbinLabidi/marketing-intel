@@ -6,7 +6,7 @@ function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
   return (
     <textarea
       data-slot="textarea"
-      className={cn("flex min-h-20 w-full rounded-md px-3 py-2 text-sm leading-relaxed", fieldSurface, className)}
+      className={cn("flex min-h-20 max-h-96 w-full rounded-md px-3 py-2 text-sm leading-relaxed field-sizing-content", fieldSurface, className)}
       {...props}
     />
   );

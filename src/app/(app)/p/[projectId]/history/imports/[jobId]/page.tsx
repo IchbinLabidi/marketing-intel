@@ -10,6 +10,7 @@ import { buildRows, type RawRow } from "@/lib/history/rows";
 import { getImportJob, signedImportFileUrl } from "@/server/services/history";
 import { getProjectContext } from "@/server/services/projects";
 import { getStrategyBundle } from "@/server/services/strategy";
+import { formatDateTime } from "@/lib/format";
 
 export const metadata = { title: "Review import" };
 
@@ -39,7 +40,7 @@ export default async function ImportJobPage({ params }: PageProps<"/p/[projectId
       </Button>
       <PageHeader
         title={<span className="flex items-center gap-2">{job.label || job.file_name} <ImportStatusBadge status={job.status} /></span>}
-        description={`${job.file_name}${job.sheet_name ? ` · sheet “${job.sheet_name}”` : ""} · uploaded ${new Date(job.created_at).toLocaleString()}`}
+        description={`${job.file_name}${job.sheet_name ? ` · sheet “${job.sheet_name}”` : ""} · uploaded ${formatDateTime(job.created_at)}`}
         actions={
           job.status === "imported" ? (
             <Button asChild size="sm" variant="outline"><Link href={`/p/${projectId}/history?tab=records&import=${job.id}`}>View {job.imported_count} records</Link></Button>

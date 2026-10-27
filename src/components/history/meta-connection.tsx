@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { disconnectMetaAction, listMetaPagesAction, selectMetaPageAction, setMetaAutoSyncAction, syncMetaAction } from "@/server/actions/meta";
 import type { MetaConnection, MetaSyncRun } from "@/types/domain";
 import { cn } from "@/lib/utils";
+import { formatDateTime, formatDate } from "@/lib/format";
 
 type Props = {
   projectId: string;
@@ -38,7 +39,7 @@ const ERRORS: Record<string, string> = {
   read_only: "Your role in this workspace is read-only.",
 };
 
-const fmt = (d: string | null | undefined) => (d ? new Date(d).toLocaleString() : "never");
+const fmt = (d: string | null | undefined) => (d ? formatDateTime(d) : "never");
 
 export function MetaConnectionPanel(props: Props) {
   const { projectId, configured, missing, connection: c, runs, counts, readOnly, flash, backgroundSync, initialPages, pagesError } = props;
@@ -178,21 +179,21 @@ export function MetaConnectionPanel(props: Props) {
                 ok={Boolean(c.ig_user_id) && c.status === "active"}
               />
             </div>
-            <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+            <dl className="grid gap-x-6 gap-y-3 rounded-lg border bg-muted/30 px-4 py-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
               <Row label="Last synchronization" value={`${fmt(c.last_sync_at)}${c.last_sync_status ? ` · ${c.last_sync_status}` : ""}`} />
               <Row label="Connected as" value={c.fb_user_name ?? "—"} />
-              <Row label="Token valid until" value={c.token_expires_at ? new Date(c.token_expires_at).toLocaleDateString() : "no expiry reported"} />
+              <Row label="Token valid until" value={c.token_expires_at ? formatDate(c.token_expires_at) : "no expiry reported"} />
               <Row
                 label="Automatic sync"
                 value={
-                  <span className="flex items-center gap-2">
-                    {c.auto_sync ? "daily" : "off"}
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    {c.auto_sync ? "Daily" : "Off"}
                     {!readOnly ? (
                       <button className="text-primary underline-offset-4 hover:underline" disabled={pending} onClick={() => run(() => setMetaAutoSyncAction(projectId, !c.auto_sync))}>
                         {c.auto_sync ? "turn off" : "turn on"}
                       </button>
                     ) : null}
-                    {c.auto_sync && !backgroundSync ? <span className="text-muted-foreground">(runs when the page is opened; scheduler not configured)</span> : null}
+                    {c.auto_sync && !backgroundSync ? <span className="basis-full text-muted-foreground">Runs when the page is opened (scheduler not configured)</span> : null}
                   </span>
                 }
               />
@@ -268,9 +269,9 @@ function Account({ icon: Icon, title, subtitle, ok }: { icon: typeof Facebook; t
 }
 
 const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
-  <div className="flex gap-2">
-    <dt className="text-muted-foreground">{label}:</dt>
-    <dd>{value}</dd>
+  <div className="min-w-0 space-y-0.5">
+    <dt className="text-muted-foreground">{label}</dt>
+    <dd className="font-medium text-foreground">{value}</dd>
   </div>
 );
 
@@ -309,7 +310,7 @@ function SyncLog({ runs }: { runs: MetaSyncRun[] }) {
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={RUN_VARIANT[r.status]}>{r.status === "running" ? <Loader2 className="animate-spin" /> : null}{r.status}</Badge>
               <span>{r.kind} · {r.trigger}</span>
-              <span className="text-muted-foreground">{new Date(r.started_at).toLocaleString()}{r.finished_at ? ` · ${Math.round((Date.parse(r.finished_at) - Date.parse(r.started_at)) / 1000)}s` : ""}</span>
+              <span className="text-muted-foreground">{formatDateTime(r.started_at)}{r.finished_at ? ` · ${Math.round((Date.parse(r.finished_at) - Date.parse(r.started_at)) / 1000)}s` : ""}</span>
             </div>
             <p className="mt-1 text-muted-foreground">
               {(["facebook", "instagram"] as const).map((p) => r.stats?.[p] ? `${p === "facebook" ? "Facebook" : "Instagram"}: ${r.stats[p]!.fetched} read, ${r.stats[p]!.created} new, ${r.stats[p]!.updated} updated, ${r.stats[p]!.metrics} with insights` : null).filter(Boolean).join(" · ")}

@@ -26,6 +26,7 @@ import { loadHistoryAnalysis } from "@/server/services/history-analysis";
 import { countMetaPosts, getMetaConnection, listSyncRuns } from "@/server/services/meta";
 import { MetaConnectionPanel } from "@/components/history/meta-connection";
 import { PerformanceView } from "@/components/history/performance-view";
+import { formatDateTime } from "@/lib/format";
 
 export const metadata = { title: "Historical Intelligence" };
 
@@ -270,7 +271,7 @@ export default async function HistoryPage({ params, searchParams }: PageProps<"/
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                   <dt className="text-muted-foreground">Covered period</dt><dd className="tabular-nums">{j.period_start ? `${j.period_start} → ${j.period_end}` : "—"}</dd>
                   <dt className="text-muted-foreground">Records</dt><dd className="tabular-nums">{j.imported_count}</dd>
-                  <dt className="text-muted-foreground">Imported on</dt><dd>{j.imported_at ? new Date(j.imported_at).toLocaleString() : "not yet"}</dd>
+                  <dt className="text-muted-foreground">Imported on</dt><dd>{j.imported_at ? formatDateTime(j.imported_at) : "not yet"}</dd>
                   {j.reference_year ? (<><dt className="text-muted-foreground">Reference year</dt><dd>{j.reference_year}</dd></>) : null}
                 </dl>
                 {j.error ? <p className="mt-2 text-xs text-destructive">{j.error}</p> : null}

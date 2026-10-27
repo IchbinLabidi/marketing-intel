@@ -28,12 +28,12 @@ export default async function StrategyPage({ params }: PageProps<"/p/[projectId]
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow={`${project.name} · ${completeness.percent}% complete`}
         title="Marketing strategy"
-        description={`${project.name} · ${completeness.percent}% complete. The strategy is the brief every AI feature works from: opportunities, calendars and copy all reference it.`}
+        description="The brief every AI feature works from: opportunities, calendars and copy all reference it."
       />
       <Tabs defaultValue="foundations">
-        <div className="overflow-x-auto">
-          <TabsList className="min-w-max">
+        <TabsList>
             <TabsTrigger value="foundations">Foundations</TabsTrigger>
             <TabsTrigger value="personas">Personas <Count n={bundle.personas.length} /></TabsTrigger>
             <TabsTrigger value="journey">Journey & funnel</TabsTrigger>
@@ -42,7 +42,6 @@ export default async function StrategyPage({ params }: PageProps<"/p/[projectId]
             <TabsTrigger value="campaigns">Campaigns <Count n={bundle.campaigns.length} /></TabsTrigger>
             <TabsTrigger value="kpis">KPIs <Count n={bundle.kpis.length} /></TabsTrigger>
           </TabsList>
-        </div>
         <TabsContent value="foundations">
           <FoundationsSection {...common} strategy={s} />
         </TabsContent>
@@ -51,11 +50,11 @@ export default async function StrategyPage({ params }: PageProps<"/p/[projectId]
         </TabsContent>
         <TabsContent value="journey" className="space-y-10">
           <section className="space-y-3">
-            <h2 className="text-sm font-semibold">Customer journey</h2>
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Customer journey</h2>
             <JourneyEditor {...common} initial={s?.customer_journey ?? []} />
           </section>
           <section className="space-y-3">
-            <h2 className="text-sm font-semibold">Marketing funnel</h2>
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Marketing funnel</h2>
             <FunnelSection {...common} strategy={s} />
           </section>
         </TabsContent>

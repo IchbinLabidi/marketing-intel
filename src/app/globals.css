@@ -192,6 +192,17 @@
     outline-offset: 2px;
     border-radius: var(--radius-sm);
   }
+  /* Disclosure toggles look and behave the same everywhere. */
+  summary {
+    cursor: pointer;
+    width: fit-content;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    transition: color var(--duration-fast) ease-out;
+  }
+  summary:hover {
+    color: var(--foreground);
+  }
   h1, h2, h3 {
     text-wrap: balance;
   }

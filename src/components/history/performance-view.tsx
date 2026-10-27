@@ -8,7 +8,7 @@ import { ValueColumns } from "./charts";
 import { ClassifyPillarsButton } from "./classify-pillars-button";
 
 const monthLabel = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString("en", { month: "short", year: "2-digit", timeZone: "UTC" });
-const n = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString());
+const n = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString("en"));
 
 export function PerformanceView({
   projectId,
