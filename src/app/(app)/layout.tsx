@@ -6,6 +6,10 @@ import { requireUser } from "@/server/services/session";
 import { getActiveWorkspace, listWorkspaces } from "@/server/services/workspaces";
 import { listProjects } from "@/server/services/projects";
 
+// AI server actions (plans, drafts, retries under provider overload) can run for minutes;
+// 300 s is the Vercel ceiling on the Hobby plan (raise to 800 on Pro).
+export const maxDuration = 300;
+
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
   const [workspaces, activeWorkspace] = await Promise.all([listWorkspaces(), getActiveWorkspace()]);

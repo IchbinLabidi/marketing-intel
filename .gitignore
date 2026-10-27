@@ -42,3 +42,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 e2e/screenshots/
+
+# database dumps (personal data, encrypted tokens)
+/backups/
