@@ -177,7 +177,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
 function Breakdown({ title, groups, label, extra }: { title: string; groups: Group[]; label: (k: string) => string; extra?: (k: string) => string }) {
   const max = Math.max(...groups.map((g) => g.cost), 0);
   return (
-    <section className="rounded-xl border bg-card shadow-xs">
+    <section className="scrollbar-thin overflow-x-auto rounded-xl border bg-card shadow-xs">
       <p className="border-b px-4 py-3 text-[13px] font-semibold">{title}</p>
       <table className="w-full text-[13px]">
         <thead className="text-left text-xs text-muted-foreground"><tr><th className="px-4 py-1.5 font-medium" /><th className="text-right font-medium">Requests</th><th className="text-right font-medium">Tokens in / out</th><th className="px-4 text-right font-medium">Cost</th></tr></thead>

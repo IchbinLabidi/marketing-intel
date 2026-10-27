@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { PageHeader } from "@/components/app/page-header";
+import { TabNav } from "@/components/app/tab-nav";
 import { Compare, type Entity } from "@/components/competitors/compare";
 import { CompetitorList } from "@/components/competitors/competitor-list";
 import type { ProviderStatus } from "@/components/competitors/competitor-form";
@@ -8,7 +8,6 @@ import { Library } from "@/components/competitors/library";
 import { canEdit, type Platform } from "@/lib/domain/constants";
 import { summarize, type AnalysisPost } from "@/lib/competitors/analysis";
 import { createClient } from "@/lib/supabase/server";
-import { cn } from "@/lib/utils";
 import { isAIConfigured } from "@/server/ai/client";
 import { maybeAutoCollect } from "@/server/competitors/start";
 import { availabilityFor } from "@/server/competitors/providers";
@@ -104,13 +103,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   return (
     <div className="space-y-6">
       <PageHeader title="Competitor Intelligence" description="Track what competitors publish through official data sources, compare it with your own results and turn the gaps into original content opportunities." />
-      <nav className="flex gap-1 overflow-x-auto border-b" aria-label="Competitor Intelligence sections">
-        {TABS.map((t) => (
-          <Link key={t.id} href={`/p/${projectId}/competitors?tab=${t.id}`} aria-current={tab === t.id ? "page" : undefined} className={cn("-mb-px border-b-2 px-3 py-2 text-[13px] font-medium whitespace-nowrap", tab === t.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
-            {t.label}
-          </Link>
-        ))}
-      </nav>
+      <TabNav label="Competitor Intelligence sections" items={TABS.map((t) => ({ key: t.id, label: t.label, href: `/p/${projectId}/competitors?tab=${t.id}`, active: tab === t.id }))} />
       {body}
     </div>
   );

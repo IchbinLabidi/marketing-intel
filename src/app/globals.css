@@ -192,6 +192,10 @@
     outline-offset: 2px;
     border-radius: var(--radius-sm);
   }
+  /* Grid items may shrink below their content width, so long words or tables never push the page sideways. */
+  :where(.grid) > * {
+    min-width: 0;
+  }
   /* Disclosure toggles look and behave the same everywhere. */
   summary {
     cursor: pointer;
@@ -213,7 +217,16 @@
     font-variant-numeric: tabular-nums;
   }
   /* Consistent header cells and row hover for every data table, including hand-built ones. */
+  /* Column gutters for every table cell; explicit padding utilities on a cell still win (zero specificity). */
+  :where(table) :where(th, td) {
+    padding-inline: 0.625rem;
+  }
+  :where(thead) {
+    background-color: color-mix(in oklch, var(--muted) 60%, transparent);
+  }
   :where(thead) :where(th) {
+    padding-block: 0.5rem;
+    font-size: 0.75rem;
     font-weight: 500;
     white-space: nowrap;
     vertical-align: middle;

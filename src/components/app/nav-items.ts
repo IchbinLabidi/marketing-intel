@@ -15,7 +15,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export type NavItem = { label: string; href: string; icon: LucideIcon; exact?: boolean };
+/** `soon` marks modules that are designed but not built yet (they render a roadmap page). */
+export type NavItem = { label: string; href: string; icon: LucideIcon; exact?: boolean; soon?: boolean };
 export type NavSection = { label?: string; items: NavItem[] };
 
 export const GLOBAL_NAV: NavItem[] = [
@@ -52,7 +53,7 @@ export function projectNavSections(projectId: string): NavSection[] {
     },
     {
       label: "Measure",
-      items: [{ label: "Analytics", href: `${base}/analytics`, icon: BarChart3 }],
+      items: [{ label: "Analytics", href: `${base}/analytics`, icon: BarChart3, soon: true }],
     },
   ];
 }

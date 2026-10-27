@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { FileText, Search } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
+import { TabNav } from "@/components/app/tab-nav";
 import { EmptyState } from "@/components/app/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { AnalyzeForm } from "@/components/seo/analyze-form";
@@ -113,9 +114,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         configured={provider.configured()} setupHint={provider.setupHint} readOnly={!canEdit(role)}
       />
       {!ownDomain ? <p className="text-xs text-muted-foreground">Tip: add your website in the project settings to see where your own pages rank and compare them with the results.</p> : null}
-      <nav className="flex gap-1 overflow-x-auto border-b" aria-label="SERP Intelligence sections">
-        {TABS.map((t) => <Link key={t.id} href={`/p/${projectId}/seo?tab=${t.id}`} aria-current={tab === t.id ? "page" : undefined} className={cn("-mb-px border-b-2 px-3 py-2 text-[13px] font-medium whitespace-nowrap", tab === t.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{t.label}</Link>)}
-      </nav>
+      <TabNav label="SERP Intelligence sections" items={TABS.map((t) => ({ key: t.id, label: t.label, href: `/p/${projectId}/seo?tab=${t.id}`, active: tab === t.id }))} />
       {body}
     </div>
   );

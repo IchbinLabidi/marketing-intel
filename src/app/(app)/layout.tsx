@@ -19,7 +19,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const activeProjectId = projects.some((p) => p.id === cookieProject) ? cookieProject : null;
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
+    <div className="flex min-h-screen flex-col lg:flex-row">
       <AppSidebar
         user={user}
         workspaces={workspaces}
@@ -28,7 +28,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         activeProjectId={activeProjectId}
       />
       <main className="min-w-0 flex-1">
-        <div className="mx-auto w-full max-w-[1240px] px-4 py-6 sm:px-6 md:px-10 md:py-9">{children}</div>
+        <div className="mx-auto w-full max-w-[1240px] px-4 py-6 sm:px-6 sm:py-8 xl:px-10 xl:py-9">{children}</div>
       </main>
     </div>
   );

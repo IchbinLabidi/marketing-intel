@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, FileSpreadsheet, History } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
+import { TabNav } from "@/components/app/tab-nav";
 import { EmptyState } from "@/components/app/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,6 @@ import { availablePeriods, comparePeriods, itemsInPeriod, parsePeriod } from "@/
 import { effectiveDate } from "@/lib/history/analysis";
 import { normalizeFormat, statusGroup } from "@/lib/history/parse";
 import { normalizeText } from "@/lib/history/text";
-import { cn } from "@/lib/utils";
 import { isAIConfigured } from "@/server/ai/client";
 import { isBackgroundSyncConfigured, isMetaConfigured, metaMissingConfig } from "@/server/meta/config";
 import { maybeAutoSync } from "@/server/meta/start";
@@ -106,26 +106,16 @@ export default async function HistoryPage({ params, searchParams }: PageProps<"/
         pagesError={pageChoice && !pageChoice.ok ? pageChoice.error : null}
       />
 
-      <nav className="overflow-x-auto" aria-label="Historical Intelligence sections">
-        <div className="inline-flex min-w-max items-center gap-1 border-b">
-          {TABS.map((t) => (
-            <Link
-              key={t.key}
-              href={`${base}?tab=${t.key}`}
-              aria-current={tab === t.key ? "page" : undefined}
-              className={cn(
-                "-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] font-medium transition-colors",
-                tab === t.key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t.label}
-              {t.key === "imports" && jobs.length ? <span className="rounded bg-secondary px-1 text-[11px] tabular-nums text-muted-foreground">{jobs.length}</span> : null}
-              {t.key === "records" && items.length ? <span className="rounded bg-secondary px-1 text-[11px] tabular-nums text-muted-foreground">{items.length}</span> : null}
-              {t.key === "recommendations" && opportunities.length ? <span className="rounded bg-secondary px-1 text-[11px] tabular-nums text-muted-foreground">{opportunities.length}</span> : null}
-            </Link>
-          ))}
-        </div>
-      </nav>
+      <TabNav
+        label="Historical Intelligence sections"
+        items={TABS.map((t) => ({
+          key: t.key,
+          label: t.label,
+          href: `${base}?tab=${t.key}`,
+          active: tab === t.key,
+          count: t.key === "imports" ? jobs.length : t.key === "records" ? items.length : t.key === "recommendations" ? opportunities.length : undefined,
+        }))}
+      />
 
       {tab !== "imports" && !items.length ? (
         <EmptyState

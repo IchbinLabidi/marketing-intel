@@ -50,7 +50,7 @@ export function AppSidebar(props: SidebarProps) {
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex h-13 items-center gap-2 border-b bg-background/90 px-3 backdrop-blur md:hidden">
+      <header className="sticky top-0 z-30 flex h-13 items-center gap-2 border-b bg-background/90 px-3 backdrop-blur lg:hidden">
         <button
           onClick={() => setOpen(true)}
           className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -69,17 +69,17 @@ export function AppSidebar(props: SidebarProps) {
           </>
         ) : null}
       </header>
-      {open ? <div className="fixed inset-0 z-40 bg-[oklch(0.2_0.02_262/0.32)] animate-fade-in md:hidden" onClick={() => setOpen(false)} /> : null}
+      {open ? <div className="fixed inset-0 z-40 bg-[oklch(0.2_0.02_262/0.32)] animate-fade-in lg:hidden" onClick={() => setOpen(false)} /> : null}
       <aside
         aria-label="Main navigation"
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[264px] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-200 ease-out md:sticky md:top-0 md:z-auto md:h-screen md:w-60 md:translate-x-0 md:self-start",
+          "fixed inset-y-0 left-0 z-50 flex w-[264px] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-200 ease-out lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:w-60 lg:translate-x-0 lg:self-start",
           open ? "translate-x-0 shadow-lg" : "-translate-x-full",
         )}
       >
         <button
           onClick={() => setOpen(false)}
-          className="absolute right-2 top-3 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent md:hidden"
+          className="absolute right-2 top-3 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent lg:hidden"
           aria-label="Close navigation"
         >
           <X className="size-4" />
@@ -228,6 +228,7 @@ function NavList({ items, pathname }: { items: NavItem[]; pathname: string }) {
                 className={cn("size-4 shrink-0 transition-colors", active ? "text-primary" : "text-subtle-foreground group-hover:text-muted-foreground")}
               />
               <span className="truncate">{item.label}</span>
+              {item.soon ? <span className="ml-auto rounded-[4px] border px-1 text-[10px] font-medium uppercase tracking-wide text-subtle-foreground">Soon</span> : null}
             </Link>
           </li>
         );
