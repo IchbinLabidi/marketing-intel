@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
+import { BackLink } from "@/components/app/page-header";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ExternalLink, FileImage, Loader2, Pause, Pencil, Play, Plus, RefreshCcw, Sparkles, Trash2 } from "lucide-react";
+import { ExternalLink, FileImage, Loader2, Pause, Pencil, Play, Plus, RefreshCcw, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -52,8 +52,8 @@ export function CompetitorDashboard({ projectId, competitor, summary, followers,
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link href={`/p/${projectId}/competitors`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3" /> Competitors</Link>
-          <h1 className="text-xl font-semibold">{competitor.name}</h1>
+          <BackLink href={`/p/${projectId}/competitors`}>Competitors</BackLink>
+          <h1 className="mt-1.5 text-[22px] font-semibold leading-tight tracking-[-0.02em]">{competitor.name}</h1>
           <p className="text-[13px] text-muted-foreground">{[competitor.industry, competitor.target_audience && `Audience: ${competitor.target_audience}`].filter(Boolean).join(" · ") || "No details yet"}</p>
           {competitor.website ? <a href={competitor.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">{competitor.website.replace(/^https?:\/\//, "")} <ExternalLink className="size-3" /></a> : null}
         </div>

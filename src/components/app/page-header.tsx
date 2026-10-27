@@ -43,6 +43,19 @@ export function PageHeader({
   );
 }
 
+/** "‹ Parent page" link shown above a detail page's title. */
+export function BackLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="-ml-1 inline-flex items-center gap-0.5 rounded px-1 text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <ChevronLeft className="size-3.5" aria-hidden />
+      {children}
+    </Link>
+  );
+}
+
 /** Heading for a section inside a page, with optional supporting text and actions. */
 export function SectionHeader({
   title,

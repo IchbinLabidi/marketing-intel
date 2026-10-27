@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { BackLink } from "@/components/app/page-header";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ActionButton } from "@/components/seo/actions-bar";
 import { canEdit } from "@/lib/domain/constants";
@@ -41,8 +42,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link href={`/p/${projectId}/seo`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3" /> SERP Intelligence</Link>
-          <h1 className="text-xl font-semibold" dir="auto">{a.keyword}</h1>
+          <BackLink href={`/p/${projectId}/seo`}>SERP Intelligence</BackLink>
+          <h1 className="mt-1.5 text-[22px] font-semibold leading-tight tracking-[-0.02em]" dir="auto">{a.keyword}</h1>
           <p className="text-[13px] text-muted-foreground">Google · {label(a)}{a.location ? ` · searched from ${a.location.split(",")[0]}` : ""} · via {a.provider === "serpapi" ? "SerpApi" : a.provider}{a.total_results ? ` · about ${a.total_results.toLocaleString("en")} results` : ""}</p>
         </div>
         {editable ? (

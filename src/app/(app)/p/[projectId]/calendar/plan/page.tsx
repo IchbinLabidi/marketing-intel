@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { ArrowLeft, CalendarRange } from "lucide-react";
-import { PageHeader } from "@/components/app/page-header";
+import { CalendarRange } from "lucide-react";
+import { BackLink, PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { StartForm } from "@/components/editorial/start-form";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +28,7 @@ export default async function Page({ params }: { params: Promise<{ projectId: st
 
   return (
     <div className="space-y-6">
-      <Link href={`/p/${projectId}/calendar`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3" /> Editorial Calendar</Link>
+      <BackLink href={`/p/${projectId}/calendar`}>Editorial Calendar</BackLink>
       <PageHeader title="Plan a month" description="A strategic, data-driven editorial calendar: available data → content opportunities → content mix → platform-specific posts → checks → approval." />
       <StartForm projectId={projectId} defaults={{ month: next, platforms: defaults }} readOnly={!canEdit(role)} />
       <section className="space-y-2">

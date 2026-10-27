@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -41,20 +42,20 @@ export function AnalyzeForm({ projectId, countries, languages, configured, setup
 
   return (
     <section className="space-y-3 rounded-xl border bg-card p-4 shadow-xs">
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_10rem_auto_auto_auto]">
-        <label className="grid gap-1 text-xs font-medium">Keyword
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(12rem,1fr)_13rem_auto_auto_auto]">
+        <label className="grid gap-1.5 text-[13px] font-medium">Keyword
           <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="e.g. cours informatique bac tunisien" dir="auto" onKeyDown={(e) => { if (e.key === "Enter" && keyword.trim() && configured && !busy) void run(); }} />
         </label>
-        <label className="grid gap-1 text-xs font-medium">Country
+        <label className="grid gap-1.5 text-[13px] font-medium">Country
           <NativeSelect value={country} onChange={(e) => setCountry(e.target.value)}>{countries.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}</NativeSelect>
         </label>
-        <fieldset className="grid gap-1 text-xs font-medium"><legend className="mb-1">Language</legend>
+        <fieldset className="grid gap-1.5 text-[13px] font-medium"><legend className="mb-1.5">Language</legend>
           <span className="flex gap-1">{languages.map((l) => <Chip key={l.code} on={langs.includes(l.code)} onClick={() => setLangs(toggle(langs, l.code))}>{l.label}</Chip>)}</span>
         </fieldset>
-        <fieldset className="grid gap-1 text-xs font-medium"><legend className="mb-1">Device</legend>
+        <fieldset className="grid gap-1.5 text-[13px] font-medium"><legend className="mb-1.5">Device</legend>
           <span className="flex gap-1">{(["desktop", "mobile"] as const).map((d) => <Chip key={d} on={devices.includes(d)} onClick={() => setDevices(toggle(devices, d))}>{d === "desktop" ? "Desktop" : "Mobile"}</Chip>)}</span>
         </fieldset>
-        <div className="flex items-end">
+        <div className="flex items-end sm:col-span-2 xl:col-span-1">
           <Button onClick={run} disabled={readOnly || busy || !configured || keyword.trim().length < 2 || !langs.length || !devices.length} className="w-full">
             {busy ? <Loader2 className="animate-spin" /> : <Search />} {busy ? "Analysing…" : "Analyze SERP"}
           </Button>
@@ -63,11 +64,11 @@ export function AnalyzeForm({ projectId, countries, languages, configured, setup
       <p className="text-[11px] text-muted-foreground">
         Search engine: Google, through SerpApi (official API, no scraping). {requests} request{requests > 1 ? "s" : ""} per analysis; the top 8 ranking pages are then read (robots.txt respected) for their structure. Each run is saved as a dated snapshot.
       </p>
-      {!configured ? <p className="rounded-lg bg-warning/10 p-2 text-xs text-warning">Requires configuration: {setupHint}</p> : null}
+      {!configured ? <Alert variant="warning" title="Requires configuration">{setupHint}</Alert> : null}
     </section>
   );
 }
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button type="button" aria-pressed={on} onClick={onClick} className={cn("h-9 rounded-md border px-3 text-[13px]", on ? "border-primary/50 bg-primary/10 font-medium" : "text-muted-foreground hover:bg-accent")}>{children}</button>;
+  return <button type="button" aria-pressed={on} onClick={onClick} className={cn("h-9 rounded-md border px-3 text-[13px] font-medium transition-colors", on ? "border-primary/30 bg-primary-soft text-primary" : "bg-card text-muted-foreground hover:bg-accent hover:text-foreground")}>{children}</button>;
 }

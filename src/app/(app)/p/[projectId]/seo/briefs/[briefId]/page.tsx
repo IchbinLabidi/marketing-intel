@@ -1,6 +1,6 @@
 import Link from "next/link";
+import { BackLink } from "@/components/app/page-header";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ActionButton } from "@/components/seo/actions-bar";
@@ -31,8 +31,8 @@ export default async function Page({ params }: { params: Promise<{ projectId: st
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link href={row.analysis_id ? `/p/${projectId}/seo/${row.analysis_id}` : `/p/${projectId}/seo?tab=briefs`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3" /> {row.analysis_id ? "SERP analysis" : "SEO briefs"}</Link>
-          <h1 className="text-xl font-semibold" dir="auto">{b.h1}</h1>
+          <BackLink href={row.analysis_id ? `/p/${projectId}/seo/${row.analysis_id}` : `/p/${projectId}/seo?tab=briefs`}>{row.analysis_id ? "SERP analysis" : "SEO briefs"}</BackLink>
+          <h1 className="mt-1.5 text-[22px] font-semibold leading-tight tracking-[-0.02em]" dir="auto">{b.h1}</h1>
           <p className="text-[13px] text-muted-foreground">SEO brief (AI, based on the SERP) · {row.keyword} · {COUNTRIES[row.country]?.label ?? row.country} · {SERP_LANGUAGES[row.language] ?? row.language}</p>
         </div>
         {editable ? (

@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
 import { ImportStatusBadge, ImportWizard } from "@/components/history/import-wizard";
@@ -35,10 +34,8 @@ export default async function ImportJobPage({ params }: PageProps<"/p/[projectId
 
   return (
     <div className="space-y-6">
-      <Button asChild variant="ghost" size="sm" className="-ml-2">
-        <Link href={`/p/${projectId}/history?tab=imports`}><ArrowLeft /> Historical Intelligence</Link>
-      </Button>
       <PageHeader
+        back={{ href: `/p/${projectId}/history?tab=imports`, label: "Historical Intelligence" }}
         title={<span className="flex items-center gap-2">{job.label || job.file_name} <ImportStatusBadge status={job.status} /></span>}
         description={`${job.file_name}${job.sheet_name ? ` · sheet “${job.sheet_name}”` : ""} · uploaded ${formatDateTime(job.created_at)}`}
         actions={

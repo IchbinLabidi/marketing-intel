@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { BackLink } from "@/components/app/page-header";
 import { notFound } from "next/navigation";
-import { AlertTriangle, ArrowLeft, CheckCircle2, CircleDashed, Lock } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleDashed, Lock } from "lucide-react";
 import { ActionButton } from "@/components/seo/actions-bar";
 import { MixEditor } from "@/components/editorial/mix-editor";
 import { PostDate } from "@/components/editorial/post-date";
@@ -38,7 +39,7 @@ export default async function Page({ params }: { params: Promise<{ projectId: st
   if (cal.status === "saved" || !cal.plan) {
     return (
       <div className="space-y-4">
-        <Link href={`/p/${projectId}/calendar?plan=${cal.id}`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3" /> Editorial Calendar</Link>
+        <BackLink href={`/p/${projectId}/calendar?plan=${cal.id}`}>Editorial Calendar</BackLink>
         <p className="rounded-xl border bg-card p-4 text-[13px]">“{cal.name}” was created before the editorial engine (from Historical Intelligence or by hand). Open it in the Editorial Calendar, or plan a new month with the engine.</p>
       </div>
     );
@@ -66,8 +67,8 @@ export default async function Page({ params }: { params: Promise<{ projectId: st
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link href={`/p/${projectId}/calendar/plan`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3" /> Plan a month</Link>
-          <h1 className="text-xl font-semibold">{cal.name}</h1>
+          <BackLink href={`/p/${projectId}/calendar/plan`}>Plan a month</BackLink>
+          <h1 className="mt-1.5 text-[22px] font-semibold leading-tight tracking-[-0.02em]">{cal.name}</h1>
           <p className="text-[13px] text-muted-foreground">{cal.starts_on} → {cal.ends_on} · {OBJECTIVE_LABELS[(cal.objective ?? "engagement") as Objective]} · {plan.total} posts planned · AI so far: {cost.requests} request(s), {usd(cost.cost)}{cost.unpriced ? "*" : ""} estimated</p>
         </div>
         <div className="flex flex-wrap gap-2">
