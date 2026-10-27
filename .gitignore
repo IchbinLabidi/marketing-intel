@@ -45,3 +45,5 @@ e2e/screenshots/
 
 # database dumps (personal data, encrypted tokens)
 /backups/
+.vercel
+.env*
