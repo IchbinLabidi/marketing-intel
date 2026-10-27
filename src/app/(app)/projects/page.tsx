@@ -3,10 +3,10 @@ import { formatDistanceToNow } from "date-fns";
 import { Archive, FolderKanban, Globe } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
+import { SegmentedNav } from "@/components/app/segmented-nav";
 import { Badge } from "@/components/ui/badge";
 import { CreateProjectDialog } from "@/components/projects/create-project-dialog";
 import { canEdit, LANGUAGE_LABELS } from "@/lib/domain/constants";
-import { cn } from "@/lib/utils";
 import { getActiveWorkspace } from "@/server/services/workspaces";
 import { listProjects } from "@/server/services/projects";
 
@@ -29,24 +29,13 @@ export default async function ProjectsPage({ searchParams }: PageProps<"/project
         actions={<CreateProjectDialog defaultOpen={openNew === "1" && editable} disabled={!editable} />}
       />
 
-      <nav aria-label="Project status" className="inline-flex rounded-lg border bg-secondary p-0.5 text-[13px]">
-        {[
+      <SegmentedNav
+        label="Project status"
+        items={[
           { label: "Active", href: "/projects", active: !showArchived },
           { label: "Archived", href: "/projects?archived=1", active: showArchived },
-        ].map((t) => (
-          <Link
-            key={t.label}
-            href={t.href}
-            aria-current={t.active ? "page" : undefined}
-            className={cn(
-              "rounded-md px-3 py-1 font-medium transition-colors",
-              t.active ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {t.label}
-          </Link>
-        ))}
-      </nav>
+        ]}
+      />
 
       {projects.length === 0 ? (
         <EmptyState

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Gauge } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
+import { SegmentedNav } from "@/components/app/segmented-nav";
 import { StatTile } from "@/components/history/charts";
 import { Badge } from "@/components/ui/badge";
 import { AI_TIERS, MODULE_LABELS, PROVIDER_LABELS, TIER_LABELS, TIERED_FEATURES, featureEnvName, type AIProvider } from "@/lib/ai/models";
@@ -75,9 +76,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
     <div className="space-y-6">
       <PageHeader title="AI usage" description={`AI requests, tokens and estimated cost for ${workspace.name}. Costs are estimates from public list prices; your provider invoice is the reference.`} />
 
-      <nav className="flex flex-wrap gap-1" aria-label="Period">
-        {PERIODS.map((p) => <Link key={p.id} href={`/ai-usage?period=${p.id}`} aria-current={period === p.id ? "page" : undefined} className={cn("rounded-md border px-3 py-1.5 text-[13px]", period === p.id ? "border-primary bg-primary/5 font-medium" : "text-muted-foreground hover:text-foreground")}>{p.label}</Link>)}
-      </nav>
+      <SegmentedNav label="Period" items={PERIODS.map((p) => ({ key: p.id, label: p.label, href: `/ai-usage?period=${p.id}`, active: period === p.id }))} />
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile label="Estimated cost" value={usd(all?.cost ?? 0)} hint={all?.unpriced ? `${all.unpriced} request(s) without an estimate (logged before cost tracking, or model price unknown)` : "All requests have an estimate"} />

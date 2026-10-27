@@ -1,3 +1,4 @@
+import { Stat } from "@/components/app/stat";
 import { cn } from "@/lib/utils";
 
 /**
@@ -123,12 +124,7 @@ export function Legend({ a, b }: { a: string; b: string }) {
   );
 }
 
+/** Kept for existing call sites; renders the shared Stat. */
 export function StatTile({ label, value, hint }: { label: string; value: React.ReactNode; hint?: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border bg-card p-4 shadow-xs">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold tabular-nums">{value}</p>
-      {hint ? <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p> : null}
-    </div>
-  );
+  return <Stat label={label} value={value} hint={hint} />;
 }

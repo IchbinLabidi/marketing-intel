@@ -1,13 +1,13 @@
+import Link from "next/link";
 import { CheckCircle2, CircleDashed } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
+import { FormSection } from "@/components/app/form-section";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CreateWorkspaceForm, RenameWorkspaceForm } from "@/components/settings/workspace-forms";
 import { canAdmin } from "@/lib/domain/constants";
 import { requireUser } from "@/server/services/session";
 import { getActiveWorkspace, listMembers } from "@/server/services/workspaces";
-import Link from "next/link";
 import { PROVIDER_LABELS } from "@/lib/ai/models";
 import { isAIConfigured } from "@/server/ai/client";
 import { providerConfigured } from "@/server/ai/providers";
@@ -21,74 +21,90 @@ export default async function SettingsPage() {
   const ai = isAIConfigured();
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Settings" description={`Workspace settings for ${workspace.name}.`} />
+    <div className="space-y-4">
+      <PageHeader eyebrow={workspace.name} title="Settings" description="Workspace details, members and integrations." />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Workspace</CardTitle>
-          <CardDescription>Projects, members and AI usage belong to a workspace. Agencies typically use one workspace per client.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="divide-y">
+        <FormSection
+          title="Workspace"
+          description="Projects, members and AI usage belong to a workspace. Agencies typically use one workspace per client."
+        >
           <RenameWorkspaceForm workspaceId={workspace.id} name={workspace.name} disabled={!canAdmin(workspace.role)} />
-        </CardContent>
-      </Card>
+        </FormSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Members</CardTitle>
-          <CardDescription>
-            Roles: owners and admins manage the workspace, editors create and edit content, viewers have read-only access. Email
-            invitations are on the roadmap.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ul className="divide-y rounded-lg border">
+        <FormSection
+          title="Members"
+          description="Owners and admins manage the workspace, editors create and edit content, viewers have read-only access. Email invitations are on the roadmap."
+        >
+          <ul className="-my-2 divide-y">
             {members.map((m) => (
-              <li key={m.user_id} className="flex items-center gap-3 px-3 py-2.5 text-[13px]">
-                <Avatar name={m.full_name || "?"} />
-                <span className="flex-1">
+              <li key={m.user_id} className="flex items-center gap-3 py-2.5 text-[13px]">
+                <Avatar name={m.full_name || "?"} className="size-8" />
+                <span className="min-w-0 flex-1 truncate font-medium">
                   {m.full_name || "Unnamed member"}
-                  {m.user_id === user.id ? <span className="text-muted-foreground"> (you)</span> : null}
+                  {m.user_id === user.id ? <span className="font-normal text-muted-foreground"> · you</span> : null}
                 </span>
-                <Badge variant="secondary" className="capitalize">{m.role}</Badge>
+                <Badge variant={m.role === "owner" || m.role === "admin" ? "default" : "outline"} className="capitalize">
+                  {m.role}
+                </Badge>
               </li>
             ))}
           </ul>
-        </CardContent>
-      </Card>
+        </FormSection>
 
-      <Card id="workspaces">
-        <CardHeader>
-          <CardTitle>New workspace</CardTitle>
-          <CardDescription>Create a separate workspace. You become its owner and can switch from the sidebar.</CardDescription>
-        </CardHeader>
-        <CardContent>
+        <FormSection
+          id="workspaces"
+          title="New workspace"
+          description="Create a separate workspace. You become its owner and can switch between workspaces from the sidebar."
+        >
           <CreateWorkspaceForm />
-        </CardContent>
-      </Card>
+        </FormSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Integrations</CardTitle>
-          <CardDescription>Server-side credentials. Keys are never sent to the browser.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2 text-[13px]">
-          {(["gemini", "anthropic"] as const).map((p) => (
-            <div key={p} className="flex items-center gap-2">
-              {providerConfigured(p) ? <CheckCircle2 className="size-4 text-success" /> : <CircleDashed className="size-4 text-muted-foreground" />}
-              <span className="flex-1">{PROVIDER_LABELS[p]} {p === "gemini" ? "(default AI engine)" : "(premium tasks, optional)"}</span>
-              <span className="text-xs text-muted-foreground">{providerConfigured(p) ? "API key set" : `Set ${p === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY"}`}</span>
-            </div>
-          ))}
-          <p className="text-xs text-muted-foreground">{ai ? <>Models per task and spend: <Link href="/ai-usage" className="text-primary hover:underline">AI usage</Link>.</> : "Add at least one AI key to enable AI features."}</p>
-          <div className="flex items-center gap-2">
-            <CircleDashed className="size-4 text-muted-foreground" />
-            <span className="flex-1">Social media data (Meta, YouTube, LinkedIn, TikTok)</span>
-            <span className="text-xs text-muted-foreground">Planned for competitor intelligence</span>
-          </div>
-        </CardContent>
-      </Card>
+        <FormSection title="Integrations" description="Server-side credentials. Keys are never sent to the browser.">
+          <ul className="-my-2 divide-y text-[13px]">
+            {(["gemini", "anthropic"] as const).map((p) => {
+              const ok = providerConfigured(p);
+              return (
+                <li key={p} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
+                  {ok ? <CheckCircle2 className="size-4 text-success" aria-hidden /> : <CircleDashed className="size-4 text-subtle-foreground" aria-hidden />}
+                  <span className="min-w-0 flex-1">
+                    <span className="font-medium">{PROVIDER_LABELS[p]}</span>{" "}
+                    <span className="text-muted-foreground">{p === "gemini" ? "Default AI engine" : "Premium tasks, optional"}</span>
+                  </span>
+                  {ok ? (
+                    <Badge variant="success" dot>
+                      Connected
+                    </Badge>
+                  ) : (
+                    <code className="font-mono text-xs text-muted-foreground">Set {p === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY"}</code>
+                  )}
+                </li>
+              );
+            })}
+            <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
+              <CircleDashed className="size-4 text-subtle-foreground" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="font-medium">Social media data</span>{" "}
+                <span className="text-muted-foreground">Meta, YouTube, LinkedIn, TikTok</span>
+              </span>
+              <Badge variant="outline">Planned</Badge>
+            </li>
+          </ul>
+          <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">
+            {ai ? (
+              <>
+                Models per task and spend are on the{" "}
+                <Link href="/ai-usage" className="font-medium text-primary hover:underline">
+                  AI usage
+                </Link>{" "}
+                page.
+              </>
+            ) : (
+              "Add at least one AI key to enable AI features."
+            )}
+          </p>
+        </FormSection>
+      </div>
     </div>
   );
 }
