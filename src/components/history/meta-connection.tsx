@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Camera as Instagram, CheckCircle2, Flag as Facebook, Loader2, Plug, RefreshCcw, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -160,10 +161,13 @@ export function MetaConnectionPanel(props: Props) {
         {connected ? (
           <>
             {c.status !== "active" ? (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-[13px]">
-                <p className="flex items-center gap-2"><AlertTriangle className="size-4 text-destructive" /> {c.status === "expired" ? "Meta access expired or was revoked." : "The connection has an error."} {c.last_error}</p>
-                {!readOnly ? <Button asChild size="sm"><a href={connectHref}>Reconnect Meta</a></Button> : null}
-              </div>
+              <Alert
+                variant="destructive"
+                title={c.status === "expired" ? "Meta access expired or was revoked." : "The connection has an error."}
+                action={!readOnly ? <Button asChild size="sm"><a href={connectHref}>Reconnect Meta</a></Button> : null}
+              >
+                {c.last_error}
+              </Alert>
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
               <Account icon={Facebook} title={c.page_name ?? "Facebook Page"} subtitle={`Facebook Page · ${counts.facebook} posts synced`} ok={c.status === "active"} />

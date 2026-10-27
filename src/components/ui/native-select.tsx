@@ -1,6 +1,7 @@
 import * as React from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { fieldSurface } from "./input";
 
 // A styled native <select>: works with plain <form> + Server Actions, accessible by default.
 function NativeSelect({ className, children, ...props }: React.ComponentProps<"select">) {
@@ -8,10 +9,7 @@ function NativeSelect({ className, children, ...props }: React.ComponentProps<"s
     <div className="relative">
       <select
         data-slot="native-select"
-        className={cn(
-          "h-9 w-full appearance-none rounded-md border border-input bg-transparent pl-3 pr-8 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-50",
-          className,
-        )}
+        className={cn("h-9 w-full cursor-pointer appearance-none rounded-md pl-3 pr-8 text-sm", fieldSurface, className)}
         {...props}
       >
         {children}

@@ -28,7 +28,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         activeProjectId={activeProjectId}
       />
       <main className="min-w-0 flex-1">
-        <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">{children}</div>
+        <div className="mx-auto w-full max-w-[1240px] px-4 py-6 sm:px-6 md:px-10 md:py-9">{children}</div>
       </main>
     </div>
   );

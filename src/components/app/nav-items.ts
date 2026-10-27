@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 export type NavItem = { label: string; href: string; icon: LucideIcon; exact?: boolean };
+export type NavSection = { label?: string; items: NavItem[] };
 
 export const GLOBAL_NAV: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -23,18 +24,36 @@ export const GLOBAL_NAV: NavItem[] = [
   { label: "AI usage", href: "/ai-usage", icon: Gauge },
 ];
 
-export function projectNav(projectId: string): NavItem[] {
+/** Project modules, grouped in the order the work happens: plan → research → create → measure. */
+export function projectNavSections(projectId: string): NavSection[] {
   const base = `/p/${projectId}`;
   return [
-    { label: "Overview", href: base, icon: Compass, exact: true },
-    { label: "Marketing Strategy", href: `${base}/strategy`, icon: Target },
-    { label: "Historical Intelligence", href: `${base}/history`, icon: History },
-    { label: "Competitor Intelligence", href: `${base}/competitors`, icon: Swords },
-    { label: "SERP Intelligence", href: `${base}/seo`, icon: Search },
-    { label: "Content Opportunities", href: `${base}/opportunities`, icon: Lightbulb },
-    { label: "Editorial Calendar", href: `${base}/calendar`, icon: CalendarDays },
-    { label: "Content Production", href: `${base}/production`, icon: PenSquare },
-    { label: "Analytics", href: `${base}/analytics`, icon: BarChart3 },
+    {
+      items: [
+        { label: "Overview", href: base, icon: Compass, exact: true },
+        { label: "Strategy", href: `${base}/strategy`, icon: Target },
+      ],
+    },
+    {
+      label: "Intelligence",
+      items: [
+        { label: "Content history", href: `${base}/history`, icon: History },
+        { label: "Competitors", href: `${base}/competitors`, icon: Swords },
+        { label: "Search (SERP)", href: `${base}/seo`, icon: Search },
+      ],
+    },
+    {
+      label: "Content",
+      items: [
+        { label: "Opportunities", href: `${base}/opportunities`, icon: Lightbulb },
+        { label: "Calendar", href: `${base}/calendar`, icon: CalendarDays },
+        { label: "Production", href: `${base}/production`, icon: PenSquare },
+      ],
+    },
+    {
+      label: "Measure",
+      items: [{ label: "Analytics", href: `${base}/analytics`, icon: BarChart3 }],
+    },
   ];
 }
 

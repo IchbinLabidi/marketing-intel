@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { CalendarDays, Check, FileText, History, Loader2, MessageSquare, Paperclip, Save, Sparkles, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -116,7 +117,7 @@ export function ProductionEditor(props: Props) {
     <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12"><div className="flex flex-wrap items-center gap-3"><DialogTitle>{item ? "Content studio" : "Create content"}</DialogTitle>{item && <span className="rounded-md bg-muted px-2 py-1 text-xs">{workflow.labels[item.production_stage] || STAGE_LABELS[item.production_stage]}</span>}{dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}</div><DialogDescription>{item ? `Revision ${item.revision} · Owned by ${name(item.created_by)}` : "Write from scratch, use a template, or create a draft with your AI assistant."}</DialogDescription></DialogHeader>
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row">
       <main className="min-w-0 flex-1 space-y-5 p-5">
-        {error && <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
+        {error && <Alert variant="destructive">{error}</Alert>}
         <Field label="Title" htmlFor="production-title" error={fieldErrors.title}><Input id="production-title" dir="auto" value={form.title} disabled={readOnly || !!busy} onChange={(e) => set("title", e.target.value)} placeholder="Give this content a clear working title" className="h-11 text-base font-medium" /></Field>
         <div className="flex flex-wrap gap-1 border-b pb-2" role="tablist" aria-label="Content sections">{[{ id: "write", text: "Write", icon: FileText }, { id: "brief", text: "Brief & strategy", icon: FileText }, { id: "media", text: "Media", icon: Paperclip }, { id: "review", text: "Review & discussion", icon: MessageSquare }, { id: "history", text: "History", icon: History }].map(({ id, text, icon: Icon }) => <Button key={id} variant={tab === id ? "secondary" : "ghost"} size="sm" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}><Icon />{text}</Button>)}</div>
         <section role="tabpanel" aria-label={tab} className="space-y-4">

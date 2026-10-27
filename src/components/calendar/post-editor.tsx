@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Copy, ExternalLink, Info, Loader2, Send, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -179,7 +180,7 @@ export function PostEditor({
             </div>
           ) : null}
           {post?.status === "failed" && post.publish_error ? (
-            <p className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-[13px]"><AlertTriangle className="mr-1 inline size-4 text-destructive" />{post.publish_error}</p>
+            <Alert variant="destructive" title="Publishing failed">{post.publish_error}</Alert>
           ) : null}
 
           <Field label="Title" htmlFor="pe-title" error={errors.title}>

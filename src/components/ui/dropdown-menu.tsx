@@ -13,7 +13,10 @@ function DropdownMenuContent({ className, sideOffset = 4, ...props }: React.Comp
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
         sideOffset={sideOffset}
-        className={cn("z-50 min-w-48 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-md", className)}
+        className={cn(
+          "z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-48 overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-md data-[state=open]:animate-fade-in",
+          className,
+        )}
         {...props}
       />
     </DropdownMenuPrimitive.Portal>
@@ -23,7 +26,7 @@ function DropdownMenuItem({ className, variant, ...props }: React.ComponentProps
   return (
     <DropdownMenuPrimitive.Item
       className={cn(
-        "relative flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-[13px] outline-none select-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:text-muted-foreground",
+        "relative flex h-8 cursor-pointer items-center gap-2 rounded-[5px] px-2 text-[13px] outline-none select-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:text-muted-foreground",
         variant === "destructive" && "text-destructive focus:bg-destructive/10 [&_svg]:text-destructive",
         className,
       )}

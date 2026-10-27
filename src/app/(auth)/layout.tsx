@@ -1,42 +1,46 @@
-import { Sparkles } from "lucide-react";
-import { siteConfig } from "@/config/site";
+import { CalendarDays, Lightbulb, Swords, Target } from "lucide-react";
+import { BrandMark } from "@/components/app/brand";
+
+// What the product actually does, in the order the work happens. No invented numbers or testimonials.
+const STAGES = [
+  { icon: Target, title: "Define the strategy", body: "Brand identity, pillars, audiences and goals that your team and the AI share." },
+  { icon: Swords, title: "Learn from the past and the market", body: "Import past calendars from Excel, CSV or PDF, track competitors and search results." },
+  { icon: Lightbulb, title: "Find the opportunities", body: "Each one comes with a rationale, the evidence behind it and a confidence level." },
+  { icon: CalendarDays, title: "Plan and produce", body: "An editorial calendar in French, English, Arabic or Tunisian Derja where every post has a reason." },
+];
 
 export default function AuthLayout({ children }: LayoutProps<"/">) {
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      <div className="flex flex-col justify-center px-6 py-12 sm:px-12">
-        <div className="mx-auto w-full max-w-sm">
-          <div className="mb-8 flex items-center gap-2">
-            <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Sparkles className="size-4" />
-            </span>
-            <span className="font-semibold">{siteConfig.name}</span>
-          </div>
-          {children}
+    <div className="grid min-h-dvh bg-card lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+      <div className="flex flex-col px-6 py-8 sm:px-12">
+        <BrandMark size="md" />
+        <div className="flex flex-1 items-center py-10">
+          <div className="mx-auto w-full max-w-[360px]">{children}</div>
         </div>
       </div>
-      <div className="hidden border-l bg-sidebar lg:flex lg:flex-col lg:justify-center lg:px-16">
-        <div className="max-w-md space-y-6">
-          <h2 className="text-2xl font-semibold tracking-tight">Stop publishing at random.</h2>
-          <p className="text-muted-foreground">
-            Turn your marketing strategy, last year&apos;s editorial calendars and competitor observations into a calendar where
-            every post has a reason to exist.
+      <aside className="relative hidden overflow-hidden border-l bg-sidebar lg:flex lg:flex-col lg:justify-center lg:px-16 xl:px-24">
+        <div className="max-w-md">
+          <p className="eyebrow">Marketing intelligence</p>
+          <h2 className="mt-3 text-[28px] font-semibold leading-[1.15] tracking-[-0.025em]">Stop publishing at random.</h2>
+          <p className="mt-3 text-[14px] leading-relaxed text-muted-foreground">
+            Turn your strategy, last year&apos;s calendars and what competitors are doing into a plan where every post has a reason to exist.
           </p>
-          <ul className="space-y-3 text-[13px]">
-            {[
-              "Strategy builder your whole team and the AI share",
-              "Import past calendars from Excel, CSV or PDF and find gaps and repetition",
-              "Opportunities with a rationale, evidence and confidence level",
-              "Content in French, English, Arabic and Tunisian Derja",
-            ].map((t) => (
-              <li key={t} className="flex gap-2">
-                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-                {t}
+          <ol className="mt-10 space-y-0">
+            {STAGES.map((s, i) => (
+              <li key={s.title} className="relative flex gap-4 pb-7 last:pb-0">
+                {i < STAGES.length - 1 ? <span className="absolute left-[15px] top-9 bottom-1 w-px bg-border-strong/70" aria-hidden /> : null}
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card shadow-xs">
+                  <s.icon className="size-4 text-primary" aria-hidden />
+                </span>
+                <div className="pt-1">
+                  <p className="text-[13.5px] font-medium">{s.title}</p>
+                  <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">{s.body}</p>
+                </div>
               </li>
             ))}
-          </ul>
+          </ol>
         </div>
-      </div>
+      </aside>
     </div>
   );
 }
