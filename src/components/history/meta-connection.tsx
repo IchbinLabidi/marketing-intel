@@ -216,14 +216,17 @@ export function MetaConnectionPanel(props: Props) {
                 {pages.map((p) => (
                   <li key={p.id}>
                     <button
-                      disabled={pending || p.id === c.page_id}
+                      // The current Page can be picked again when its Instagram link changed in Meta (e.g. an account was linked
+                      // after connecting): that refreshes the link without touching synced posts.
+                      disabled={pending || (p.id === c.page_id && (p.instagram ?? null) === (c.ig_username ?? null))}
                       onClick={async () => {
+                        if (p.id === c.page_id) return run(() => selectMetaPageAction(projectId, p.id), () => setPages(null));
                         if (await confirm({ title: `Switch to “${p.name}”?`, description: `Posts synced from ${c.page_name} will be removed from this project.`, confirmLabel: "Switch Page", destructive: true })) run(() => selectMetaPageAction(projectId, p.id), () => setPages(null));
                       }}
                       className={cn("w-full rounded-lg border p-3 text-left text-[13px] hover:bg-accent disabled:opacity-60", p.id === c.page_id && "border-primary/50")}
                     >
                       <span className="font-medium">{p.name}</span>
-                      <span className="block text-xs text-muted-foreground">{p.instagram ? `@${p.instagram}` : "no Instagram"}{p.id === c.page_id ? " · current" : ""}</span>
+                      <span className="block text-xs text-muted-foreground">{p.instagram ? `@${p.instagram}` : "no Instagram"}{p.id === c.page_id ? ((p.instagram ?? null) !== (c.ig_username ?? null) ? " · current, click to update the Instagram link" : " · current") : ""}</span>
                     </button>
                   </li>
                 ))}
