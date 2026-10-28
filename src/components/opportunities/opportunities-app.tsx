@@ -159,7 +159,7 @@ export function OpportunitiesApp({
             </label>
           </div>
         </div>
-        <div className="grid gap-2 rounded-xl border bg-card p-3 shadow-xs sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+        <div className="grid grid-cols-2 gap-x-2 gap-y-3 rounded-xl border bg-card p-3 shadow-xs lg:grid-cols-4 xl:grid-cols-8">
           <F label="Platform" value={filters.platform} onChange={(v) => setFilters({ ...filters, platform: v })} options={[...new Set(opportunities.map((o) => o.platform).filter(Boolean))].map((p) => ({ value: p!, label: PLATFORM_LABELS[p as Platform] ?? p! }))} />
           <F label="Pillar" value={filters.pillar} onChange={(v) => setFilters({ ...filters, pillar: v })} options={[...pillars.map((p) => ({ value: p.id, label: p.name })), { value: "none", label: "No pillar" }]} />
           <F label="Funnel" value={filters.funnel} onChange={(v) => setFilters({ ...filters, funnel: v })} options={FUNNEL_STAGES.map((f) => ({ value: f, label: FUNNEL_LABELS[f] }))} />

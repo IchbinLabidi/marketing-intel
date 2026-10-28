@@ -72,12 +72,12 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         title="Editorial Calendar"
         description="Plan, schedule and track posts. Approve content in Production, book an internal slot, then verify publication with the connected platform."
         actions={
-          <div className="flex flex-wrap gap-2">
+          <>
             {selectedPlan && editable ? <DeleteCalendarButton projectId={projectId} calendarId={selectedPlan.id} name={selectedPlan.name} /> : null}
             <Button asChild size="sm"><Link href={`/p/${projectId}/calendar/plan`}><Sparkles /> Plan a month</Link></Button>
             {selectedPlan && (selectedPlan as { status?: string }).status !== "saved" ? <Button asChild size="sm" variant="outline"><Link href={`/p/${projectId}/calendar/plan/${selectedPlan.id}`}>Plan details</Link></Button> : null}
-            <Button asChild size="sm" variant="outline"><Link href={`/p/${projectId}/history?tab=recommendations`}>Generate a plan from historical insights</Link></Button>
-          </div>
+            <Button asChild size="sm" variant="outline"><Link href={`/p/${projectId}/history?tab=recommendations`}>Plan from historical insights</Link></Button>
+          </>
         }
       />
       <CalendarApp

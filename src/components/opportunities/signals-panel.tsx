@@ -25,9 +25,9 @@ export function SignalsPanel({ projectId, signals, posts, pillars, canGenerate }
   return (
     <section className="rounded-xl border bg-card shadow-xs">
       <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex w-full items-center justify-between gap-3 p-4 text-left">
-        <span>
+        <span className="min-w-0">
           <span className="flex items-center gap-2 text-[14px] font-semibold"><BarChart3 className="size-4" /> What your data shows</span>
-          <span className="text-xs text-muted-foreground">
+          <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
             {signals.length} calculated signals from {posts} posts and your strategy. Opportunities may only cite these; nothing else counts as evidence.
           </span>
         </span>

@@ -38,7 +38,7 @@ export function PageHeader({
         <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground">{title}</h1>
         {description ? <p className="max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground">{description}</p> : null}
       </div>
-      {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+      {actions ? <div className="flex w-full flex-wrap items-center gap-2 max-sm:[&>*]:flex-1 sm:w-auto sm:shrink-0">{actions}</div> : null}
     </header>
   );
 }
