@@ -21,6 +21,7 @@ import { requireUser } from "@/server/services/session";
 import { getMetaConnection, readMetaTokens } from "@/server/services/meta";
 import { graphGet } from "@/server/meta/graph";
 import { hasPermission } from "@/server/services/team";
+import { externalIdFromUrl } from "@/lib/social/normalize";
 
 const NO_EDIT: ActionResult<never> = { ok: false, error: "Your role can't plan or edit the calendar." };
 const fail = (e: unknown, fallback: string): ActionResult<never> => ({ ok: false, error: e instanceof Error ? e.message : fallback });
@@ -172,7 +173,26 @@ export async function confirmPublishedAction(projectId: string, id: string, inpu
   if (!input.url || !/^https:\/\/\S+$/i.test(input.url)) return { ok: false, error: "Provide the HTTPS link to the live post." };
   try {
     const current = await getPost(projectId, id);
-    if (!current || !["facebook", "instagram"].includes(current.platform || "")) throw new Error("Publication verification supports connected Facebook and Instagram accounts.");
+    if (current && ["youtube", "linkedin", "tiktok"].includes(current.platform || "")) {
+      // YouTube, LinkedIn, TikTok: the link must point to a post the connected account's sync already imported.
+      // Matching is by the provider's own post id taken from the link, never by title or date.
+      const ref = externalIdFromUrl(input.url);
+      if (!ref || ref.provider !== current.platform) throw new Error("This link isn't a recognised post or video link for this platform.");
+      const db = await createClient();
+      const { data: synced, error } = await db.from("historical_content_items").select("id, published_at, permalink, social_connection_id")
+        .eq("project_id", projectId).eq("source", `${ref.provider}_api`).eq("external_id", ref.id).maybeSingle();
+      if (error) throw error;
+      if (!synced?.published_at) throw new Error("This post isn't in the synced data yet. Sync the account on the Integrations page, then try again.");
+      const { data: conn } = await db.from("social_connections").select("status").eq("id", synced.social_connection_id).maybeSingle();
+      if (!conn || conn.status === "disconnected") throw new Error("The account that published this post is no longer connected.");
+      const { data: taken } = await db.from("content_items").select("id").eq("project_id", projectId).eq("historical_source_id", synced.id).neq("id", id).eq("status", "published").limit(1);
+      if (taken?.length) throw new Error("Another calendar item is already verified against this post.");
+      const post = await updatePost(projectId, id, { status: "published", historical_source_id: synced.id, published_at: synced.published_at, published_url: synced.permalink ?? input.url, publish_error: null });
+      await syncOpportunityState(projectId, post.opportunity_id);
+      refresh(projectId);
+      return { ok: true, data: { post }, message: "Publication verified with the connected account's synced data" };
+    }
+    if (!current || !["facebook", "instagram"].includes(current.platform || "")) throw new Error("Publication verification supports connected Facebook, Instagram, YouTube, LinkedIn and TikTok accounts.");
     const connection = await getMetaConnection(projectId);
     if (!connection || connection.status !== "active") throw new Error("Connect or reconnect Meta in Content history first.");
     const canonical = (value: string) => { const url = new URL(value); return `${url.origin}${url.pathname.replace(/\/$/, "")}`; };

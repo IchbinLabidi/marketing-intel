@@ -1,5 +1,6 @@
 "use client";
 
+import { PublishedPerformanceBlock } from "./published-performance";
 import * as React from "react";
 import Link from "next/link";
 import { CalendarClock, Copy, ExternalLink, FileText, Flag, MessageSquare, Pencil, X } from "lucide-react";
@@ -146,6 +147,8 @@ export function DetailPanel({
               </div>
             </div>
           </section>
+
+          {state === "published" && post.historical_source_id ? <PublishedPerformanceBlock projectId={projectId} itemId={post.id} /> : null}
 
           <section className="space-y-3">
             <h3 className="eyebrow">Owner and priority</h3>

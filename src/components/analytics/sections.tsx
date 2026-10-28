@@ -14,6 +14,7 @@ import { STAGE_LABELS, type ProductionStage } from "@/lib/production/model";
 import type { AnalyticsData } from "@/server/services/analytics";
 import { cn } from "@/lib/utils";
 import { ShareBars, WeeklyColumns } from "./charts";
+import { PlatformIcon } from "@/components/calendar/platform-icon";
 import { InfoTip } from "./info-tip";
 
 const n = (v: number | null | undefined, digits = 0) => (v == null ? "—" : v.toLocaleString("en", { maximumFractionDigits: digits, minimumFractionDigits: 0 }));
@@ -266,27 +267,42 @@ export function SocialSection({ data }: { data: AnalyticsData }) {
   if (!data.access.canSeeSocial) {
     return <Section id="social" title="Social performance"><Alert title="Not available with your role">Performance data comes from Content history, which your role can&apos;t view.</Alert></Section>;
   }
-  const s = data.social!, sp = data.socialPrev, meta = data.meta;
-  const status = !meta || meta.status === "disconnected"
-    ? { tone: "info" as const, text: "No Meta account is connected. Metrics below come only from imported files, if any." }
-    : meta.status === "error" || meta.status === "expired" || meta.last_sync_status === "failed"
-      ? { tone: "destructive" as const, text: `The last Meta sync failed or access expired (${meta.status === "expired" ? "access expired" : meta.last_error || meta.status}). Figures may be out of date${meta.last_sync_at ? ` since ${new Date(meta.last_sync_at).toLocaleString("en-GB", { timeZone: data.tz })}` : ""}.` }
-      : meta.last_sync_status === "partial"
-        ? { tone: "warning" as const, text: `The last Meta sync was partial: ${meta.last_error || "some platforms did not sync"}.` }
-      : meta.status === "pending_page"
-        ? { tone: "warning" as const, text: "Meta is connected but no Page is selected yet, so nothing has synced." }
-        : { tone: "success" as const, text: `Meta connected${meta.page_name ? ` (${meta.page_name}${meta.ig_username ? ` · @${meta.ig_username}` : ""})` : ""}. ${meta.last_sync_at ? `Last sync ${new Date(meta.last_sync_at).toLocaleString("en-GB", { timeZone: data.tz })}.` : meta.last_sync_status === "succeeded" ? "Last sync succeeded." : "No sync has run yet."}${meta.ig_user_id && s.posts && !s.byPlatform.some((r) => r.key === "instagram") ? " No Instagram posts with data in this period." : ""}` };
+  const s = data.social!, sp = data.socialPrev;
+  const nowMsValue = Date.parse(data.nowIso);
+  const stale = (iso: string | null) => !iso || nowMsValue - Date.parse(iso) > 48 * 3600 * 1000;
+  const accountLabel = (id: string) => data.options.accounts.find((a) => a.id === id)?.label ?? "Account";
   const metric = (label: string, value: number | null, prev: number | null | undefined, key: keyof typeof s.available | null, digits = 0, suffix = "") => (
     <Stat label={label} info={<InfoTip expert info={data.ceo.explain[({ Reach: "reach", Engagements: "engagement", "Link clicks": "clicks" } as Record<string, string>)[label] ?? ""]} />} value={value == null ? <span className="text-base text-muted-foreground">Not available</span> : `${n(value, digits)}${suffix}`} delta={sp && value != null ? change(value, prev) : null}
       hint={value == null ? (key && s.posts ? "Not returned for these posts" : "No posts in the period") : key ? `${s.available[key]} of ${s.posts} posts report it` : undefined} />
   );
+  const series = (data.weekly?.platforms ?? []).slice(0, 4).map((p, i) => ({ key: p, label: platformLabel(p), className: ["bg-chart-b", "bg-chart-a", "bg-chart-c", "bg-info"][i] }));
   return (
-    <Section id="social" title="Social performance" description={`Published posts in the period from connected or imported sources (${s.posts} post${s.posts === 1 ? "" : "s"}). A dash or “Not available” means the source didn't return the metric; zero means it returned zero.`}
-      actions={<Button asChild size="sm" variant="outline" className="print:hidden"><Link href={`${base}/history`}>Content history</Link></Button>}>
-      <Alert variant={status.tone} title={status.tone === "success" ? undefined : "Data source"} action={status.tone !== "success" ? <Button asChild size="sm" variant="outline" className="print:hidden"><Link href={`${base}/history`}><PlugZap className="size-3.5" /> Manage connection</Link></Button> : undefined}>{status.text}</Alert>
+    <Section id="social" title="Social performance" description={`Organic results of posts published in the period, from connected accounts and imported files (${s.posts} post${s.posts === 1 ? "" : "s"}). “Not available” means the source doesn't return the metric; zero means it returned zero. Paid advertising results are not included.`}
+      actions={<Button asChild size="sm" variant="outline" className="print:hidden"><Link href={`${base}/integrations`}><PlugZap className="size-3.5" /> Integrations</Link></Button>}>
+      {/* Data freshness */}
+      {data.freshness.length ? (
+        <ul className="grid gap-2 text-[13px] sm:grid-cols-2">
+          {data.freshness.map((f) => {
+            const bad = f.status === "needs_attention" || f.status === "permission_denied" || f.status === "expired" || f.status === "error" || f.lastStatus === "failed";
+            const old = stale(f.lastSuccess);
+            return (
+              <li key={f.id} className={cn("flex items-center gap-2 rounded-lg border px-3 py-2", bad ? "border-destructive/30" : old ? "border-warning/40" : "")}>
+                <PlatformIcon platform={f.provider === "meta" ? "facebook" : f.provider} />
+                <span className="min-w-0 flex-1 truncate">{f.label}</span>
+                <span className={cn("shrink-0 text-xs", bad ? "text-destructive" : old ? "text-warning-foreground" : "text-muted-foreground")}>
+                  {bad ? "Needs attention" : f.lastSuccess ? `Updated ${new Date(f.lastSuccess).toLocaleString("en-GB", { timeZone: data.tz, dateStyle: "medium", timeStyle: "short" })}` : "Not synced yet"}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <Alert title="No social account is connected">Metrics below come only from imported files, if any. Connect accounts on the <Link href={`${base}/integrations`} className="font-medium text-primary hover:underline">Integrations</Link> page.</Alert>
+      )}
+      {data.params.account ? <p className="text-xs text-muted-foreground">Showing one account: {accountLabel(data.params.account)}.</p> : null}
       {data.socialIgnoredFilters.length ? <p className="text-xs text-muted-foreground">Funnel, content type, production stage and collaborator filters don&apos;t apply here: imported and synced posts don&apos;t carry those fields reliably.</p> : null}
       {s.posts === 0 ? (
-        <EmptyState compact icon={TrendingUp} title="No published posts with data in this period" description="Sync Meta or import a performance file in Content history, or widen the period." />
+        <EmptyState compact icon={TrendingUp} title="No published posts with data in this period" description="Sync your accounts on the Integrations page, or widen the period." />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -295,23 +311,72 @@ export function SocialSection({ data }: { data: AnalyticsData }) {
             {metric("Engagements", s.engagement, sp?.engagement, null)}
             <Stat label="Median engagement rate" info={<InfoTip expert info={data.ceo.explain.engagementRate} />} value={s.medianEngagementRate == null ? <span className="text-base text-muted-foreground">Not available</span> : `${s.medianEngagementRate.toFixed(2)}%`} delta={sp ? change(s.medianEngagementRate, sp.medianEngagementRate) : null} hint={s.rateSample ? `Engagements ÷ reach, ${s.rateSample} posts with consistent reach` : "Needs reach and interactions"} />
             {metric("Video views", s.videoViews ?? s.views, sp ? sp.videoViews ?? sp.views : null, s.videoViews != null ? "video_views" : "views")}
+            {metric("Watch time (minutes)", s.watchTime, sp?.watchTime, "watch_time_minutes")}
             {metric("Link clicks", s.clicks, sp?.clicks, "clicks")}
-            <Stat label="Click-through rate" value={s.ctr == null ? <span className="text-base text-muted-foreground">Not available</span> : `${s.ctr.toFixed(2)}%`} hint="Clicks ÷ reach, posts reporting both" />
             {metric("Conversions", s.conversions ?? s.leads, sp ? sp.conversions ?? sp.leads : null, s.conversions != null ? "conversions" : "leads")}
           </div>
-          <div className="grid gap-3 lg:grid-cols-3">
-            {([["By platform", s.byPlatform, platformLabel], ["By content type", s.byFormat, (k: string) => k], ["By pillar", s.byPillar, (k: string) => (k === "none" ? "No pillar" : data.pillarNames[k] ?? "Unknown pillar")]] as const).map(([title, rows, label]) => (
+
+          <Card>
+            <CardHeader><CardTitle>Platforms compared</CardTitle><CardDescription>Each platform measures differently (for example, LinkedIn “reach” is unique impressions and YouTube has no reach), so compare trends within a platform rather than raw totals across them.</CardDescription></CardHeader>
+            <CardContent className="px-0 py-0">
+              <Table>
+                <TableHeader><TableRow><TableHead className="pl-5">Platform</TableHead><TableHead className="text-right">Posts</TableHead><TableHead className="text-right">Reach</TableHead><TableHead className="text-right">Views</TableHead><TableHead className="text-right">Interactions</TableHead><TableHead className="text-right">Median per post</TableHead><TableHead className="pr-5 text-right">Median rate</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {s.byPlatform.map((r) => (
+                    <TableRow key={r.key}>
+                      <TableCell className="pl-5"><span className="inline-flex items-center gap-1.5"><PlatformIcon platform={r.key} /> {platformLabel(r.key)}</span></TableCell>
+                      <TableCell className="text-right tabular-nums">{r.posts}</TableCell>
+                      <TableCell className="text-right tabular-nums">{n(r.reach)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{n(r.views)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{n(r.engagement)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{n(r.medianEngagement)}</TableCell>
+                      <TableCell className="pr-5 text-right tabular-nums">{r.medianRate == null ? "—" : `${r.medianRate.toFixed(2)}% (${r.rateSample})`}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-3 lg:grid-cols-5">
+            <Card className="lg:col-span-3">
+              <CardHeader><CardTitle>Interactions per week</CardTitle><CardDescription>Likes, comments, shares and saves on posts published each week, by platform.</CardDescription></CardHeader>
+              <CardContent>{data.weekly && series.length ? <WeeklyColumns weeks={data.weekly.weeks} series={series} /> : <p className="text-[13px] text-muted-foreground">No interaction data.</p>}</CardContent>
+            </Card>
+            <Card className="lg:col-span-2">
+              <CardHeader><CardTitle>Audience growth</CardTitle><CardDescription>Followers or subscribers recorded at each daily sync. Meta followers aren&apos;t recorded yet.</CardDescription></CardHeader>
+              <CardContent>
+                {data.growth.length ? (
+                  <ul className="grid gap-2 text-[13px]">
+                    {data.growth.map((g) => (
+                      <li key={g.connection_id} className="flex items-baseline justify-between gap-3">
+                        <span className="min-w-0 truncate">{accountLabel(g.connection_id)}</span>
+                        <span className="shrink-0 tabular-nums">
+                          <span className="font-medium">{g.end.toLocaleString("en")}</span>
+                          {g.change == null ? <span className="ml-1 text-xs text-muted-foreground">(one measurement so far)</span>
+                            : <span className={cn("ml-1 text-xs", g.change > 0 ? "text-success" : g.change < 0 ? "text-destructive" : "text-muted-foreground")}>{g.change > 0 ? "+" : ""}{g.change.toLocaleString("en")} since {g.from}</span>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="text-[13px] text-muted-foreground">No follower counts recorded in this period. They start with the first sync of a YouTube, LinkedIn or TikTok account.</p>}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            {([["By content type", s.byFormat, (k: string) => k], ["By pillar", s.byPillar, (k: string) => (k === "none" ? "No pillar" : data.pillarNames[k] ?? "Unknown pillar")]] as const).map(([title, rows, label]) => (
               <Card key={title}>
-                <CardHeader><CardTitle>{title}</CardTitle><CardDescription>Median engagements per post.</CardDescription></CardHeader>
+                <CardHeader><CardTitle>{title}</CardTitle><CardDescription>Median interactions per post.</CardDescription></CardHeader>
                 <CardContent><BarList rows={rows.filter((r) => r.medianEngagement != null).map((r) => ({ key: r.key, label: label(r.key), value: Math.round(r.medianEngagement!), note: `· ${r.posts} posts` }))} empty="No engagement data." /></CardContent>
               </Card>
             ))}
           </div>
           <Card>
-            <CardHeader><CardTitle>Top posts in the period</CardTitle><CardDescription>By engagements (likes + comments + shares + saves, where reported).{s.bottom.length ? " The lowest five are listed below for comparison." : ""}</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Top posts and videos in the period</CardTitle><CardDescription>By interactions (likes + comments + shares + saves, where reported). A high number shows what people responded to; it doesn&apos;t prove why.{s.bottom.length ? " The lowest five are listed below for comparison." : ""}</CardDescription></CardHeader>
             <CardContent className="px-0 py-0">
               <Table>
-                <TableHeader><TableRow><TableHead className="pl-5">Post</TableHead><TableHead>Platform</TableHead><TableHead>Date</TableHead><TableHead className="text-right">Reach</TableHead><TableHead className="pr-5 text-right">Engagements</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead className="pl-5">Post</TableHead><TableHead>Platform</TableHead><TableHead>Date</TableHead><TableHead className="text-right">Reach</TableHead><TableHead className="text-right">Views</TableHead><TableHead className="pr-5 text-right">Interactions</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {[...s.top.map((r) => ({ ...r, group: "top" })), ...s.bottom.map((r) => ({ ...r, group: "bottom" }))].map((r, i) => (
                     <TableRow key={`${r.group}-${r.id}`} className={cn(r.group === "bottom" && i === s.top.length && "border-t-2")}>
@@ -319,6 +384,7 @@ export function SocialSection({ data }: { data: AnalyticsData }) {
                       <TableCell>{r.platform ? platformLabel(r.platform) : "—"}</TableCell>
                       <TableCell className="tabular-nums">{r.date ?? "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{n(r.reach)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{n(r.video_views ?? r.views)}</TableCell>
                       <TableCell className="pr-5 text-right tabular-nums">{n(r.engagement)}</TableCell>
                     </TableRow>
                   ))}
@@ -328,7 +394,6 @@ export function SocialSection({ data }: { data: AnalyticsData }) {
           </Card>
         </>
       )}
-      <p className="text-xs text-muted-foreground">Followers and watch time are not stored by the current integrations, so they are not shown.</p>
     </Section>
   );
 }

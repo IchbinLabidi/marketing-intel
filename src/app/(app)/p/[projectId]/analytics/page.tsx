@@ -43,7 +43,7 @@ export default async function AnalyticsPage({ params, searchParams }: PageProps<
         }
       />
       <AnalyticsFilters
-        preset={data.params.preset} period={data.params.period} compare={data.params.compare} filters={data.params.filters}
+        preset={data.params.preset} period={data.params.period} compare={data.params.compare} filters={{ ...data.params.filters, account: data.params.account ?? "" }}
         options={data.options} simple={mode === "ceo"}
       />
       {noData ? <NoContentState projectId={projectId} /> : (

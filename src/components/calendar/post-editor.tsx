@@ -327,7 +327,7 @@ export function PostEditor({
                 <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setConfirmDelete(true)} disabled={busy !== null}><Trash2 /> Delete</Button>
               ) : null}
               {post ? <Button variant="ghost" size="sm" onClick={duplicate} disabled={busy !== null}><Copy /> Duplicate</Button> : null}
-              {post && !locked && (post.platform === "instagram" || post.platform === "facebook") ? <Button variant="ghost" size="sm" onClick={() => setPublishOpen(true)} disabled={busy !== null}><CheckCircle2 /> Verify publication</Button> : null}
+              {post && !locked && ["instagram", "facebook", "youtube", "linkedin", "tiktok"].includes(post.platform ?? "") ? <Button variant="ghost" size="sm" onClick={() => setPublishOpen(true)} disabled={busy !== null}><CheckCircle2 /> Verify publication</Button> : null}
               {post ? <Button asChild variant="outline" size="sm"><Link href={`/p/${projectId}/production?item=${post.id}`}>Open in Content Production</Link></Button> : null}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -376,7 +376,7 @@ function ConfirmPublished({ projectId, post, tz, onClose, onDone }: { projectId:
         <DialogHeader>
           <DialogTitle>Confirm publication</DialogTitle>
           <DialogDescription>
-            Paste the live post link after syncing Content history. The connected platform will verify publication; its actual timestamp is used.
+            Paste the live post or video link after the account has synced (Integrations page). The connected platform&apos;s data confirms the publication and its actual timestamp is used.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">

@@ -1,7 +1,17 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    { "path": "/api/cron/meta-sync", "schedule": "0 4 * * *" },
-    { "path": "/api/cron/competitor-sync", "schedule": "0 5 * * *" }
+    {
+      "path": "/api/cron/meta-sync",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/competitor-sync",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/social-sync",
+      "schedule": "30 4 * * *"
+    }
   ]
 }
