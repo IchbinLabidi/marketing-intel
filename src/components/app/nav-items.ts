@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Lightbulb,
   ListChecks,
+  Plug,
   PenSquare,
   Search,
   Settings,
@@ -39,6 +40,7 @@ export function projectNavSections(projectId: string): NavSection[] {
       items: [
         { label: "Overview", hint: "Brand profile, channels and where to start", href: base, icon: Compass, exact: true },
         { label: "Strategy", hint: "Goals, audiences, content themes and targets", href: `${base}/strategy`, icon: Target, permission: "strategy.view" },
+        { label: "Integrations", hint: "Connect Facebook, Instagram, YouTube, LinkedIn and TikTok", href: `${base}/integrations`, icon: Plug, permission: "intelligence.view" },
       ],
     },
     {

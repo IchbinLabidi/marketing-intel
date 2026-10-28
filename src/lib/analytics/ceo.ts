@@ -22,9 +22,13 @@ export type CeoInput = {
   socialPrev: ReturnType<typeof social> | null;
   canSeeSocial: boolean;
   meta: { status: string; lastSyncStatus: string | null; error: string | null } | null;
+  /** Connected YouTube / LinkedIn / TikTok accounts. */
+  otherConnected?: number;
+  /** Connected accounts whose access expired, lacks a permission, or whose last sync failed. */
+  failingAccounts?: string[];
   kpiCount: number;
   stageLabel: (s: string) => string;
-  links: { strategy: string; calendar: string; overdue: string; production: string; team: string; history: string; settings: string };
+  links: { strategy: string; calendar: string; overdue: string; production: string; team: string; history: string; settings: string; integrations?: string };
 };
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -153,25 +157,36 @@ export function actionCenter(i: CeoInput): Issue[] {
 
   // Data availability
   if (i.canSeeSocial) {
-    if (!i.meta || i.meta.status === "disconnected") {
+    if ((!i.meta || i.meta.status === "disconnected") && !i.otherConnected) {
       out.push({
         id: "no-data", severity: 3,
         title: "Results from social media are not connected",
-        evidence: "No Meta (Facebook/Instagram) account is connected to this project.",
+        evidence: "No social media account (Meta, YouTube, LinkedIn or TikTok) is connected to this project.",
         impact: "Without it, the platform can't tell you how your posts perform.",
-        next: "Connect the Facebook Page and Instagram account in Content history.",
-        href: i.links.history, linkLabel: "Connect Meta",
+        next: "Connect your accounts on the Integrations page.",
+        href: i.links.integrations ?? i.links.history, linkLabel: "Open Integrations",
       });
-    } else if (i.meta.status === "expired" || i.meta.status === "error" || i.meta.lastSyncStatus === "failed") {
+    } else if (i.meta && (i.meta.status === "expired" || i.meta.status === "error" || i.meta.lastSyncStatus === "failed")) {
       out.push({
         id: "sync-failed", severity: 2,
         title: "Social media results stopped updating",
         evidence: `The connection to Meta needs attention${i.meta.error ? ` (${i.meta.error.slice(0, 140)})` : ""}.`,
         impact: "Performance figures may be out of date.",
         next: "Reconnect the account in Content history.",
-        href: i.links.history, linkLabel: "Fix the connection",
+        href: i.links.integrations ?? i.links.history, linkLabel: "Fix the connection",
       });
     }
+  }
+
+  if (i.canSeeSocial && i.failingAccounts?.length) {
+    out.push({
+      id: "accounts-failing", severity: 2,
+      title: `${plural(i.failingAccounts.length, "connected account")} stopped updating`,
+      evidence: `${i.failingAccounts.join(", ")}: access expired, a permission is missing, or the last sync failed.`,
+      impact: "Results for these accounts are out of date.",
+      next: "Reconnect them on the Integrations page.",
+      href: i.links.integrations ?? i.links.history, linkLabel: "Open Integrations",
+    });
   }
 
   // Performance trend

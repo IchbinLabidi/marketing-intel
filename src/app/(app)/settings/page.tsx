@@ -95,9 +95,9 @@ export default async function SettingsPage() {
               <CircleDashed className="size-4 text-subtle-foreground" aria-hidden />
               <span className="min-w-0 flex-1">
                 <span className="font-medium">Social media data</span>{" "}
-                <span className="text-muted-foreground">Meta, YouTube, LinkedIn, TikTok</span>
+                <span className="text-muted-foreground">Meta, YouTube, LinkedIn, TikTok, connected per project</span>
               </span>
-              <Badge variant="outline">Planned</Badge>
+              <span className="text-xs text-muted-foreground">Open a project → Integrations</span>
             </li>
           </ul>
           <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">

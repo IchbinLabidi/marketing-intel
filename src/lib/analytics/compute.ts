@@ -28,6 +28,10 @@ export type PerfRow = {
   id: string; title: string | null; platform: string | null; format: string | null; pillar_id: string | null; campaign_id: string | null; permalink: string | null;
   date: string | null; reach: number | null; impressions: number | null; views: number | null; video_views: number | null; clicks: number | null;
   likes: number | null; comments: number | null; shares: number | null; saves: number | null; conversions: number | null; leads: number | null; source: string | null;
+  /** YouTube with full access only (minutes). */
+  watch_time_minutes?: number | null;
+  /** Connected account the post came from (social connection id, or "meta"). */
+  account?: string | null;
 };
 export type Filters = { pillar: string; funnel: string; platform: string; format: string; campaign: string; status: string; assignee: string };
 
@@ -268,7 +272,7 @@ export function teamWorkload(
 // ---------------------------------------------------------------------------
 // E. Social performance (only metrics the sources returned)
 // ---------------------------------------------------------------------------
-const METRIC_KEYS = ["reach", "impressions", "views", "video_views", "clicks", "conversions", "leads"] as const;
+const METRIC_KEYS = ["reach", "impressions", "views", "video_views", "clicks", "conversions", "leads", "watch_time_minutes"] as const;
 export function social(rows: PerfRow[], p: Period) {
   const inP = rows.filter((r) => inPeriod(r.date, p));
   const available = Object.fromEntries(METRIC_KEYS.map((k) => [k, inP.filter((r) => r[k] != null).length])) as Record<(typeof METRIC_KEYS)[number], number>;
@@ -282,7 +286,11 @@ export function social(rows: PerfRow[], p: Period) {
     return [...m].map(([k, list]) => {
       const es = list.map((r) => engagementOf(r)).filter((x): x is number => x != null);
       const rs = list.map((r) => engagementRate(r)).filter((x): x is number => x != null);
-      return { key: k, posts: list.length, medianEngagement: median(es), medianRate: median(rs), reach: list.some((r) => r.reach != null) ? list.reduce((s, r) => s + (r.reach ?? 0), 0) : null };
+      const sumOf = (f: (r: PerfRow) => number | null | undefined) => (list.some((r) => f(r) != null) ? list.reduce((s, r) => s + (f(r) ?? 0), 0) : null);
+      return {
+        key: k, posts: list.length, medianEngagement: median(es), medianRate: median(rs), rateSample: rs.length,
+        reach: sumOf((r) => r.reach), views: sumOf((r) => r.video_views ?? r.views), engagement: es.length ? es.reduce((s, x) => s + x, 0) : null,
+      };
     }).sort((a, b) => b.posts - a.posts);
   };
   const ranked = engaged.sort((a, b) => b.e! - a.e!);
@@ -290,7 +298,7 @@ export function social(rows: PerfRow[], p: Period) {
     posts: inP.length,
     available,
     reach: sum("reach"), impressions: sum("impressions"), views: sum("views"), videoViews: sum("video_views"),
-    clicks: sum("clicks"), conversions: sum("conversions"), leads: sum("leads"),
+    clicks: sum("clicks"), conversions: sum("conversions"), leads: sum("leads"), watchTime: sum("watch_time_minutes"),
     engagement: engaged.length ? engaged.reduce((s, x) => s + x.e!, 0) : null,
     engagementSample: engaged.length,
     medianEngagementRate: median(rates),
@@ -302,6 +310,35 @@ export function social(rows: PerfRow[], p: Period) {
     top: ranked.slice(0, 5).map((x) => ({ ...x.r, engagement: x.e })),
     bottom: ranked.length > 10 ? ranked.slice(-5).reverse().map((x) => ({ ...x.r, engagement: x.e })) : [],
   };
+}
+
+/** Interactions per week and platform inside the period (only posts that report interactions). */
+export function socialWeekly(rows: PerfRow[], p: Period) {
+  const inP = rows.filter((r) => inPeriod(r.date, p));
+  const platforms = [...new Set(inP.map((r) => r.platform ?? "unknown"))];
+  const weeks: ({ week: string } & Record<string, number | string>)[] = [];
+  for (let d = p.from; d <= p.to; d = addDays(d, 7)) weeks.push({ week: d, ...Object.fromEntries(platforms.map((pl) => [pl, 0])) });
+  for (const r of inP) {
+    const e = engagementOf(r);
+    if (e == null) continue;
+    const w = weeks[Math.floor(daysBetween(p.from, r.date!) / 7)];
+    if (w) w[r.platform ?? "unknown"] = (w[r.platform ?? "unknown"] as number) + e;
+  }
+  return { platforms, weeks };
+}
+
+/**
+ * Audience growth per connected account from daily snapshots: first and last recorded follower count inside the
+ * period. The change is null with a single snapshot, since growth can't be measured from one point.
+ */
+export function audienceGrowth(snapshots: { connection_id: string; snapshot_date: string; followers: number | null }[], p: Period) {
+  const by = new Map<string, { date: string; followers: number }[]>();
+  for (const s of snapshots) if (s.followers != null && inPeriod(s.snapshot_date, p)) by.set(s.connection_id, [...(by.get(s.connection_id) ?? []), { date: s.snapshot_date, followers: s.followers }]);
+  return [...by].map(([id, list]) => {
+    const sorted = list.sort((a, b) => a.date.localeCompare(b.date));
+    const first = sorted[0], last = sorted[sorted.length - 1];
+    return { connection_id: id, from: first.date, to: last.date, start: first.followers, end: last.followers, change: sorted.length > 1 ? last.followers - first.followers : null, points: sorted.length };
+  });
 }
 
 // ---------------------------------------------------------------------------

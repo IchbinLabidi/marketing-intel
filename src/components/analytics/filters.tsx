@@ -14,8 +14,8 @@ const RANGES = [
   { key: "month", label: "This month" }, { key: "quarter", label: "This quarter" }, { key: "custom", label: "Custom" },
 ];
 const TYPES = ["Post", "Carousel", "Reel", "Story", "Video", "Article", "Other"];
-const DETAIL_KEYS = ["pillar", "funnel", "platform", "format", "campaign", "status", "assignee"];
-const KEYS = ["range", "from", "to", "compare", "pillar", "funnel", "platform", "format", "campaign", "status", "assignee"];
+const DETAIL_KEYS = ["pillar", "funnel", "platform", "format", "campaign", "status", "assignee", "account"];
+const KEYS = ["range", "from", "to", "compare", "pillar", "funnel", "platform", "format", "campaign", "status", "assignee", "account"];
 
 /** Shared filters, kept in the URL so the page, the CSV export and the report all read the same selection. */
 export function AnalyticsFilters({
@@ -23,7 +23,7 @@ export function AnalyticsFilters({
 }: {
   preset: string; period: { from: string; to: string }; compare: boolean; simple?: boolean;
   filters: Record<string, string>;
-  options: { pillars: { id: string; name: string }[]; campaigns: { id: string; name: string }[]; platforms: string[]; people: { user_id: string; name: string }[] };
+  options: { pillars: { id: string; name: string }[]; campaigns: { id: string; name: string }[]; platforms: string[]; people: { user_id: string; name: string }[]; accounts?: { id: string; label: string }[] };
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -78,6 +78,7 @@ export function AnalyticsFilters({
         {select("format", "Content type", TYPES.map((t) => ({ value: t, label: t })))}
         {options.campaigns.length ? select("campaign", "Campaign", options.campaigns.map((c) => ({ value: c.id, label: c.name }))) : null}
         {select("status", "Production stage", STAGES.map((s) => ({ value: s, label: STAGE_LABELS[s] })))}
+        {options.accounts && options.accounts.length > 1 ? select("account", "Social account", options.accounts.map((a) => ({ value: a.id, label: a.label })), "All accounts") : null}
         {options.people.length > 1 ? select("assignee", "Collaborator", [...options.people.map((p) => ({ value: p.user_id, label: p.name })), { value: "none", label: "Unassigned" }], "Everyone") : null}
         </>)}
         {simple && detailCount ? (

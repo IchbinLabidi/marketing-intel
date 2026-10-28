@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { todayInZone, addDays } from "@/lib/calendar/time";
 import { FUNNEL_LABELS, FUNNEL_STAGES, PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
 import {
-  filterItems, funnelTargets, insights, localDate, overview, parseStageEvents, previousPeriod, production, social, strategyBalance, teamWorkload, daysBetween,
+  audienceGrowth, filterItems, funnelTargets, insights, socialWeekly, localDate, overview, parseStageEvents, previousPeriod, production, social, strategyBalance, teamWorkload, daysBetween,
   type AnalyticsItem, type AnalyticsTask, type Filters, type Period, type PerfRow,
 } from "@/lib/analytics/compute";
 import { STAGE_LABELS, type ProductionStage } from "@/lib/production/model";
@@ -12,11 +12,15 @@ import { getProjectContext } from "./projects";
 import { getStrategyBundle } from "./strategy";
 import { listChannels } from "./projects";
 import { getMetaConnection } from "./meta";
+import { listSnapshots, listSocialConnections } from "./social";
 import { assignablePeople, getPermissions, isMissingTeamSchema } from "./team";
 import { requireUser } from "./session";
 
 const ITEM_COLUMNS = "id, title, status, production_stage, platform, format, pillar_id, funnel_stage, campaign_id, assignee_id, created_at, scheduled_date, published_at, due_date, approved_at";
-const PERF_COLUMNS = "id, title, platform, format, pillar_id, campaign_id, permalink, publication_date, actual_publication_date, reach, impressions, views, video_views, clicks, likes, comments, shares, saves, conversions, leads, source";
+const PERF_COLUMNS = "id, title, platform, format, pillar_id, campaign_id, permalink, publication_date, actual_publication_date, reach, impressions, views, video_views, clicks, likes, comments, shares, saves, conversions, leads, source, meta_connection_id";
+// Added by migration 0015; read only when the migration is applied.
+const PERF_COLUMNS_0015 = `${PERF_COLUMNS}, watch_time_minutes, social_connection_id`;
+type RawPerf = PerfRow & { publication_date: string | null; actual_publication_date: string | null; meta_connection_id: string | null; social_connection_id?: string | null };
 const PAGE = 1000;
 
 async function all<T>(query: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string; code?: string } | null }>): Promise<T[]> {
@@ -44,11 +48,12 @@ export function parseAnalyticsParams(sp: Record<string, string | string[] | unde
   if (!DATE_RE.test(from) || !DATE_RE.test(to) || from > to || daysBetween(from, to) > 730) { from = addDays(today, -29); to = today; }
   const period: Period = { from, to };
   const compare = one(sp.compare) !== "none";
+  const account = one(sp.account);
   const filters: Filters = {
     pillar: one(sp.pillar), funnel: one(sp.funnel), platform: one(sp.platform), format: one(sp.format),
     campaign: one(sp.campaign), status: one(sp.status), assignee: one(sp.assignee),
   };
-  return { period, preset: presets[preset] || preset === "month" || preset === "quarter" ? preset : "custom", compare, filters };
+  return { period, preset: presets[preset] || preset === "month" || preset === "quarter" ? preset : "custom", compare, filters, account };
 }
 
 export type AnalyticsParams = ReturnType<typeof parseAnalyticsParams>;
@@ -80,9 +85,11 @@ export async function loadAnalytics(projectId: string, sp: Record<string, string
     assignablePeople(project.workspace_id),
     canSeeSocial ? getMetaConnection(projectId) : Promise.resolve(null),
     canSeeSocial
-      ? all<PerfRow & { publication_date: string | null; actual_publication_date: string | null }>((a, b) => db.from("historical_content_items").select(PERF_COLUMNS).eq("project_id", projectId).order("id").range(a, b))
-      : Promise.resolve([]),
+      ? all<RawPerf>((a, b) => db.from("historical_content_items").select(PERF_COLUMNS_0015).eq("project_id", projectId).order("id").range(a, b))
+        .catch(() => all<RawPerf>((a, b) => db.from("historical_content_items").select(PERF_COLUMNS).eq("project_id", projectId).order("id").range(a, b)))
+      : Promise.resolve([] as RawPerf[]),
   ]);
+  const socialAccounts = canSeeSocial ? (await listSocialConnections(projectId)).connections : [];
 
   // While the period is still running, results so far are compared with the same number of days just before it.
   const periodOpen = params.period.to > today;
@@ -121,8 +128,19 @@ export async function loadAnalytics(projectId: string, sp: Record<string, string
   // Social performance: imported/synced posts, filtered by the dimensions they carry.
   const f = params.filters;
   const perfRows: PerfRow[] = perf
-    .map((r) => ({ ...r, date: r.actual_publication_date ?? r.publication_date }))
-    .filter((r) => (!f.platform || r.platform === f.platform) && (!f.pillar || (f.pillar === "none" ? !r.pillar_id : r.pillar_id === f.pillar)) && (!f.campaign || r.campaign_id === f.campaign));
+    .map((r) => ({ ...r, date: r.actual_publication_date ?? r.publication_date, account: r.social_connection_id ?? (r.meta_connection_id ? "meta" : r.source === "meta_api" ? "meta" : null) }))
+    .filter((r) => (!f.platform || r.platform === f.platform) && (!f.pillar || (f.pillar === "none" ? !r.pillar_id : r.pillar_id === f.pillar)) && (!f.campaign || r.campaign_id === f.campaign)
+      && (!params.account || r.account === params.account));
+  const snapshots = canSeeSocial && socialAccounts.length ? await listSnapshots(projectId, addDays(params.period.from, -1), params.period.to) : [];
+  const growth = audienceGrowth(snapshots, { from: addDays(params.period.from, -1), to: params.period.to })
+    .filter((g) => !params.account || g.connection_id === params.account)
+    .filter((g) => !f.platform || socialAccounts.find((c) => c.id === g.connection_id)?.provider === f.platform);
+  const weekly = canSeeSocial ? socialWeekly(perfRows, params.period) : null;
+  // Data freshness: when each source last synced successfully.
+  const freshness = canSeeSocial ? [
+    ...(meta && meta.status !== "disconnected" ? [{ id: "meta", label: `Meta${meta.page_name ? ` · ${meta.page_name}` : ""}`, provider: "meta", lastSuccess: meta.last_sync_status === "failed" ? null : meta.last_sync_at, lastStatus: meta.last_sync_status, status: meta.status }] : []),
+    ...socialAccounts.filter((c) => c.status !== "disconnected").map((c) => ({ id: c.id, label: `${c.provider === "youtube" ? "YouTube" : c.provider === "linkedin" ? "LinkedIn" : "TikTok"} · ${c.account_name ?? c.external_account_id}`, provider: c.provider as string, lastSuccess: c.last_success_at, lastStatus: c.last_sync_status, status: c.status as string })),
+  ] : [];
   const socialNow = canSeeSocial ? social(perfRows, params.period) : null;
   const socialPrev = canSeeSocial ? social(perfRows, prevPeriod) : null;
   const socialIgnoredFilters = ["funnel", "format", "status", "assignee"].filter((k) => f[k as keyof Filters]);
@@ -140,8 +158,10 @@ export async function loadAnalytics(projectId: string, sp: Record<string, string
     balance, targetsOff, hasPillarTargets: bundle.pillars.some((p) => p.target_share != null), hasChannelTargets: channels.some((c) => c.is_active && c.target_posts_per_week != null),
     team, social: socialNow, socialPrev: params.compare ? socialPrev : null, canSeeSocial,
     meta: meta ? { status: meta.status, lastSyncStatus: meta.last_sync_status, error: meta.last_error } : null,
+    otherConnected: socialAccounts.filter((c) => c.status === "connected").length,
+    failingAccounts: socialAccounts.filter((c) => c.status === "needs_attention" || c.status === "permission_denied" || (c.status === "connected" && c.last_sync_status === "failed")).map((c) => c.account_name ?? c.provider),
     kpiCount: bundle.kpis.length, stageLabel: (s) => STAGE_LABELS[s as ProductionStage] ?? s,
-    links: { strategy: `${base}/strategy`, calendar: `${base}/calendar?view=list`, overdue: `${base}/calendar?view=list&overdue=1`, production: `${base}/production`, team: "/team/workload", history: `${base}/history`, settings: `${base}/settings` },
+    links: { strategy: `${base}/strategy`, calendar: `${base}/calendar?view=list`, overdue: `${base}/calendar?view=list&overdue=1`, production: `${base}/production`, team: "/team/workload", history: `${base}/history`, settings: `${base}/settings`, integrations: `${base}/integrations` },
   };
   const issues = actionCenter(ceoInput);
   const ceo = { issues, summary: executiveSummary(ceoInput, issues), answers: fiveQuestions(ceoInput, issues), explain: explain(ceoInput) };
@@ -155,6 +175,10 @@ export async function loadAnalytics(projectId: string, sp: Record<string, string
       campaigns: bundle.campaigns.map((c) => ({ id: c.id, name: c.name })),
       platforms: [...new Set([...channels.map((c) => c.platform as string), ...items.map((i) => i.platform).filter((x): x is string => Boolean(x))])],
       people: canSeeTeam ? peopleRows : peopleRows.filter((p) => p.user_id === user.id),
+      accounts: [
+        ...(meta && meta.status !== "disconnected" ? [{ id: "meta", label: `Meta${meta.page_name ? ` · ${meta.page_name}` : ""}` }] : []),
+        ...socialAccounts.filter((c) => c.status !== "disconnected").map((c) => ({ id: c.id, label: `${c.provider === "youtube" ? "YouTube" : c.provider === "linkedin" ? "LinkedIn" : "TikTok"} · ${c.account_name ?? c.external_account_id}` })),
+      ],
     },
     counts: { allItems: items.length, filteredItems: filtered.length, tasks: tasks.length, stageEvents: events.length, perfRows: perf.length },
     overview: ov, overviewPrev: params.compare ? ovPrev : null,
@@ -163,6 +187,7 @@ export async function loadAnalytics(projectId: string, sp: Record<string, string
     production: prod, productionPrev: params.compare ? prodPrev : null,
     team, myWork,
     social: socialNow, socialPrev: params.compare ? socialPrev : null, socialIgnoredFilters, meta,
+    socialAccounts, growth, weekly, freshness,
     insights: found,
     pillarNames: Object.fromEntries(pillarNames),
     campaignNames: Object.fromEntries(bundle.campaigns.map((c) => [c.id, c.name])),
