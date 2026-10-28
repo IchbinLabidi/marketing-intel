@@ -33,7 +33,7 @@ export default async function DashboardPage() {
       <PageHeader
         eyebrow={workspace.name}
         title={firstName ? `Hello, ${firstName}` : "Dashboard"}
-        description={`${projects.length} active project${projects.length === 1 ? "" : "s"}. Pick up where each one left off.`}
+        description={`${projects.length} active project${projects.length === 1 ? "" : "s"}. Open a project's Analytics to see what needs your attention.`}
         actions={<CreateProjectDialog disabled={!canEdit(workspace.role)} />}
       />
 

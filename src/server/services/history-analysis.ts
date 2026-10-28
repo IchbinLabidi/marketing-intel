@@ -19,7 +19,7 @@ export const loadHistoryPerformance = cache(async (projectId: string) => {
   return { project, role, items, bundle, performance };
 });
 
-/** Everything the Historical Intelligence screens and AI actions need, loaded once per request. */
+/** Everything the Content history screens and AI actions need, loaded once per request. */
 export const loadHistoryAnalysis = cache(async (projectId: string) => {
   const { project, role } = await getProjectContext(projectId);
   const [items, bundle, channels, brand] = await Promise.all([

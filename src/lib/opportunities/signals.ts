@@ -47,7 +47,7 @@ export type SignalInput = {
   activePlatforms: Platform[];
   competitorItems: { id: string; competitor: string; platform: Platform | null; title: string | null; topic: string | null; caption: string | null; likes: number | null; comments: number | null; shares: number | null; published_at: string | null }[];
   today: string; // YYYY-MM-DD
-  /** latest SERP analysis per keyword (SERP Intelligence), real Google results */
+  /** latest SERP analysis per keyword (Google search), real Google results */
   searchItems?: { id: string; keyword: string; country: string; language: string; intent: string | null; ownPosition: number | null; questions: string[]; related: string[]; resultsRead: number; date: string }[];
   /** results of published calendar posts vs their objective (editorial feedback loop) */
   learnings?: { key: string; statement: string; n: number; ratio: number; platform: Platform; format: string | null; ref_ids: string[] }[];
@@ -264,12 +264,12 @@ export function buildSignals(input: SignalInput): Signal[] {
     }
   }
 
-  // --- Search demand: real Google results for keywords analysed in SERP Intelligence ---------------------------
+  // --- Search demand: real Google results for keywords analysed in Google search ---------------------------
   for (const q of (input.searchItems ?? []).slice(0, 12)) {
     out.push({
       kind: "search_demand", category: "search", platform: "blog", pillar_id: null, format: null,
       statement: `Google (${q.country.toUpperCase()}, ${q.language}) for "${q.keyword}": ${q.intent ?? "unknown"} intent; your site ${q.ownPosition ? `ranks #${q.ownPosition}` : "is not in the results"}${q.questions.length ? `; people also ask: ${q.questions.slice(0, 3).map((x) => `"${x}"`).join(", ")}` : ""}${q.related.length ? `; related searches: ${q.related.slice(0, 3).join(", ")}` : ""}.`,
-      method: "SERP Intelligence snapshot (real Google results via SerpApi). No search volume: the provider plan doesn't return it.",
+      method: "Google search snapshot (real Google results via SerpApi). No search volume: the provider plan doesn't return it.",
       period: { from: q.date, to: q.date }, n: q.resultsRead, lift: null, gap: q.ownPosition ? null : 10,
       metrics: { keyword: q.keyword, intent: q.intent, own_position: q.ownPosition, questions: q.questions.length }, ref_ids: [q.id],
     });

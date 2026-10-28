@@ -174,7 +174,7 @@ export function OpportunitiesApp({
           {activeFilters ? <Button size="sm" variant="ghost" onClick={() => setFilters(NO_FILTERS)}><X /> Clear filters</Button> : null}
         </div>
         {!competitorData ? (
-          <p className="text-xs text-muted-foreground">No competitor posts yet, so differentiation is left out of scores and no competitor insight is claimed. Competitor Intelligence (Phase 6) will add them.</p>
+          <p className="text-xs text-muted-foreground">No competitor posts yet, so differentiation is left out of scores and no competitor insight is claimed. Competitors (Phase 6) will add them.</p>
         ) : null}
       </section>
 
@@ -183,7 +183,7 @@ export function OpportunitiesApp({
         <EmptyState
           icon={Lightbulb}
           title="No opportunities yet"
-          description={hasHistory ? "Generate opportunities: they are built from your strategy and the signals calculated from your synced posts, each with its evidence and score." : "Connect Meta or import past content in Historical Intelligence first, so opportunities can be grounded in real results. You can still generate hypotheses from the strategy."}
+          description={hasHistory ? "Generate opportunities: they are built from your strategy and the signals calculated from your synced posts, each with its evidence and score." : "Connect Meta or import past content in Content history first, so opportunities can be grounded in real results. You can still generate hypotheses from the strategy."}
           action={!readOnly && aiEnabled ? <Button onClick={() => setDialog({ kind: "generate", initial: {} })}><Sparkles /> Generate opportunities</Button> : null}
         />
       ) : !visible.length ? (

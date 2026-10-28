@@ -30,7 +30,7 @@ export default async function StrategyPage({ params }: PageProps<"/p/[projectId]
       <PageHeader
         eyebrow={`${project.name} · ${completeness.percent}% complete`}
         title="Marketing strategy"
-        description="The brief every AI feature works from: opportunities, calendars and copy all reference it."
+        description="Your goals, audiences, content themes (pillars) and targets. Everything else, including Analytics, is measured against it, so review it each quarter."
       />
       <Tabs defaultValue="foundations">
         <TabsList>

@@ -14,7 +14,7 @@ export function ShareBars({
         <li key={r.key} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3 text-[13px]">
           <span className="truncate" title={r.label}>{r.label}</span>
           <span className="relative h-2 rounded-full bg-secondary">
-            <span className={cn("block h-2 rounded-full", r.status === "under" ? "bg-warning" : r.status === "over" ? "bg-chart-a" : "bg-chart-b")} style={{ width: `${Math.min(100, r.share)}%` }} />
+            <span className={cn("block h-2 rounded-full", r.status === "under" ? "bg-warning" : "bg-chart-b")} style={{ width: `${Math.min(100, r.share)}%` }} />
             {r.target != null ? <span className="absolute -top-1 h-4 w-0.5 rounded bg-foreground/70" style={{ left: `calc(${Math.min(100, r.target)}% - 1px)` }} aria-hidden /> : null}
           </span>
           <span className="whitespace-nowrap text-right tabular-nums text-muted-foreground">

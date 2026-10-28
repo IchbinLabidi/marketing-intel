@@ -15,7 +15,7 @@ export default async function DataDeletionStatus({ searchParams }: { searchParam
       ) : (
         <p>
           To delete the data synchronised from Facebook and Instagram, remove this app in Facebook → Settings → Apps and websites, or
-          use “Disconnect Meta” with “also delete synced posts” in the project’s Historical Intelligence page.
+          use “Disconnect Meta” with “also delete synced posts” in the project’s Content history page.
         </p>
       )}
     </main>

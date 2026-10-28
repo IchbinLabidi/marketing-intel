@@ -89,7 +89,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     <div className="space-y-6">
       <PageHeader
         title="Editorial Calendar"
-        description="Plan, schedule and track posts. Approve content in Production, book an internal slot, then verify publication with the connected platform."
+        description="What gets published, when and where. Use it to check that every week is covered and nothing is late. Content is approved in Production before it is scheduled here."
         actions={
           <>
             {selectedPlan && editable ? <DeleteCalendarButton projectId={projectId} calendarId={selectedPlan.id} name={selectedPlan.name} /> : null}

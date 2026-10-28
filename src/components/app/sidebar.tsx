@@ -254,6 +254,7 @@ function NavList({ items, pathname }: { items: (NavItem & { count?: number })[];
             <Link
               href={item.href}
               aria-current={active ? "page" : undefined}
+              title={item.hint}
               className={cn(
                 "group flex h-8 items-center gap-2.5 rounded-md px-2 text-[13px] transition-colors hover:bg-sidebar-accent hover:text-foreground",
                 active && "bg-card font-medium text-foreground shadow-xs ring-1 ring-sidebar-border",

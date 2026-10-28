@@ -42,7 +42,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <BackLink href={`/p/${projectId}/seo`}>SERP Intelligence</BackLink>
+          <BackLink href={`/p/${projectId}/seo`}>Google search</BackLink>
           <h1 className="mt-1.5 text-[22px] font-semibold leading-tight tracking-[-0.02em]" dir="auto">{a.keyword}</h1>
           <p className="text-[13px] text-muted-foreground">Google · {label(a)}{a.location ? ` · searched from ${a.location.split(",")[0]}` : ""} · via {a.provider === "serpapi" ? "SerpApi" : a.provider}{a.total_results ? ` · about ${a.total_results.toLocaleString("en")} results` : ""}</p>
         </div>

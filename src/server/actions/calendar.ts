@@ -174,7 +174,7 @@ export async function confirmPublishedAction(projectId: string, id: string, inpu
     const current = await getPost(projectId, id);
     if (!current || !["facebook", "instagram"].includes(current.platform || "")) throw new Error("Publication verification supports connected Facebook and Instagram accounts.");
     const connection = await getMetaConnection(projectId);
-    if (!connection || connection.status !== "active") throw new Error("Connect or reconnect Meta in Historical Intelligence first.");
+    if (!connection || connection.status !== "active") throw new Error("Connect or reconnect Meta in Content history first.");
     const canonical = (value: string) => { const url = new URL(value); return `${url.origin}${url.pathname.replace(/\/$/, "")}`; };
     const link = canonical(input.url);
     const db = await createClient();
@@ -182,7 +182,7 @@ export async function confirmPublishedAction(projectId: string, id: string, inpu
       .eq("project_id", projectId).eq("source", "meta_api").eq("platform", current.platform!).eq("meta_connection_id", connection.id)
       .in("permalink", [input.url, link, `${link}/`]).limit(1).maybeSingle();
     if (error) throw error;
-    if (!synced?.external_id) throw new Error("This link is not in the connected account's synced posts. Run Sync now in Historical Intelligence, then try again.");
+    if (!synced?.external_id) throw new Error("This link is not in the connected account's synced posts. Run Sync now in Content history, then try again.");
     const token = (await readMetaTokens(connection.id)).page;
     if (!token) throw new Error("Reconnect Meta to verify this post.");
     const live = await graphGet<{ id: string; created_time?: string; timestamp?: string; permalink_url?: string; permalink?: string }>(synced.external_id, { fields: current.platform === "facebook" ? "id,created_time,permalink_url" : "id,timestamp,permalink" }, token);

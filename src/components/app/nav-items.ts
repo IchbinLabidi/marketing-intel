@@ -19,7 +19,8 @@ import {
 import type { Permission } from "@/lib/permissions";
 
 /** `soon` marks modules that are designed but not built yet (they render a roadmap page). */
-export type NavItem = { label: string; href: string; icon: LucideIcon; exact?: boolean; soon?: boolean; permission?: Permission };
+/** `hint` is a one-line plain explanation shown on hover. */
+export type NavItem = { label: string; href: string; icon: LucideIcon; exact?: boolean; soon?: boolean; permission?: Permission; hint?: string };
 export type NavSection = { label?: string; items: NavItem[] };
 
 export const GLOBAL_NAV: NavItem[] = [
@@ -36,29 +37,29 @@ export function projectNavSections(projectId: string): NavSection[] {
   return [
     {
       items: [
-        { label: "Overview", href: base, icon: Compass, exact: true },
-        { label: "Strategy", href: `${base}/strategy`, icon: Target, permission: "strategy.view" },
+        { label: "Overview", hint: "Brand profile, channels and where to start", href: base, icon: Compass, exact: true },
+        { label: "Strategy", hint: "Goals, audiences, content themes and targets", href: `${base}/strategy`, icon: Target, permission: "strategy.view" },
       ],
     },
     {
-      label: "Intelligence",
+      label: "Learn",
       items: [
-        { label: "Content history", href: `${base}/history`, icon: History, permission: "intelligence.view" },
-        { label: "Competitors", href: `${base}/competitors`, icon: Swords, permission: "intelligence.view" },
-        { label: "Search (SERP)", href: `${base}/seo`, icon: Search, permission: "seo.view" },
+        { label: "Content history", hint: "How your past posts performed", href: `${base}/history`, icon: History, permission: "intelligence.view" },
+        { label: "Competitors", hint: "What competitors publish and how it performs", href: `${base}/competitors`, icon: Swords, permission: "intelligence.view" },
+        { label: "Google search", hint: "What people search for on Google", href: `${base}/seo`, icon: Search, permission: "seo.view" },
       ],
     },
     {
-      label: "Content",
+      label: "Plan & produce",
       items: [
-        { label: "Opportunities", href: `${base}/opportunities`, icon: Lightbulb, permission: "opportunities.view" },
-        { label: "Calendar", href: `${base}/calendar`, icon: CalendarDays, permission: "calendar.view" },
-        { label: "Production", href: `${base}/production`, icon: PenSquare },
+        { label: "Opportunities", hint: "Ranked ideas for what to create next", href: `${base}/opportunities`, icon: Lightbulb, permission: "opportunities.view" },
+        { label: "Calendar", hint: "What gets published, when and where", href: `${base}/calendar`, icon: CalendarDays, permission: "calendar.view" },
+        { label: "Production", hint: "Content being written, reviewed and approved", href: `${base}/production`, icon: PenSquare },
       ],
     },
     {
-      label: "Measure",
-      items: [{ label: "Analytics", href: `${base}/analytics`, icon: BarChart3, permission: "calendar.view" }],
+      label: "Results",
+      items: [{ label: "Analytics", hint: "Is the plan delivered, and what needs your attention", href: `${base}/analytics`, icon: BarChart3, permission: "calendar.view" }],
     },
   ];
 }

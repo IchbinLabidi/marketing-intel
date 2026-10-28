@@ -33,7 +33,7 @@ function igFormat(m: BDMedia) {
 
 function explain(e: unknown): never {
   if (e instanceof MetaApiError) {
-    if (e.isTokenError) throw new ProviderError("The Meta connection expired. Reconnect Meta in Historical Intelligence.", "needs_config");
+    if (e.isTokenError) throw new ProviderError("The Meta connection expired. Reconnect Meta in Content history.", "needs_config");
     if (e.isRateLimit) throw new ProviderError(`Meta rate limit reached (code ${e.code}: ${e.message}). Meta lifts it within about an hour; collect again later.`, "failed", true);
     if (e.code === 110 || /business|creator|user/i.test(e.message)) {
       throw new ProviderError("Instagram only exposes public Business or Creator accounts through its API. This account is personal, private or the username is wrong.");
@@ -50,7 +50,7 @@ export const instagramProvider: DataProvider = {
   platform: "instagram",
   source: "meta_api",
   availability(creds) {
-    if (!creds.meta) return { ok: false, status: "needs_config", reason: "Connect Meta (Facebook Page + Instagram professional account) in Historical Intelligence." };
+    if (!creds.meta) return { ok: false, status: "needs_config", reason: "Connect Meta (Facebook Page + Instagram professional account) in Content history." };
     if (!creds.meta.igUserId) return { ok: false, status: "needs_config", reason: "The connected Facebook Page has no linked Instagram professional account." };
     return { ok: true };
   },
@@ -131,7 +131,7 @@ export const facebookProvider: DataProvider = {
   platform: "facebook",
   source: "meta_api",
   availability(creds) {
-    if (!creds.meta) return { ok: false, status: "needs_config", reason: "Connect Meta in Historical Intelligence." };
+    if (!creds.meta) return { ok: false, status: "needs_config", reason: "Connect Meta in Content history." };
     // Without the App Review feature every request is refused, so it is only attempted once the approval is declared
     if (process.env.META_PAGE_PUBLIC_CONTENT_ACCESS !== "true") {
       return { ok: false, status: "needs_config", reason: "Meta only shares other Pages' posts with apps approved for “Page Public Content Access” (Meta app → App Review → Permissions and Features). Once approved, set META_PAGE_PUBLIC_CONTENT_ACCESS=true in .env.local." };

@@ -51,7 +51,7 @@ export function evaluatePublished(
       ...h, likes: h.likes ?? null, comments: h.comments ?? null, shares: h.shares ?? null, saves: h.saves ?? null, reach: h.reach ?? null,
       publication_date: h.publication_date ?? null, actual_publication_date: h.actual_publication_date ?? null,
     }));
-    // engagement rate only where reach is consistent (same rule as Historical Intelligence)
+    // engagement rate only where reach is consistent (same rule as Content history)
     const reachOk = usableReach(pool);
     const values = pool.map((h) => kpiValue(kpi, h, kpi !== "engagement_rate" || reachOk(h))).filter((v): v is number => v != null);
     const baseline = values.length >= 5 ? median(values) : null;

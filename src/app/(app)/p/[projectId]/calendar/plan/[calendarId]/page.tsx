@@ -40,7 +40,7 @@ export default async function Page({ params }: { params: Promise<{ projectId: st
     return (
       <div className="space-y-4">
         <BackLink href={`/p/${projectId}/calendar?plan=${cal.id}`}>Editorial Calendar</BackLink>
-        <p className="rounded-xl border bg-card p-4 text-[13px]">“{cal.name}” was created before the editorial engine (from Historical Intelligence or by hand). Open it in the Editorial Calendar, or plan a new month with the engine.</p>
+        <p className="rounded-xl border bg-card p-4 text-[13px]">“{cal.name}” was created before the editorial engine (from Content history or by hand). Open it in the Editorial Calendar, or plan a new month with the engine.</p>
       </div>
     );
   }

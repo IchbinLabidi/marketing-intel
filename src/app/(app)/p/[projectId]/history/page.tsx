@@ -28,7 +28,7 @@ import { MetaConnectionPanel } from "@/components/history/meta-connection";
 import { PerformanceView } from "@/components/history/performance-view";
 import { formatDateTime } from "@/lib/format";
 
-export const metadata = { title: "Historical Intelligence" };
+export const metadata = { title: "Content history" };
 
 const TABS = [
   { key: "performance", label: "Performance" },
@@ -72,8 +72,8 @@ export default async function HistoryPage({ params, searchParams }: PageProps<"/
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Historical Intelligence"
-        description="Your past Facebook and Instagram posts, synchronised from Meta with their real metrics, and what they teach you: what performs, what repeats, what’s missing."
+        title="Content history"
+        description="How your past Facebook and Instagram posts really performed, synced from Meta. Use it to see what your audience responds to before planning more."
         actions={
           !readOnly ? (
             <>
@@ -107,7 +107,7 @@ export default async function HistoryPage({ params, searchParams }: PageProps<"/
       />
 
       <TabNav
-        label="Historical Intelligence sections"
+        label="Content history sections"
         items={TABS.map((t) => ({
           key: t.key,
           label: t.label,

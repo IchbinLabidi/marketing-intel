@@ -13,6 +13,7 @@ export function Stat({
   delta,
   goodWhen = "up",
   icon: Icon,
+  info,
   className,
 }: {
   label: React.ReactNode;
@@ -21,6 +22,8 @@ export function Stat({
   delta?: number | null;
   goodWhen?: "up" | "down";
   icon?: LucideIcon;
+  /** Explanation control (e.g. an InfoTip) shown after the label. */
+  info?: React.ReactNode;
   className?: string;
 }) {
   const hasDelta = typeof delta === "number" && Number.isFinite(delta);
@@ -31,6 +34,7 @@ export function Stat({
       <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         {Icon ? <Icon className="size-3.5" aria-hidden /> : null}
         <span className="truncate">{label}</span>
+        {info ? <span className="-my-1 ml-auto">{info}</span> : null}
       </div>
       <div className="mt-1.5 flex items-baseline gap-2">
         <span className="truncate text-[22px] font-semibold leading-none tracking-[-0.02em] tabular-nums">{value}</span>

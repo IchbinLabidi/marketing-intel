@@ -14,6 +14,7 @@ import { STAGE_LABELS, type ProductionStage } from "@/lib/production/model";
 import type { AnalyticsData } from "@/server/services/analytics";
 import { cn } from "@/lib/utils";
 import { ShareBars, WeeklyColumns } from "./charts";
+import { InfoTip } from "./info-tip";
 
 const n = (v: number | null | undefined, digits = 0) => (v == null ? "—" : v.toLocaleString("en", { maximumFractionDigits: digits, minimumFractionDigits: 0 }));
 const change = (now: number | null | undefined, prev: number | null | undefined) => (now == null || prev == null || prev === 0 ? null : ((now - prev) / prev) * 100);
@@ -40,16 +41,16 @@ export function OverviewSection({ data }: { data: AnalyticsData }) {
   const weeks = ((Date.parse(data.params.period.to) - Date.parse(data.params.period.from)) / 86_400_000 + 1) / 7;
   const prevHint = p ? `vs ${periodLabel(data.prevPeriod)}` : undefined;
   return (
-    <Section id="overview" title="Overview" description={`${periodLabel(data.params.period)}. Counts in the period compare with the previous period of the same length; current workload is as of today.`}>
+    <Section id="overview" title="Overview" description={`${periodLabel(data.params.period)}. ${data.periodOpen ? `The period isn't over, so results so far are compared with ${periodLabel(data.prevPeriod)}` : "Counts in the period compare with the previous period of the same length"}; current workload is as of today.`}>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Planned in period" icon={CalendarCheck2} value={n(o.planned)} delta={p ? change(o.planned, p.planned) : null} hint={p ? `${n(p.planned)} ${prevHint}` : "Planned publication date in the period"} />
-        <Stat label="Published in period" icon={Send} value={n(o.published)} delta={p ? change(o.published, p.published) : null} hint={p ? `${n(p.published)} ${prevHint}` : "Verified publications"} />
-        <Stat label="Completion rate" icon={CheckCircle2} value={o.completionRate == null ? "—" : `${o.completionRate.toFixed(0)}%`} hint={o.completionBase ? `${Math.round(((o.completionRate ?? 0) / 100) * o.completionBase)} of ${o.completionBase} past planned dates published` : "No planned dates have passed yet"} />
-        <Stat label="Approved per week" icon={TrendingUp} value={n(o.approvedInPeriod / weeks, 1)} delta={p ? change(o.approvedInPeriod, p.approvedInPeriod) : null} hint={`${o.approvedInPeriod} approved in the period`} />
-        <Stat label="In production now" icon={Clock} value={n(o.inProduction)} hint="Brief or In Production stage" />
-        <Stat label="Awaiting approval now" icon={Users} value={n(o.awaitingApproval)} hint="Internal review or approval stage" />
-        <Stat label="Overdue now" icon={AlertTriangle} value={n(o.overdueContent)} hint={`${o.overdueTasks} overdue task${o.overdueTasks === 1 ? "" : "s"} · internal deadline passed`} className={o.overdueContent ? "border-destructive/30" : undefined} />
-        <Stat label="Upcoming (7 days)" icon={CalendarCheck2} value={n(o.upcoming)} hint="Planned, not yet published" />
+        <Stat label="Planned in period" info={<InfoTip expert info={data.ceo.explain.planned} />} icon={CalendarCheck2} value={n(o.planned)} delta={p && !data.periodOpen ? change(o.planned, p.planned) : null} hint={p ? `${n(p.planned)} ${prevHint}` : "Planned publication date in the period"} />
+        <Stat label="Published in period" info={<InfoTip expert info={data.ceo.explain.published} />} icon={Send} value={n(o.published)} delta={p ? change(o.published, p.published) : null} hint={p ? `${n(p.published)} ${prevHint}` : "Verified publications"} />
+        <Stat label="Completion rate" info={<InfoTip expert info={data.ceo.explain.completion} />} icon={CheckCircle2} value={o.completionRate == null ? "—" : `${o.completionRate.toFixed(0)}%`} hint={o.completionBase ? `${Math.round(((o.completionRate ?? 0) / 100) * o.completionBase)} of ${o.completionBase} past planned dates published` : "No planned dates have passed yet"} />
+        <Stat label="Approved per week" info={<InfoTip expert info={data.ceo.explain.approvedPerWeek} />} icon={TrendingUp} value={n(o.approvedInPeriod / weeks, 1)} delta={p ? change(o.approvedInPeriod, p.approvedInPeriod) : null} hint={`${o.approvedInPeriod} approved in the period`} />
+        <Stat label="In production now" info={<InfoTip expert info={data.ceo.explain.inProduction} />} icon={Clock} value={n(o.inProduction)} hint="Brief or In Production stage" />
+        <Stat label="Awaiting approval now" info={<InfoTip expert info={data.ceo.explain.awaitingApproval} />} icon={Users} value={n(o.awaitingApproval)} hint="Internal review or approval stage" />
+        <Stat label="Overdue now" icon={AlertTriangle} info={<InfoTip expert info={data.ceo.explain.overdue} />} value={n(o.overdueContent)} hint={`${o.overdueTasks} overdue task${o.overdueTasks === 1 ? "" : "s"} · internal deadline passed`} className={o.overdueContent ? "border-destructive/30" : undefined} />
+        <Stat label="Upcoming (7 days)" info={<InfoTip expert info={data.ceo.explain.upcoming} />} icon={CalendarCheck2} value={n(o.upcoming)} hint="Planned, not yet published" />
       </div>
     </Section>
   );
@@ -96,15 +97,15 @@ export function BalanceSection({ data }: { data: AnalyticsData }) {
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
           <Card>
-            <CardHeader><CardTitle>Content pillars</CardTitle><CardDescription>{data.targetsOff ? "Filters are applied, so shares are not compared with the strategy targets (they describe the whole plan)." : data.hasPillarTargets ? "Share of planned items vs each pillar's target share." : <>No pillar has a target share yet. <Link className="text-primary hover:underline" href={`${base}/strategy`}>Set targets in the strategy</Link>.</>}</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-1.5">Content pillars <InfoTip expert info={data.ceo.explain.pillars} /></CardTitle><CardDescription>{data.targetsOff ? "Filters are applied, so shares are not compared with the strategy targets (they describe the whole plan)." : data.hasPillarTargets ? "Share of planned items vs each pillar's target share." : <>No pillar has a target share yet. <Link className="text-primary hover:underline" href={`${base}/strategy`}>Set targets in the strategy</Link>.</>}</CardDescription></CardHeader>
             <CardContent><ShareBars rows={b.pillars} empty="No pillars defined." /></CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle>Funnel stages</CardTitle><CardDescription>{b.funnelTagged} of {b.total} planned items have a funnel stage. {data.targetsOff ? "Filters are applied, so shares are not compared with targets." : data.hasFunnelTargets ? "Targets come from percentages written in the strategy's funnel notes." : "No numeric funnel targets are set, so only the distribution is shown."}</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-1.5">Funnel stages <InfoTip expert info={data.ceo.explain.funnel} /></CardTitle><CardDescription>{b.funnelTagged} of {b.total} planned items have a funnel stage. {data.targetsOff ? "Filters are applied, so shares are not compared with targets." : data.hasFunnelTargets ? "Targets come from percentages written in the strategy's funnel notes." : "No numeric funnel targets are set, so only the distribution is shown."}</CardDescription></CardHeader>
             <CardContent><ShareBars rows={b.funnel} /></CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle>Platforms</CardTitle><CardDescription>{data.platformTargetsOff ? "Filters are applied, so planned posts are not compared with channel targets." : data.hasChannelTargets ? "Planned posts vs the channel's posts-per-week target, scaled to the period." : <>No channel has a posting target. <Link className="text-primary hover:underline" href={`${base}/settings`}>Add one in project settings</Link>.</>}</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-1.5">Platforms <InfoTip expert info={data.ceo.explain.platforms} /></CardTitle><CardDescription>{data.platformTargetsOff ? "Filters are applied, so planned posts are not compared with channel targets." : data.hasChannelTargets ? "Planned posts vs the channel's posts-per-week target, scaled to the period." : <>No channel has a posting target. <Link className="text-primary hover:underline" href={`${base}/settings`}>Add one in project settings</Link>.</>}</CardDescription></CardHeader>
             <CardContent>
               <Table>
                 <TableHeader><TableRow><TableHead>Platform</TableHead><TableHead className="text-right">Planned</TableHead><TableHead className="text-right">Expected</TableHead><TableHead className="text-right">Difference</TableHead></TableRow></TableHeader>
@@ -166,19 +167,19 @@ export function ProductionSection({ data }: { data: AnalyticsData }) {
         <Stat label="Approved" value={n(pr.approved)} delta={pp ? change(pr.approved, pp.approved) : null} hint={hint(pr.approved, pp?.approved)} />
         <Stat label="Published" value={n(pr.published)} delta={pp ? change(pr.published, pp.published) : null} hint={hint(pr.published, pp?.published)} />
         <Stat label="Overdue now" value={n(pr.overdue)} hint="Internal deadline passed, not approved" />
-        <Stat label="Median production time" value={days(pr.medianProductionDays)} goodWhen="down" delta={pp ? change(pr.medianProductionDays, pp.medianProductionDays) : null} hint={pr.productionSample ? `Created → approved, ${pr.productionSample} item${pr.productionSample === 1 ? "" : "s"}` : "No item approved in the period"} />
-        <Stat label="Median approval time" value={days(pr.medianApprovalDays)} goodWhen="down" delta={pp ? change(pr.medianApprovalDays, pp.medianApprovalDays) : null} hint={pr.approvalSample ? `First review → approved, ${pr.approvalSample} item${pr.approvalSample === 1 ? "" : "s"}` : "No reviewed item approved in the period"} />
+        <Stat label="Median production time" info={<InfoTip expert info={data.ceo.explain.productionTime} />} value={days(pr.medianProductionDays)} goodWhen="down" delta={pp ? change(pr.medianProductionDays, pp.medianProductionDays) : null} hint={pr.productionSample ? `Created → approved, ${pr.productionSample} item${pr.productionSample === 1 ? "" : "s"}` : "No item approved in the period"} />
+        <Stat label="Median approval time" info={<InfoTip expert info={data.ceo.explain.approvalTime} />} value={days(pr.medianApprovalDays)} goodWhen="down" delta={pp ? change(pr.medianApprovalDays, pp.medianApprovalDays) : null} hint={pr.approvalSample ? `First review → approved, ${pr.approvalSample} item${pr.approvalSample === 1 ? "" : "s"}` : "No reviewed item approved in the period"} />
       </div>
       <div className="grid gap-3 lg:grid-cols-5">
         <Card className="lg:col-span-3">
-          <CardHeader><CardTitle>Throughput per week</CardTitle><CardDescription>Ideas created, items approved and items published, by week of the period.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-1.5">Throughput per week <InfoTip expert info={data.ceo.explain.throughput} /></CardTitle><CardDescription>Ideas created, items approved and items published, by week of the period.</CardDescription></CardHeader>
           <CardContent>
             <WeeklyColumns weeks={pr.weeks} series={[{ key: "created", label: "Created", className: "bg-chart-a" }, { key: "approved", label: "Approved", className: "bg-chart-b" }, { key: "published", label: "Published", className: "bg-success" }]} />
           </CardContent>
         </Card>
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Where work waits now</CardTitle>
+            <CardTitle className="flex items-center gap-1.5">Where work waits now <InfoTip expert info={data.ceo.explain.waits} /></CardTitle>
             <CardDescription>{pr.bottleneck ? <>Longest wait: <span className="font-medium text-foreground">{stage(pr.bottleneck.stage)}</span> (items × median days in stage).</> : "Nothing is waiting beyond the idea stage."}</CardDescription>
           </CardHeader>
           <CardContent>
@@ -263,7 +264,7 @@ export function TeamSection({ data }: { data: AnalyticsData }) {
 export function SocialSection({ data }: { data: AnalyticsData }) {
   const base = `/p/${data.project.id}`;
   if (!data.access.canSeeSocial) {
-    return <Section id="social" title="Social performance"><Alert title="Not available with your role">Performance data comes from Historical Intelligence, which your role can&apos;t view.</Alert></Section>;
+    return <Section id="social" title="Social performance"><Alert title="Not available with your role">Performance data comes from Content history, which your role can&apos;t view.</Alert></Section>;
   }
   const s = data.social!, sp = data.socialPrev, meta = data.meta;
   const status = !meta || meta.status === "disconnected"
@@ -276,23 +277,23 @@ export function SocialSection({ data }: { data: AnalyticsData }) {
         ? { tone: "warning" as const, text: "Meta is connected but no Page is selected yet, so nothing has synced." }
         : { tone: "success" as const, text: `Meta connected${meta.page_name ? ` (${meta.page_name}${meta.ig_username ? ` · @${meta.ig_username}` : ""})` : ""}. ${meta.last_sync_at ? `Last sync ${new Date(meta.last_sync_at).toLocaleString("en-GB", { timeZone: data.tz })}.` : meta.last_sync_status === "succeeded" ? "Last sync succeeded." : "No sync has run yet."}${meta.ig_user_id && s.posts && !s.byPlatform.some((r) => r.key === "instagram") ? " No Instagram posts with data in this period." : ""}` };
   const metric = (label: string, value: number | null, prev: number | null | undefined, key: keyof typeof s.available | null, digits = 0, suffix = "") => (
-    <Stat label={label} value={value == null ? <span className="text-base text-muted-foreground">Not available</span> : `${n(value, digits)}${suffix}`} delta={sp && value != null ? change(value, prev) : null}
+    <Stat label={label} info={<InfoTip expert info={data.ceo.explain[({ Reach: "reach", Engagements: "engagement", "Link clicks": "clicks" } as Record<string, string>)[label] ?? ""]} />} value={value == null ? <span className="text-base text-muted-foreground">Not available</span> : `${n(value, digits)}${suffix}`} delta={sp && value != null ? change(value, prev) : null}
       hint={value == null ? (key && s.posts ? "Not returned for these posts" : "No posts in the period") : key ? `${s.available[key]} of ${s.posts} posts report it` : undefined} />
   );
   return (
     <Section id="social" title="Social performance" description={`Published posts in the period from connected or imported sources (${s.posts} post${s.posts === 1 ? "" : "s"}). A dash or “Not available” means the source didn't return the metric; zero means it returned zero.`}
-      actions={<Button asChild size="sm" variant="outline" className="print:hidden"><Link href={`${base}/history`}>Historical Intelligence</Link></Button>}>
+      actions={<Button asChild size="sm" variant="outline" className="print:hidden"><Link href={`${base}/history`}>Content history</Link></Button>}>
       <Alert variant={status.tone} title={status.tone === "success" ? undefined : "Data source"} action={status.tone !== "success" ? <Button asChild size="sm" variant="outline" className="print:hidden"><Link href={`${base}/history`}><PlugZap className="size-3.5" /> Manage connection</Link></Button> : undefined}>{status.text}</Alert>
       {data.socialIgnoredFilters.length ? <p className="text-xs text-muted-foreground">Funnel, content type, production stage and collaborator filters don&apos;t apply here: imported and synced posts don&apos;t carry those fields reliably.</p> : null}
       {s.posts === 0 ? (
-        <EmptyState compact icon={TrendingUp} title="No published posts with data in this period" description="Sync Meta or import a performance file in Historical Intelligence, or widen the period." />
+        <EmptyState compact icon={TrendingUp} title="No published posts with data in this period" description="Sync Meta or import a performance file in Content history, or widen the period." />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {metric("Reach", s.reach, sp?.reach, "reach")}
             {metric("Impressions", s.impressions, sp?.impressions, "impressions")}
             {metric("Engagements", s.engagement, sp?.engagement, null)}
-            <Stat label="Median engagement rate" value={s.medianEngagementRate == null ? <span className="text-base text-muted-foreground">Not available</span> : `${s.medianEngagementRate.toFixed(2)}%`} delta={sp ? change(s.medianEngagementRate, sp.medianEngagementRate) : null} hint={s.rateSample ? `Engagements ÷ reach, ${s.rateSample} posts with consistent reach` : "Needs reach and interactions"} />
+            <Stat label="Median engagement rate" info={<InfoTip expert info={data.ceo.explain.engagementRate} />} value={s.medianEngagementRate == null ? <span className="text-base text-muted-foreground">Not available</span> : `${s.medianEngagementRate.toFixed(2)}%`} delta={sp ? change(s.medianEngagementRate, sp.medianEngagementRate) : null} hint={s.rateSample ? `Engagements ÷ reach, ${s.rateSample} posts with consistent reach` : "Needs reach and interactions"} />
             {metric("Video views", s.videoViews ?? s.views, sp ? sp.videoViews ?? sp.views : null, s.videoViews != null ? "video_views" : "views")}
             {metric("Link clicks", s.clicks, sp?.clicks, "clicks")}
             <Stat label="Click-through rate" value={s.ctr == null ? <span className="text-base text-muted-foreground">Not available</span> : `${s.ctr.toFixed(2)}%`} hint="Clicks ÷ reach, posts reporting both" />
@@ -365,7 +366,7 @@ export function DefinitionsSection() {
 
 export function NoContentState({ projectId }: { projectId: string }) {
   return (
-    <EmptyState icon={Lightbulb} title="No content to analyse yet" description="Analytics is calculated from the content you plan and produce. Add ideas in the calendar or Content Production, and connect Meta in Historical Intelligence for performance data."
-      action={<><Button asChild size="sm"><Link href={`/p/${projectId}/calendar`}>Open the calendar</Link></Button><Button asChild size="sm" variant="outline"><Link href={`/p/${projectId}/history`}>Historical Intelligence</Link></Button></>} />
+    <EmptyState icon={Lightbulb} title="No content to analyse yet" description="Analytics is calculated from the content you plan and produce. Add ideas in the calendar or Content Production, and connect Meta in Content history for performance data."
+      action={<><Button asChild size="sm"><Link href={`/p/${projectId}/calendar`}>Open the calendar</Link></Button><Button asChild size="sm" variant="outline"><Link href={`/p/${projectId}/history`}>Content history</Link></Button></>} />
   );
 }

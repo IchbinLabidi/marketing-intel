@@ -59,7 +59,7 @@ export function ProductionApp(props: Props) {
   };
   const filter = (key: keyof typeof filters, value: string) => setFilters((f) => ({ ...f, [key]: value }));
   return <div className="min-w-0 space-y-6">
-    <PageHeader title="Content Production" description={`Turn ${props.projectName}'s ideas into content your team is ready to publish.`} actions={<>{props.perms.includes("calendar.view") && <Button asChild variant="outline"><Link href={`/p/${projectId}/calendar`}><CalendarDays /> Calendar</Link></Button>}{canEdit(role) && props.perms.includes("content.create") && <Button onClick={() => setEditor({ item: null })}><Plus /> New content</Button>}</>} />
+    <PageHeader title="Content Production" description={`Where ${props.projectName}'s ideas become finished posts: written, reviewed and approved. Use it to see what each item is waiting for.`} actions={<>{props.perms.includes("calendar.view") && <Button asChild variant="outline"><Link href={`/p/${projectId}/calendar`}><CalendarDays /> Calendar</Link></Button>}{canEdit(role) && props.perms.includes("content.create") && <Button onClick={() => setEditor({ item: null })}><Plus /> New content</Button>}</>} />
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
       { label: "In production", count: items.filter((i) => ["brief", "in_production"].includes(i.production_stage)).length, icon: FileText },
       { label: "Awaiting review", count: items.filter((i) => ["internal_review", "approval"].includes(i.production_stage)).length, icon: CheckCheck },
