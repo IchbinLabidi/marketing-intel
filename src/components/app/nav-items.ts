@@ -58,7 +58,7 @@ export function projectNavSections(projectId: string): NavSection[] {
     },
     {
       label: "Measure",
-      items: [{ label: "Analytics", href: `${base}/analytics`, icon: BarChart3, soon: true }],
+      items: [{ label: "Analytics", href: `${base}/analytics`, icon: BarChart3, permission: "calendar.view" }],
     },
   ];
 }
