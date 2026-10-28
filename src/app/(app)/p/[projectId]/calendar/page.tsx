@@ -8,16 +8,18 @@ import { Button } from "@/components/ui/button";
 import { DeleteCalendarButton } from "@/components/history/delete-calendar-button";
 import { canEdit, CONTENT_STATUSES, STATUS_TO_WORKFLOW, WORKFLOW_STATES } from "@/lib/domain/constants";
 import { bestPublicationTimes } from "@/lib/calendar/insights";
-import { addDays, isIsoDate, isValidTimeZone, todayInZone, viewRange, zonedToUtc, type CalendarView } from "@/lib/calendar/time";
+import { addDays, CALENDAR_VIEWS, isIsoDate, isValidTimeZone, todayInZone, viewRange, zonedToUtc, type CalendarView } from "@/lib/calendar/time";
 import { isAIConfigured } from "@/server/ai/client";
-import { getPost, listCalendars, listPostsInRange, listUndatedPosts, type PostFilters } from "@/server/services/calendar";
+import { getPost, listCalendars, listDeadlinesInRange, listPostsInRange, listUndatedPosts, myContentIds, type PostFilters } from "@/server/services/calendar";
+import { requireUser } from "@/server/services/session";
+import { assignablePeople, getPermissions, listTasksForItems } from "@/server/services/team";
+import { PRIORITIES } from "@/lib/permissions";
 import { loadHistoryPerformance } from "@/server/services/history-analysis";
 import { getProjectContext } from "@/server/services/projects";
 import { getStrategyBundle } from "@/server/services/strategy";
 
 export const metadata = { title: "Editorial Calendar" };
 
-const VIEWS: CalendarView[] = ["month", "week", "day"];
 const list = (v: string | string[] | undefined) => (v === undefined ? [] : Array.isArray(v) ? v : [v]);
 const one = (v: string | string[] | undefined) => (typeof v === "string" ? v : "");
 
@@ -27,7 +29,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const { project, role } = await getProjectContext(projectId);
   const tz = isValidTimeZone(project.timezone) ? project.timezone : "Africa/Tunis";
   const today = todayInZone(tz);
-  const view = VIEWS.includes(sp.view as CalendarView) ? (sp.view as CalendarView) : "month";
+  const view = CALENDAR_VIEWS.includes(sp.view as CalendarView) ? (sp.view as CalendarView) : "month";
+  const user = await requireUser();
   const date = isIsoDate(one(sp.date)) ? one(sp.date) : today;
 
   const filters: CalendarFilters = {
@@ -39,6 +42,12 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     plan: one(sp.plan),
     from: isIsoDate(one(sp.from)) ? one(sp.from) : "",
     to: isIsoDate(one(sp.to)) ? one(sp.to) : "",
+    assignee: one(sp.assignee),
+    priority: list(sp.priority).filter((p) => (PRIORITIES as readonly string[]).includes(p)),
+    format: list(sp.format).slice(0, 20),
+    q: one(sp.q).slice(0, 100),
+    mine: one(sp.mine) === "1",
+    overdue: one(sp.overdue) === "1",
   };
   const query: PostFilters = {
     platforms: filters.platform,
@@ -47,6 +56,12 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     statuses: filters.state.length ? CONTENT_STATUSES.filter((s) => filters.state.includes(STATUS_TO_WORKFLOW[s])) : [],
     campaign: filters.campaign || null,
     plan: filters.plan || null,
+    assignee: filters.assignee === "none" || /^[0-9a-f-]{36}$/i.test(filters.assignee) ? filters.assignee : null,
+    priorities: filters.priority,
+    formats: filters.format,
+    search: filters.q || null,
+    ids: filters.mine ? await myContentIds(projectId, user.id) : null,
+    overdueBefore: filters.overdue ? today : null,
   };
 
   // Historical insights load in parallel and stream in; the calendar itself never waits for them.
@@ -57,14 +72,18 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const range = viewRange(view, date);
   const from = filters.from && filters.from > range.from ? filters.from : range.from;
   const to = filters.to && filters.to < range.to ? filters.to : range.to;
-  const [posts, undated, plans, bundle] = await Promise.all([
+  const [posts, undated, deadlines, plans, bundle, perms, people] = await Promise.all([
     from <= to ? listPostsInRange(projectId, { fromUtc: zonedToUtc(from, "00:00", tz), toUtc: zonedToUtc(addDays(to, 1), "00:00", tz), fromDate: from, toDate: to }, query) : [],
     listUndatedPosts(projectId, query),
+    from <= to ? listDeadlinesInRange(projectId, from, to, query) : [],
     listCalendars(projectId),
     getStrategyBundle(projectId),
+    getPermissions(project.workspace_id),
+    assignablePeople(project.workspace_id),
   ]);
+  const tasks = await listTasksForItems(projectId, [...new Set([...posts, ...undated, ...deadlines].map((p) => p.id))]);
   const selectedPlan = plans.find((p) => p.id === filters.plan);
-  const editable = canEdit(role);
+  const editable = canEdit(role) && perms.has("calendar.edit");
 
   return (
     <div className="space-y-6">
@@ -94,6 +113,11 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         plans={plans.map((p) => ({ id: p.id, name: p.name }))}
         filters={filters}
         readOnly={!editable}
+        deadlines={deadlines}
+        tasks={tasks}
+        people={people}
+        perms={[...perms]}
+        userId={user.id}
         aiEnabled={isAIConfigured()}
         timing={timing}
         insights={

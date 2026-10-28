@@ -325,6 +325,11 @@ export type ContentItem = MetricValues & {
   published_url: string | null;
   publish_error: string | null;
   updated_at: string;
+  /** planning fields (Content Production / team collaboration) */
+  assignee_id?: string | null;
+  due_date?: string | null;
+  priority?: "low" | "medium" | "high" | "urgent";
+  created_by?: string | null;
 };
 
 export type StrategyBundle = {

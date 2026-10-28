@@ -137,6 +137,22 @@ export async function listItemTasks(projectId: string, itemId: string): Promise<
   return data as Task[];
 }
 
+/** Tasks of several content items at once (calendar cards and panels). */
+export async function listTasksForItems(projectId: string, itemIds: string[]): Promise<Task[]> {
+  if (!itemIds.length) return [];
+  const db = await createClient();
+  const out: Task[] = [];
+  for (let i = 0; i < itemIds.length; i += 300) {
+    const { data, error } = await db.from("content_assignments").select("*").eq("project_id", projectId).in("content_item_id", itemIds.slice(i, i + 300));
+    if (error) {
+      if (isMissingTeamSchema(error)) return [];
+      throw error;
+    }
+    out.push(...(data as Task[]));
+  }
+  return out;
+}
+
 /** Tasks across the workspace's projects (RLS limits them to what the user may see). */
 export async function listWorkspaceTasks(workspaceId: string, opts: { userId?: string; limit?: number } = {}): Promise<TaskWithContent[]> {
   const db = await createClient();

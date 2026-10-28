@@ -58,9 +58,17 @@ export type PostFilters = {
   statuses?: string[];       // content_status values
   campaign?: string | null;
   plan?: string | null;      // editorial_calendars.id
+  assignee?: string | null;  // user id, or "none" for unassigned
+  priorities?: string[];
+  formats?: string[];
+  search?: string | null;
+  /** restrict to these content ids (e.g. "my work"); an empty array matches nothing */
+  ids?: string[] | null;
+  /** internal deadline before this date and not yet approved/scheduled/published */
+  overdueBefore?: string | null;
 };
 
-function applyFilters<Q extends { in: (c: string, v: string[]) => Q; eq: (c: string, v: string) => Q; or: (f: string) => Q; is: (c: string, v: null) => Q }>(q: Q, f: PostFilters) {
+function applyFilters<Q extends { in: (c: string, v: string[]) => Q; eq: (c: string, v: string) => Q; or: (f: string) => Q; is: (c: string, v: null) => Q; ilike: (c: string, v: string) => Q; lt: (c: string, v: string) => Q; not: (c: string, op: string, v: string) => Q }>(q: Q, f: PostFilters) {
   if (f.platforms?.length) q = q.in("platform", f.platforms);
   if (f.pillars?.length) {
     const ids = f.pillars.filter((p) => p !== "none");
@@ -70,6 +78,14 @@ function applyFilters<Q extends { in: (c: string, v: string[]) => Q; eq: (c: str
   if (f.statuses?.length) q = q.in("status", f.statuses);
   if (f.campaign) q = q.eq("campaign_id", f.campaign);
   if (f.plan) q = q.eq("calendar_id", f.plan);
+  if (f.assignee === "none") q = q.is("assignee_id", null);
+  else if (f.assignee) q = q.eq("assignee_id", f.assignee);
+  if (f.priorities?.length) q = q.in("priority", f.priorities);
+  if (f.formats?.length) q = q.in("format", f.formats);
+  // PostgREST filter values: strip characters that would break the expression
+  if (f.search) q = q.ilike("title", `%${f.search.replace(/[%_,()]/g, " ").trim()}%`);
+  if (f.ids) q = q.in("id", f.ids.length ? f.ids : ["00000000-0000-0000-0000-000000000000"]);
+  if (f.overdueBefore) q = q.lt("due_date", f.overdueBefore).not("status", "in", "(approved,scheduled,published)");
   return q;
 }
 
@@ -87,6 +103,26 @@ export async function listPostsInRange(projectId: string, range: { fromUtc: stri
   const { data, error } = await q.order("scheduled_at", { ascending: true, nullsFirst: false }).order("position").limit(2000);
   if (error) throw error;
   return (data ?? []) as ContentItem[];
+}
+
+/** Content whose internal deadline (due_date) falls in [fromDate, toDate], whatever its publication date. */
+export async function listDeadlinesInRange(projectId: string, fromDate: string, toDate: string, filters: PostFilters) {
+  const supabase = await createClient();
+  let q = supabase.from("content_items").select("*").eq("project_id", projectId).gte("due_date", fromDate).lte("due_date", toDate);
+  q = applyFilters(q, filters);
+  const { data, error } = await q.order("due_date").limit(1000);
+  if (error) throw error;
+  return (data ?? []) as ContentItem[];
+}
+
+/** Ids of content the user leads or collaborates on (for the "My work" filter). */
+export async function myContentIds(projectId: string, userId: string) {
+  const supabase = await createClient();
+  const [lead, tasks] = await Promise.all([
+    supabase.from("content_items").select("id").eq("project_id", projectId).eq("assignee_id", userId).limit(2000),
+    supabase.from("content_assignments").select("content_item_id").eq("project_id", projectId).eq("user_id", userId).limit(2000),
+  ]);
+  return [...new Set([...(lead.data ?? []).map((r) => r.id as string), ...(tasks.data ?? []).map((r) => r.content_item_id as string)])];
 }
 
 /** Posts with no date yet (the "unscheduled" tray). */

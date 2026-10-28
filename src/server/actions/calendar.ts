@@ -20,14 +20,17 @@ import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
 import { getMetaConnection, readMetaTokens } from "@/server/services/meta";
 import { graphGet } from "@/server/meta/graph";
+import { hasPermission } from "@/server/services/team";
 
-const NO_EDIT: ActionResult<never> = { ok: false, error: "Your role in this workspace is read-only." };
+const NO_EDIT: ActionResult<never> = { ok: false, error: "Your role can't plan or edit the calendar." };
 const fail = (e: unknown, fallback: string): ActionResult<never> => ({ ok: false, error: e instanceof Error ? e.message : fallback });
 
 async function guard(projectId: string) {
   const user = await requireUser();
   const { project, role } = await getProjectContext(projectId);
-  return { user, project, allowed: canEdit(role), tz: project.timezone || "Africa/Tunis" };
+  // Planning in the calendar needs the calendar permission on top of a role that can edit.
+  const allowed = canEdit(role) && (await hasPermission(project.workspace_id, "calendar.edit"));
+  return { user, project, allowed, tz: project.timezone || "Africa/Tunis" };
 }
 
 const refresh = (projectId: string) => revalidatePath(`/p/${projectId}`, "layout");
@@ -268,5 +271,42 @@ export async function generatePostAction(projectId: string, input: GeneratePostI
     };
   } catch (e) {
     return { ok: false, error: describeAIError(e) };
+  }
+}
+
+/**
+ * Quick planning edits from the calendar: internal deadline, priority and lead assignee.
+ * Publication date is not touched here. The database checks who may change each field
+ * (production_guard: assignee changes need "content.assign").
+ */
+export async function updatePlanningAction(
+  projectId: string,
+  id: string,
+  input: { due_date?: string | null; priority?: string; assignee_id?: string | null },
+): Promise<ActionResult<SaveResult>> {
+  const { project, allowed } = await guard(projectId);
+  if (!allowed) return NO_EDIT;
+  const values: Partial<ContentItem> = {};
+  if ("due_date" in input) {
+    if (input.due_date !== null && !isIsoDate(input.due_date)) return { ok: false, error: "Invalid deadline." };
+    values.due_date = input.due_date ?? null;
+  }
+  if ("priority" in input) {
+    if (!["low", "medium", "high", "urgent"].includes(input.priority ?? "")) return { ok: false, error: "Invalid priority." };
+    values.priority = input.priority as ContentItem["priority"];
+  }
+  if ("assignee_id" in input) {
+    if (input.assignee_id !== null && !/^[0-9a-f-]{36}$/i.test(input.assignee_id ?? "")) return { ok: false, error: "Invalid assignee." };
+    values.assignee_id = input.assignee_id ?? null;
+  }
+  try {
+    if (("priority" in input || "assignee_id" in input) && !(await hasPermission(project.workspace_id, "content.assign"))) {
+      return { ok: false, error: "Only managers can change the priority or the assignee." };
+    }
+    const post = await updatePost(projectId, id, values);
+    refresh(projectId);
+    return { ok: true, data: { post }, message: "Planning updated" };
+  } catch (e) {
+    return fail(e, "Could not update planning");
   }
 }

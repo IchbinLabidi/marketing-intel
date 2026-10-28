@@ -84,12 +84,17 @@ export function monthGrid(date: string) {
 
 export const weekDays = (date: string) => Array.from({ length: 7 }, (_, d) => addDays(startOfWeek(date), d));
 
-export type CalendarView = "month" | "week" | "day";
+export type CalendarView = "month" | "week" | "day" | "list" | "timeline";
+export const CALENDAR_VIEWS: CalendarView[] = ["month", "week", "day", "list", "timeline"];
+
+export const monthEnd = (date: string) => addDays(addMonths(monthStart(date), 1), -1);
 
 /** Inclusive date range rendered by a view. */
 export function viewRange(view: CalendarView, date: string) {
   if (view === "day") return { from: date, to: date };
   if (view === "week") return { from: startOfWeek(date), to: addDays(startOfWeek(date), 6) };
+  // list and timeline cover the calendar month itself
+  if (view === "list" || view === "timeline") return { from: monthStart(date), to: monthEnd(date) };
   const grid = monthGrid(date);
   return { from: grid[0][0], to: grid[5][6] };
 }
