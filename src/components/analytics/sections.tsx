@@ -174,7 +174,7 @@ export function ProductionSection({ data }: { data: AnalyticsData }) {
         <Card className="lg:col-span-3">
           <CardHeader><CardTitle className="flex items-center gap-1.5">Throughput per week <InfoTip expert info={data.ceo.explain.throughput} /></CardTitle><CardDescription>Ideas created, items approved and items published, by week of the period.</CardDescription></CardHeader>
           <CardContent>
-            <WeeklyColumns weeks={pr.weeks} series={[{ key: "created", label: "Created", className: "bg-chart-a" }, { key: "approved", label: "Approved", className: "bg-chart-b" }, { key: "published", label: "Published", className: "bg-success" }]} />
+            <WeeklyColumns weeks={pr.weeks} series={[{ key: "created", label: "Created", className: "bg-chart-a" }, { key: "approved", label: "Approved", className: "bg-chart-b" }, { key: "published", label: "Published", className: "bg-chart-c" }]} />
           </CardContent>
         </Card>
         <Card className="lg:col-span-2">

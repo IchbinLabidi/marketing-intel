@@ -74,7 +74,7 @@ export function TimelineView({ rows, from, to, today, onOpen }: { rows: Row[]; f
                 <div className="flex items-center gap-2 bg-muted/30 px-3 py-1.5 text-xs font-medium">
                   {g.person ? g.person.name : "Unassigned"}
                   <span className="font-normal text-muted-foreground">· {g.items.length}</span>
-                  {clash.size ? <span className="ml-1 inline-flex items-center gap-1 font-normal text-[color-mix(in_oklch,var(--warning)_75%,black)]"><AlertTriangle className="size-3" /> {clash.size} overlapping</span> : null}
+                  {clash.size ? <span className="ml-1 inline-flex items-center gap-1 font-normal text-warning-foreground"><AlertTriangle className="size-3" /> {clash.size} overlapping</span> : null}
                 </div>
                 {g.items.map(({ post }) => {
                   const s = span(post)!;

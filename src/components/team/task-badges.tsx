@@ -30,7 +30,7 @@ export function PriorityBadge({ priority, className }: { priority: Priority; cla
     <span
       className={cn(
         "inline-flex items-center gap-1 text-xs font-medium",
-        priority === "urgent" ? "text-destructive" : priority === "high" ? "text-[color-mix(in_oklch,var(--warning)_75%,black)]" : "text-muted-foreground",
+        priority === "urgent" ? "text-destructive" : priority === "high" ? "text-warning-foreground" : "text-muted-foreground",
         className,
       )}
     >

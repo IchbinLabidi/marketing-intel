@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 const TONE = {
   good: { label: "Good", className: "bg-success/10 text-success" },
-  watch: { label: "Worth watching", className: "bg-warning/12 text-[color-mix(in_oklch,var(--warning)_72%,black)]" },
+  watch: { label: "Worth watching", className: "bg-warning/12 text-warning-foreground" },
   attention: { label: "Needs attention", className: "bg-destructive/8 text-destructive" },
   neutral: { label: "For information", className: "bg-secondary text-muted-foreground" },
 } as const;

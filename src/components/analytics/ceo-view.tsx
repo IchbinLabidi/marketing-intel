@@ -86,7 +86,7 @@ export function CeoView({ data }: { data: AnalyticsData }) {
             {issues.map((x, n) => (
               <li key={x.id} className={cn("rounded-xl border bg-card p-4 shadow-xs", x.severity === 1 && "border-destructive/35", x.severity === 2 && "border-warning/40")}>
                 <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-                  <span className={cn("inline-flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold", x.severity === 1 ? "bg-destructive/10 text-destructive" : x.severity === 2 ? "bg-warning/15 text-[color-mix(in_oklch,var(--warning)_72%,black)]" : "bg-secondary text-muted-foreground")}>{n + 1}</span>
+                  <span className={cn("inline-flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold", x.severity === 1 ? "bg-destructive/10 text-destructive" : x.severity === 2 ? "bg-warning/15 text-warning-foreground" : "bg-secondary text-muted-foreground")}>{n + 1}</span>
                   <div className="min-w-0 flex-1 space-y-1 text-[13px]">
                     <p className="flex flex-wrap items-center gap-2 text-[14px] font-medium">
                       {x.title}

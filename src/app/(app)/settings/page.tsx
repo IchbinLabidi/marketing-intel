@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { FormSection } from "@/components/app/form-section";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { ThemeSwitcher } from "@/components/app/theme-switcher";
 import { CreateWorkspaceForm, RenameWorkspaceForm } from "@/components/settings/workspace-forms";
 import { canAdmin } from "@/lib/domain/constants";
 import { requireUser } from "@/server/services/session";
@@ -22,9 +23,17 @@ export default async function SettingsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow={workspace.name} title="Settings" description="Workspace details, members and integrations." />
+      <PageHeader eyebrow={workspace.name} title="Settings" description="Appearance, workspace details, members and integrations." />
 
       <div className="divide-y">
+        <FormSection
+          id="appearance"
+          title="Appearance"
+          description="Light, dark, or follow your device. Saved on this browser and applied on every page."
+        >
+          <ThemeSwitcher />
+        </FormSection>
+
         <FormSection
           title="Workspace"
           description="Projects, members and AI usage belong to a workspace. Agencies typically use one workspace per client."
