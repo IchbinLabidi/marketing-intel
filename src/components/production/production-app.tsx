@@ -15,11 +15,12 @@ import { canAdmin, canEdit, FUNNEL_LABELS, FUNNEL_STAGES, LANGUAGES, LANGUAGE_LA
 import { canWriteItem, STAGES, STAGE_LABELS, type ContentTemplate, type ProductionItem, type ProductionStage, type WorkflowSettings } from "@/lib/production/model";
 import { addDays } from "@/lib/calendar/time";
 import { cn } from "@/lib/utils";
+import type { Assignable } from "@/components/team/task-panel";
 import type { WorkspaceMember } from "@/server/services/workspaces";
 import { configureWorkflowAction, deleteTemplateAction, transitionProductionAction } from "@/server/actions/production";
 import { ProductionEditor } from "./production-editor";
 
-type Props = { projectId: string; projectName: string; language: Language; tz: string; today: string; userId: string; role: WorkspaceRole; members: WorkspaceMember[]; items: ProductionItem[]; templates: ContentTemplate[]; pillars: { id: string; name: string }[]; workflow: WorkflowSettings; aiEnabled: boolean; initialItem?: string; initialView?: string };
+type Props = { projectId: string; projectName: string; language: Language; tz: string; today: string; userId: string; role: WorkspaceRole; members: WorkspaceMember[]; items: ProductionItem[]; templates: ContentTemplate[]; pillars: { id: string; name: string }[]; workflow: WorkflowSettings; aiEnabled: boolean; initialItem?: string; initialView?: string; perms: string[]; people: Assignable[] };
 const VIEWS = [{ id: "board", label: "Production Board", icon: LayoutGrid }, { id: "all", label: "All Content", icon: List }, { id: "mine", label: "My Tasks", icon: UserRound }, { id: "review", label: "Review & Approval", icon: CheckCheck }, { id: "templates", label: "Content Templates", icon: FileText }];
 const EMPTY_FILTERS = { platform: "", pillar: "", funnel: "", assignee: "", deadline: "", stage: "", language: "", search: "" };
 export function ProductionApp(props: Props) {
@@ -58,7 +59,7 @@ export function ProductionApp(props: Props) {
   };
   const filter = (key: keyof typeof filters, value: string) => setFilters((f) => ({ ...f, [key]: value }));
   return <div className="min-w-0 space-y-6">
-    <PageHeader title="Content Production" description={`Turn ${props.projectName}'s ideas into content your team is ready to publish.`} actions={<div className="flex gap-2"><Button asChild variant="outline"><Link href={`/p/${projectId}/calendar`}><CalendarDays /> Calendar</Link></Button>{canEdit(role) && <Button onClick={() => setEditor({ item: null })}><Plus /> New content</Button>}</div>} />
+    <PageHeader title="Content Production" description={`Turn ${props.projectName}'s ideas into content your team is ready to publish.`} actions={<>{props.perms.includes("calendar.view") && <Button asChild variant="outline"><Link href={`/p/${projectId}/calendar`}><CalendarDays /> Calendar</Link></Button>}{canEdit(role) && props.perms.includes("content.create") && <Button onClick={() => setEditor({ item: null })}><Plus /> New content</Button>}</>} />
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
       { label: "In production", count: items.filter((i) => ["brief", "in_production"].includes(i.production_stage)).length, icon: FileText },
       { label: "Awaiting review", count: items.filter((i) => ["internal_review", "approval"].includes(i.production_stage)).length, icon: CheckCheck },

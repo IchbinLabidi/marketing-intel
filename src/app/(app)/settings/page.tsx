@@ -34,7 +34,7 @@ export default async function SettingsPage() {
 
         <FormSection
           title="Members"
-          description="Owners and admins manage the workspace, editors create and edit content, viewers have read-only access. Email invitations are on the roadmap."
+          description="Who is in this workspace. Invite people and manage roles and permissions on the Team page."
         >
           <ul className="-my-2 divide-y">
             {members.map((m) => (
@@ -50,6 +50,7 @@ export default async function SettingsPage() {
               </li>
             ))}
           </ul>
+          <Link href="/team" className="mt-4 inline-flex text-[13px] font-medium text-primary hover:underline">Manage team and roles →</Link>
         </FormSection>
 
         <FormSection

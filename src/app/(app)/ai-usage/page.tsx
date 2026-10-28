@@ -14,6 +14,8 @@ import { providerConfigured, providerHealth } from "@/server/ai/providers";
 import { currentRoute } from "@/server/ai/run";
 import { monthToDateCost, recentRuns, usageBreakdown, type UsageRow } from "@/server/services/ai-usage";
 import { getActiveWorkspace, listMembers } from "@/server/services/workspaces";
+import { hasPermission } from "@/server/services/team";
+import { PermissionDenied } from "@/components/app/permission-denied";
 
 export const metadata = { title: "AI usage" };
 
@@ -52,6 +54,7 @@ function groupBy(rows: UsageRow[], key: (r: UsageRow) => string): Group[] {
 export default async function Page({ searchParams }: { searchParams: Promise<{ period?: string; status?: string; page?: string }> }) {
   const sp = await searchParams;
   const workspace = (await getActiveWorkspace())!;
+  if (!(await hasPermission(workspace.id, "ai_usage.view"))) return <PermissionDenied what="AI usage" />;
   const period = PERIODS.some((p) => p.id === sp.period) ? sp.period! : "month";
   const [from, to] = range(period);
   const page = Math.max(1, Number(sp.page) || 1);

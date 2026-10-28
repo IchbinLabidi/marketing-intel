@@ -5,6 +5,7 @@ import { ACTIVE_PROJECT_COOKIE } from "@/lib/supabase/proxy";
 import { requireUser } from "@/server/services/session";
 import { getActiveWorkspace, listWorkspaces } from "@/server/services/workspaces";
 import { listProjects } from "@/server/services/projects";
+import { countOpenTasks, getPermissions, unreadNotificationCount } from "@/server/services/team";
 
 // AI server actions (plans, drafts, retries under provider overload) can run for minutes;
 // 300 s is the Vercel ceiling on the Hobby plan (raise to 800 on Pro).
@@ -17,6 +18,11 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const projects = await listProjects(activeWorkspace.id);
   const cookieProject = (await cookies()).get(ACTIVE_PROJECT_COOKIE)?.value ?? null;
   const activeProjectId = projects.some((p) => p.id === cookieProject) ? cookieProject : null;
+  const [permissions, unread, openTasks] = await Promise.all([
+    getPermissions(activeWorkspace.id),
+    unreadNotificationCount(activeWorkspace.id),
+    countOpenTasks(projects.map((p) => p.id), user.id),
+  ]);
 
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
@@ -26,6 +32,9 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         activeWorkspace={activeWorkspace}
         projects={projects.map((p) => ({ id: p.id, name: p.name }))}
         activeProjectId={activeProjectId}
+        permissions={[...permissions]}
+        unreadNotifications={unread}
+        openTasks={openTasks}
       />
       <main className="min-w-0 flex-1">
         <div className="mx-auto w-full max-w-[1240px] px-4 py-6 sm:px-6 sm:py-8 xl:px-10 xl:py-9">{children}</div>

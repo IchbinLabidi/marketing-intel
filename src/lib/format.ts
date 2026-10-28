@@ -10,3 +10,6 @@ export const formatNumber = (n: number) => NUMBER.format(n);
 export const formatDate = (d: string | number | Date) => DATE.format(new Date(d));
 
 export const formatDateTime = (d: string | number | Date) => DATE_TIME.format(new Date(d));
+
+/** Current time for server components (kept out of render bodies for the React purity lint). */
+export const nowMs = () => Date.now();

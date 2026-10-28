@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Check, ChevronsUpDown, FolderKanban, LogOut, Menu, Plus, X } from "lucide-react";
+import { Bell, Check, ChevronsUpDown, FolderKanban, LogOut, Menu, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import {
@@ -26,6 +26,10 @@ type SidebarProps = {
   activeWorkspace: Workspace;
   projects: { id: string; name: string }[];
   activeProjectId: string | null;
+  /** The member's permissions in the active workspace: navigation only shows what they can open. */
+  permissions: string[];
+  unreadNotifications: number;
+  openTasks: number;
 };
 
 export function AppSidebar(props: SidebarProps) {
@@ -60,6 +64,9 @@ export function AppSidebar(props: SidebarProps) {
           <Menu className="size-5" />
         </button>
         <BrandMark />
+        <div className="order-last ml-auto">
+          <NotificationBell count={props.unreadNotifications} />
+        </div>
         {activeProject ? (
           <>
             <span className="text-border-strong" aria-hidden>
@@ -97,16 +104,27 @@ function SidebarContent({
   projects,
   activeProjectId,
   activeProject,
+  permissions,
+  unreadNotifications,
+  openTasks,
 }: SidebarProps & { activeProject: { id: string; name: string } | null }) {
   const pathname = usePathname();
   const router = useRouter();
+  const perms = new Set(permissions);
+  const allowed = (items: NavItem[]) =>
+    items
+      .filter((i) => !i.permission || perms.has(i.permission))
+      .map((i) => (i.href === "/tasks" && openTasks ? { ...i, count: openTasks } : i));
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-14 items-center px-4">
+      <div className="flex h-14 items-center justify-between gap-2 pl-4 pr-2.5 lg:pr-2.5">
         <Link href="/dashboard" className="rounded-md">
           <BrandMark />
         </Link>
+        <span className="mr-9 lg:mr-0">
+          <NotificationBell count={unreadNotifications} />
+        </span>
       </div>
 
       <div className="px-2.5 pb-2">
@@ -144,7 +162,7 @@ function SidebarContent({
       </div>
 
       <nav className="scrollbar-thin flex-1 space-y-4 overflow-y-auto px-2.5 pb-3 pt-1">
-        <NavList items={GLOBAL_NAV} pathname={pathname} />
+        <NavList items={allowed(GLOBAL_NAV)} pathname={pathname} />
 
         <div className="space-y-2">
           <div className="eyebrow px-2">Project</div>
@@ -173,7 +191,7 @@ function SidebarContent({
 
           {activeProject ? (
             <div className="ml-[15px] space-y-3 border-l border-sidebar-border pl-1.5">
-              {projectNavSections(activeProject.id).map((section, i) => (
+              {projectNavSections(activeProject.id).map((section) => ({ ...section, items: allowed(section.items) })).filter((section) => section.items.length).map((section, i) => (
                 <div key={section.label ?? i} className="space-y-1">
                   {section.label ? <div className="eyebrow px-2 pt-0.5">{section.label}</div> : null}
                   <NavList items={section.items} pathname={pathname} />
@@ -209,7 +227,24 @@ function SidebarContent({
   );
 }
 
-function NavList({ items, pathname }: { items: NavItem[]; pathname: string }) {
+function NotificationBell({ count }: { count: number }) {
+  return (
+    <Link
+      href="/notifications"
+      aria-label={count ? `Notifications, ${count} unread` : "Notifications"}
+      className="relative inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+    >
+      <Bell className="size-4" />
+      {count ? (
+        <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground ring-2 ring-sidebar">
+          {count > 99 ? "99+" : count}
+        </span>
+      ) : null}
+    </Link>
+  );
+}
+
+function NavList({ items, pathname }: { items: (NavItem & { count?: number })[]; pathname: string }) {
   return (
     <ul className="space-y-px">
       {items.map((item) => {
@@ -228,6 +263,7 @@ function NavList({ items, pathname }: { items: NavItem[]; pathname: string }) {
                 className={cn("size-4 shrink-0 transition-colors", active ? "text-primary" : "text-subtle-foreground group-hover:text-muted-foreground")}
               />
               <span className="truncate">{item.label}</span>
+              {item.count ? <span className="ml-auto rounded-full bg-primary-soft px-1.5 text-[11px] font-medium tabular-nums text-primary">{item.count}</span> : null}
               {item.soon ? <span className="ml-auto rounded-[4px] border px-1 text-[10px] font-medium uppercase tracking-wide text-subtle-foreground">Soon</span> : null}
             </Link>
           </li>

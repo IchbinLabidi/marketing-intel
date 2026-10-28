@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { ContentTemplate, ProductionAsset, ProductionEvent, ProductionItem, ProductionVersion } from "@/lib/production/model";
+import { listItemTasks, type Task } from "./team";
 
 export async function listProduction(projectId: string): Promise<ProductionItem[]> {
   const db = await createClient();
@@ -20,7 +21,7 @@ export async function listTemplates(projectId: string): Promise<ContentTemplate[
   if (error) throw error;
   return data as ContentTemplate[];
 }
-export type ProductionDetails = { events: ProductionEvent[]; versions: ProductionVersion[]; assets: ProductionAsset[]; item: ProductionItem };
+export type ProductionDetails = { events: ProductionEvent[]; versions: ProductionVersion[]; assets: ProductionAsset[]; item: ProductionItem; tasks: Task[] };
 export async function productionDetails(projectId: string, id: string): Promise<ProductionDetails> {
   const db = await createClient();
   const [events, versions, assets] = await Promise.all([
@@ -35,7 +36,10 @@ export async function productionDetails(projectId: string, id: string): Promise<
     if (error) throw error;
     return { ...asset, signedUrl: data.signedUrl };
   }));
-  const { data: item, error } = await db.from("content_items").select("*").eq("project_id", projectId).eq("id", id).single();
+  const [{ data: item, error }, tasks] = await Promise.all([
+    db.from("content_items").select("*").eq("project_id", projectId).eq("id", id).single(),
+    listItemTasks(projectId, id),
+  ]);
   if (error) throw error;
-  return { events: events.data as ProductionEvent[], versions: versions.data as ProductionVersion[], assets: media, item: item as ProductionItem };
+  return { events: events.data as ProductionEvent[], versions: versions.data as ProductionVersion[], assets: media, item: item as ProductionItem, tasks };
 }

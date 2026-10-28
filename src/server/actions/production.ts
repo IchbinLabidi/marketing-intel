@@ -12,6 +12,7 @@ import { requireUser } from "@/server/services/session";
 import { getPost, insertPost } from "@/server/services/calendar";
 import { getOpportunity, linkedPosts } from "@/server/services/opportunities";
 import { productionDetails, type ProductionDetails } from "@/server/services/production";
+import { getPermissions, listItemTasks } from "@/server/services/team";
 import { buildProjectContext } from "@/server/ai/context";
 import { describeAIError } from "@/server/ai/client";
 import { performanceDigest } from "@/server/ai/history";
@@ -51,7 +52,9 @@ async function access(projectId: string, write = true) {
 async function editable(projectId: string, id: string) {
   const ctx = await access(projectId);
   const item = await getPost(projectId, id) as ProductionItem | null;
-  if (!item || !canWriteItem(ctx.role, ctx.user.id, item)) throw new Error("Content not found or not assigned to you.");
+  const [perms, tasks] = item ? await Promise.all([getPermissions(ctx.project.workspace_id), listItemTasks(projectId, id)]) : [new Set<string>(), []];
+  const collaborator = tasks.some((t) => t.user_id === ctx.user.id && t.status !== "approved" && t.status !== "completed");
+  if (!item || !canWriteItem(ctx.role, ctx.user.id, item, { editAny: perms.has("content.edit_any"), collaborator })) throw new Error("Content not found or not assigned to you.");
   if (item.status === "published") throw new Error("Published content is locked.");
   return { ...ctx, item };
 }
