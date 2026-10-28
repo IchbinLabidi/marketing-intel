@@ -19,6 +19,7 @@ import { switchWorkspaceAction } from "@/server/actions/workspaces";
 import type { Workspace } from "@/types/domain";
 import { BrandMark } from "./brand";
 import { GLOBAL_NAV, projectNavSections, SETTINGS_NAV, type NavItem } from "./nav-items";
+import { ThemeSwitcher } from "./theme-switcher";
 
 type SidebarProps = {
   user: { email: string; fullName: string };
@@ -76,7 +77,7 @@ export function AppSidebar(props: SidebarProps) {
           </>
         ) : null}
       </header>
-      {open ? <div className="fixed inset-0 z-40 bg-[oklch(0.2_0.02_262/0.32)] animate-fade-in lg:hidden" onClick={() => setOpen(false)} /> : null}
+      {open ? <div className="fixed inset-0 z-40 bg-overlay animate-fade-in lg:hidden" onClick={() => setOpen(false)} /> : null}
       <aside
         aria-label="Main navigation"
         className={cn(
@@ -207,7 +208,10 @@ function SidebarContent({
       </nav>
 
       <div className="space-y-1 border-t border-sidebar-border p-2.5">
-        <NavList items={[SETTINGS_NAV]} pathname={pathname} />
+        <div className="flex items-center gap-1">
+          <div className="min-w-0 flex-1"><NavList items={[SETTINGS_NAV]} pathname={pathname} /></div>
+          <ThemeSwitcher size="sm" />
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/40">
             <Avatar name={user.fullName || user.email} />

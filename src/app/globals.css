@@ -41,6 +41,7 @@
   --destructive: oklch(0.56 0.21 25);
   --success: oklch(0.56 0.13 155);
   --warning: oklch(0.66 0.15 65);
+  --warning-foreground: oklch(0.5 0.12 62); /* readable amber text on light surfaces */
   --info: oklch(0.56 0.13 235);
 
   /* Shell */
@@ -52,6 +53,13 @@
   /* Chart series (validated for CVD separation and contrast): A = earlier period, B = later period / single series */
   --chart-a: #d97706;
   --chart-b: #3b5bdb;
+  --chart-c: oklch(0.56 0.13 155); /* third series (e.g. published), same hue family as success */
+  --chart-grid: oklch(0.912 0.005 260);
+
+  /* Scrim behind dialogs and drawers */
+  --overlay: oklch(0.2 0.02 262 / 0.32);
+
+  color-scheme: light;
 
   /* Elevation: hairline-first, soft ambient shadow */
   --shadow-xs: 0 1px 1px oklch(0.2 0.02 262 / 0.04);
@@ -65,38 +73,60 @@
   --duration-base: 180ms;
 }
 
+/*
+ * Dark theme. Deep blue-grey canvas (never pure black), surfaces step up in lightness instead of relying on
+ * shadows, hairline borders are translucent white, and accents are lifted in lightness and slightly
+ * desaturated so they stay vivid without glowing. All text pairs meet WCAG AA on their surfaces.
+ */
 .dark {
-  --background: oklch(0.16 0.006 262);
-  --foreground: oklch(0.96 0.003 262);
-  --card: oklch(0.19 0.007 262);
-  --card-foreground: oklch(0.96 0.003 262);
-  --popover: oklch(0.2 0.007 262);
-  --popover-foreground: oklch(0.96 0.003 262);
-  --secondary: oklch(0.24 0.008 262);
-  --secondary-foreground: oklch(0.96 0.003 262);
-  --muted: oklch(0.24 0.008 262);
-  --muted-foreground: oklch(0.7 0.012 262);
-  --subtle-foreground: oklch(0.58 0.012 262);
-  --accent: oklch(0.25 0.008 262);
+  color-scheme: dark;
+
+  --background: oklch(0.155 0.008 264);
+  --foreground: oklch(0.95 0.004 262);
+  --card: oklch(0.192 0.009 264);
+  --card-foreground: oklch(0.95 0.004 262);
+  --popover: oklch(0.215 0.01 264);
+  --popover-foreground: oklch(0.95 0.004 262);
+  --secondary: oklch(0.245 0.01 264);
+  --secondary-foreground: oklch(0.93 0.004 262);
+  --muted: oklch(0.235 0.01 264);
+  --muted-foreground: oklch(0.72 0.012 262);
+  --subtle-foreground: oklch(0.6 0.012 262);
+  --accent: oklch(0.26 0.012 264);
   --accent-foreground: oklch(0.96 0.003 262);
-  --border: oklch(1 0 0 / 9%);
+  --border: oklch(1 0 0 / 8.5%);
   --border-strong: oklch(1 0 0 / 15%);
-  --input: oklch(1 0 0 / 13%);
-  --primary: oklch(0.64 0.16 263);
-  --primary-hover: oklch(0.69 0.15 263);
-  --primary-foreground: oklch(0.16 0.006 262);
-  --primary-soft: oklch(0.3 0.06 263);
-  --ring: oklch(0.64 0.16 263);
-  --destructive: oklch(0.66 0.19 22);
-  --success: oklch(0.7 0.14 155);
-  --warning: oklch(0.78 0.14 72);
-  --info: oklch(0.7 0.12 235);
-  --sidebar: oklch(0.14 0.006 262);
-  --sidebar-foreground: oklch(0.78 0.01 262);
-  --sidebar-accent: oklch(0.22 0.008 262);
-  --sidebar-border: oklch(1 0 0 / 8%);
-  --chart-a: #d97706;
-  --chart-b: #7b8ff0;
+  --input: oklch(1 0 0 / 14%);
+
+  --primary: oklch(0.68 0.15 264);
+  --primary-hover: oklch(0.73 0.14 264);
+  --primary-foreground: oklch(0.16 0.02 264);
+  --primary-soft: oklch(0.29 0.06 264);
+  --ring: oklch(0.7 0.14 264);
+
+  --destructive: oklch(0.68 0.18 22);
+  --success: oklch(0.72 0.14 155);
+  --warning: oklch(0.79 0.14 74);
+  --warning-foreground: oklch(0.83 0.12 78);
+  --info: oklch(0.72 0.11 235);
+
+  --sidebar: oklch(0.135 0.008 264);
+  --sidebar-foreground: oklch(0.8 0.01 262);
+  --sidebar-accent: oklch(0.22 0.01 264);
+  --sidebar-border: oklch(1 0 0 / 7%);
+
+  --chart-a: #f0a43a;
+  --chart-b: #8597f2;
+  --chart-c: oklch(0.72 0.14 155);
+  --chart-grid: oklch(1 0 0 / 10%);
+
+  --overlay: oklch(0.08 0.01 264 / 0.6);
+
+  /* On a dark canvas shadows read as depth only when darker and wider; borders do most of the work. */
+  --shadow-xs: 0 1px 1px oklch(0 0 0 / 0.25);
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3), 0 1px 1px oklch(0 0 0 / 0.2);
+  --shadow-md: 0 6px 16px -4px oklch(0 0 0 / 0.45), 0 2px 4px -2px oklch(0 0 0 / 0.3);
+  --shadow-lg: 0 18px 44px -8px oklch(0 0 0 / 0.6), 0 4px 12px -4px oklch(0 0 0 / 0.35);
 }
 
 @theme inline {
@@ -140,6 +170,10 @@
   --color-destructive: var(--destructive);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-overlay: var(--overlay);
+  --color-chart-c: var(--chart-c);
+  --color-chart-grid: var(--chart-grid);
   --color-info: var(--info);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
@@ -254,6 +288,12 @@
     scrollbar-width: thin;
     scrollbar-color: var(--border-strong) transparent;
   }
+}
+
+/* Applied for two frames while the theme changes, so every colour switches at once. */
+.theme-switching,
+.theme-switching * {
+  transition: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

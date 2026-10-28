@@ -93,7 +93,7 @@ export function DetailPanel({
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-[oklch(0.2_0.02_262/0.12)] lg:hidden" onClick={onClose} aria-hidden />
+      <div className="fixed inset-0 z-40 bg-overlay/40 lg:hidden" onClick={onClose} aria-hidden />
       <aside
         ref={panelRef}
         tabIndex={-1}

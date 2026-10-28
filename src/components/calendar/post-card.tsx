@@ -36,7 +36,7 @@ export function StatePill({ state, className }: { state: WorkflowState; classNam
 
 function PriorityMark({ priority }: { priority?: string }) {
   if (priority === "urgent") return <ChevronsUp className="size-3 shrink-0 text-destructive" aria-label="Urgent" />;
-  if (priority === "high") return <ArrowUp className="size-3 shrink-0 text-[color-mix(in_oklch,var(--warning)_75%,black)]" aria-label="High priority" />;
+  if (priority === "high") return <ArrowUp className="size-3 shrink-0 text-warning-foreground" aria-label="High priority" />;
   return null;
 }
 
