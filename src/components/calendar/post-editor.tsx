@@ -376,7 +376,7 @@ function ConfirmPublished({ projectId, post, tz, onClose, onDone }: { projectId:
         <DialogHeader>
           <DialogTitle>Confirm publication</DialogTitle>
           <DialogDescription>
-            Paste the live post or video link after the account has synced (Integrations page). The connected platform's data confirms the publication and its actual timestamp is used.
+            Paste the live post or video link after the account has synced (Integrations page). The connected platform&apos;s data confirms the publication and its actual timestamp is used.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
