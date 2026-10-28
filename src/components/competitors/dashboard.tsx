@@ -323,11 +323,14 @@ function AdLibraryButton({ projectId, channel, name, readOnly }: { projectId: st
   const [open, setOpen] = React.useState(false);
   const [value, setValue] = React.useState("");
   const [busy, setBusy] = React.useState(false);
-  if (facebookPageId(channel)) {
+  if (facebookPageId(channel) && !open) {
     return (
-      <Button asChild size="sm" variant="outline" title="Meta's public Ad Library: every ad this Page has run (opens facebook.com)">
-        <a href={adLibraryUrl(channel)} target="_blank" rel="noreferrer"><Library /> Ads in Ad Library</a>
-      </Button>
+      <>
+        <Button asChild size="sm" variant="outline" title="Meta's public Ad Library: every ad this Page has run (opens facebook.com)">
+          <a href={adLibraryUrl(channel)} target="_blank" rel="noreferrer"><Library /> Ads in Ad Library</a>
+        </Button>
+        {readOnly ? null : <Button size="sm" variant="ghost" title="Link a different Ad Library Page" onClick={() => setOpen(true)}>Change</Button>}
+      </>
     );
   }
   const search = `https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=ALL&media_type=all&search_type=keyword_unordered&q=${encodeURIComponent(channel.display_name || name)}`;
