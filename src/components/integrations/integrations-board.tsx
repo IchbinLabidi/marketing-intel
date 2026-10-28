@@ -29,7 +29,7 @@ export type ProviderView = {
   runs: SocialSyncRun[];
 };
 type MetaView = {
-  info: ProviderInfo; configured: boolean; missing: string[]; running: boolean; counts: { facebook: number; instagram: number };
+  info: ProviderInfo; configured: boolean; missing: string[]; running: boolean; lastSuccess: string | null; counts: { facebook: number; instagram: number };
   connection: { status: string; page_name: string | null; ig_username: string | null; last_sync_at: string | null; last_sync_status: string | null; last_error: string | null; granted_scopes: string[]; declined_scopes: string[]; token_expires_at: string | null } | null;
 };
 
@@ -139,7 +139,7 @@ function MetaCard({ projectId, canEdit, meta }: { projectId: string; canEdit: bo
           <Row k="Page">{c.page_name ?? "Not chosen yet"}</Row>
           <Row k="Instagram">{c.ig_username ? `@${c.ig_username}` : "Not linked"}</Row>
           <Row k="Imported posts">{meta.counts.facebook} Facebook · {meta.counts.instagram} Instagram</Row>
-          <Row k="Last sync">{c.last_sync_at ? when(c.last_sync_at) : c.last_sync_status ? "time not recorded" : "never"}{c.last_sync_status ? ` (${c.last_sync_status})` : ""}</Row>
+          <Row k="Last successful sync">{when(meta.lastSuccess)}</Row>
           {c.token_expires_at ? <Row k="Access expires">{when(c.token_expires_at)}</Row> : null}
           {c.declined_scopes.length ? <Row k="Declined permissions"><span className="text-destructive">{c.declined_scopes.join(", ")}</span></Row> : null}
         </dl>

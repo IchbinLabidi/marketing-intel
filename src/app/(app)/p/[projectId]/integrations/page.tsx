@@ -1,3 +1,4 @@
+import { nowMs } from "@/lib/format";
 import { PageHeader } from "@/components/app/page-header";
 import { Alert } from "@/components/ui/alert";
 import { IntegrationsBoard, type ProviderView } from "@/components/integrations/integrations-board";
@@ -21,7 +22,7 @@ export default async function IntegrationsPage({ params, searchParams }: PagePro
   const { project } = await getProjectContext(projectId);
   const canEdit = await hasPermission(project.workspace_id, "intelligence.edit");
   const [meta, metaRuns, metaCounts, social, socialRuns] = await Promise.all([
-    getMetaConnection(projectId), listSyncRuns(projectId, 1), countMetaPosts(projectId), listSocialConnections(projectId), listSocialRuns(projectId, 30),
+    getMetaConnection(projectId), listSyncRuns(projectId, 10), countMetaPosts(projectId), listSocialConnections(projectId), listSocialRuns(projectId, 30),
   ]);
   if (social.ready) await autoSyncStale(projectId, social.connections, canEdit);
 
@@ -76,7 +77,9 @@ export default async function IntegrationsPage({ params, searchParams }: PagePro
           info: { ...CATALOG.meta, setup: CATALOG.meta.setup.map(withUrl) },
           configured: isMetaConfigured(), missing: metaMissingConfig(),
           connection: meta ? { status: meta.status, page_name: meta.page_name, ig_username: meta.ig_username, last_sync_at: meta.last_sync_at, last_sync_status: meta.last_sync_status, last_error: meta.last_error, granted_scopes: meta.granted_scopes, declined_scopes: meta.declined_scopes, token_expires_at: meta.token_expires_at } : null,
-          running: metaRuns[0]?.status === "running",
+          // A run whose heartbeat stopped more than 3 minutes ago was interrupted; it isn't shown as running.
+          running: metaRuns[0]?.status === "running" && nowMs() - Date.parse((metaRuns[0] as { heartbeat_at?: string | null }).heartbeat_at ?? metaRuns[0].started_at) < 3 * 60_000,
+          lastSuccess: meta?.last_sync_at ?? metaRuns.find((r) => r.status === "succeeded" || r.status === "partial")?.finished_at ?? null,
           counts: metaCounts,
         }}
         providers={providers}

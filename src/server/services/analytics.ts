@@ -11,7 +11,7 @@ import { actionCenter, executiveSummary, explain, fiveQuestions, type CeoInput }
 import { getProjectContext } from "./projects";
 import { getStrategyBundle } from "./strategy";
 import { listChannels } from "./projects";
-import { getMetaConnection } from "./meta";
+import { getMetaConnection, listSyncRuns } from "./meta";
 import { listSnapshots, listSocialConnections } from "./social";
 import { assignablePeople, getPermissions, isMissingTeamSchema } from "./team";
 import { requireUser } from "./session";
@@ -89,7 +89,8 @@ export async function loadAnalytics(projectId: string, sp: Record<string, string
         .catch(() => all<RawPerf>((a, b) => db.from("historical_content_items").select(PERF_COLUMNS).eq("project_id", projectId).order("id").range(a, b)))
       : Promise.resolve([] as RawPerf[]),
   ]);
-  const socialAccounts = canSeeSocial ? (await listSocialConnections(projectId)).connections : [];
+  const [socialAccounts, metaRuns] = canSeeSocial ? await Promise.all([listSocialConnections(projectId).then((r) => r.connections), meta ? listSyncRuns(projectId, 10).catch(() => []) : Promise.resolve([])]) : [[], []];
+  const metaLastSuccess = meta?.last_sync_at ?? metaRuns.find((r) => r.status === "succeeded" || r.status === "partial")?.finished_at ?? null;
 
   // While the period is still running, results so far are compared with the same number of days just before it.
   const periodOpen = params.period.to > today;
@@ -138,7 +139,7 @@ export async function loadAnalytics(projectId: string, sp: Record<string, string
   const weekly = canSeeSocial ? socialWeekly(perfRows, params.period) : null;
   // Data freshness: when each source last synced successfully.
   const freshness = canSeeSocial ? [
-    ...(meta && meta.status !== "disconnected" ? [{ id: "meta", label: `Meta${meta.page_name ? ` · ${meta.page_name}` : ""}`, provider: "meta", lastSuccess: meta.last_sync_status === "failed" ? null : meta.last_sync_at, lastStatus: meta.last_sync_status, status: meta.status }] : []),
+    ...(meta && meta.status !== "disconnected" ? [{ id: "meta", label: `Meta${meta.page_name ? ` · ${meta.page_name}` : ""}`, provider: "meta", lastSuccess: metaLastSuccess, lastStatus: meta.last_sync_status, status: meta.status }] : []),
     ...socialAccounts.filter((c) => c.status !== "disconnected").map((c) => ({ id: c.id, label: `${c.provider === "youtube" ? "YouTube" : c.provider === "linkedin" ? "LinkedIn" : "TikTok"} · ${c.account_name ?? c.external_account_id}`, provider: c.provider as string, lastSuccess: c.last_success_at, lastStatus: c.last_sync_status, status: c.status as string })),
   ] : [];
   const socialNow = canSeeSocial ? social(perfRows, params.period) : null;
