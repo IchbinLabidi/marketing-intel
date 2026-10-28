@@ -70,9 +70,12 @@ export function pageIdFromInput(input: string): string | null {
   return s.match(/[?&](?:view_all_page_id|id)=(\d{5,20})/)?.[1] ?? null;
 }
 
-export function facebookPageId(channel: { handle: string | null; url: string | null; external_id?: string | null }) {
-  if (channel.external_id && /^\d{5,20}$/.test(channel.external_id)) return channel.external_id;
-  return channel.url?.match(/[?&]id=(\d{5,})/)?.[1] ?? (/^\d{5,}$/.test(channel.handle ?? "") ? channel.handle : null);
+/**
+ * The Page id saved for the Ad Library. Only an id taken from the Ad Library itself is trusted: a profile.php?id=…
+ * number in the profile link is often a different id from the advertiser Page id Meta uses there.
+ */
+export function facebookPageId(channel: { external_id?: string | null }) {
+  return channel.external_id && /^\d{5,20}$/.test(channel.external_id) ? channel.external_id : null;
 }
 
 export function adLibraryUrl(channel: { handle: string | null; url: string | null; display_name: string | null; external_id?: string | null }, country = "ALL") {

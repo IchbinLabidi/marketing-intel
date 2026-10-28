@@ -37,7 +37,9 @@ describe("bulk manual posts", () => {
   });
 
   it("links to Meta's Ad Library by Page id when known, else by name", () => {
-    expect(adLibraryUrl({ handle: "x", url: "https://www.facebook.com/profile.php?id=61595797558486", display_name: null })).toContain("view_all_page_id=61595797558486");
+    expect(adLibraryUrl({ handle: "x", url: "https://www.facebook.com/profile.php?id=61595797558486", display_name: null, external_id: "1378131212051147" })).toContain("view_all_page_id=1378131212051147");
+    // a profile.php id is not trusted as the advertiser Page id
+    expect(adLibraryUrl({ handle: "x", url: "https://www.facebook.com/profile.php?id=61595797558486", display_name: "Select Prof" })).not.toContain("view_all_page_id");
     const byName = new URL(adLibraryUrl({ handle: "tunisianonlineteachers", url: "https://www.facebook.com/tunisianonlineteachers", display_name: "Tunisian Online Teachers" }));
     expect(byName.searchParams.get("q")).toBe("Tunisian Online Teachers");
     expect(byName.hostname).toBe("www.facebook.com");
@@ -50,6 +52,7 @@ describe("Ad Library page id", () => {
     expect(pageIdFromInput("https://www.facebook.com/ads/library/?active_status=active&search_type=page&view_all_page_id=100696658038458")).toBe("100696658038458");
     expect(pageIdFromInput("100696658038458")).toBe("100696658038458");
     expect(pageIdFromInput("https://www.facebook.com/tunisianonlineteachers")).toBeNull();
-    expect(facebookPageId({ handle: "tunisianonlineteachers", url: null, external_id: "100696658038458" })).toBe("100696658038458");
+    expect(facebookPageId({ external_id: "100696658038458" })).toBe("100696658038458");
+    expect(facebookPageId({ external_id: null })).toBeNull();
   });
 });
