@@ -14,13 +14,14 @@ const RANGES = [
   { key: "month", label: "This month" }, { key: "quarter", label: "This quarter" }, { key: "custom", label: "Custom" },
 ];
 const TYPES = ["Post", "Carousel", "Reel", "Story", "Video", "Article", "Other"];
+const DETAIL_KEYS = ["pillar", "funnel", "platform", "format", "campaign", "status", "assignee"];
 const KEYS = ["range", "from", "to", "compare", "pillar", "funnel", "platform", "format", "campaign", "status", "assignee"];
 
 /** Shared filters, kept in the URL so the page, the CSV export and the report all read the same selection. */
 export function AnalyticsFilters({
-  preset, period, compare, filters, options,
+  preset, period, compare, filters, options, simple = false,
 }: {
-  preset: string; period: { from: string; to: string }; compare: boolean;
+  preset: string; period: { from: string; to: string }; compare: boolean; simple?: boolean;
   filters: Record<string, string>;
   options: { pillars: { id: string; name: string }[]; campaigns: { id: string; name: string }[]; platforms: string[]; people: { user_id: string; name: string }[] };
 }) {
@@ -35,6 +36,8 @@ export function AnalyticsFilters({
     start(() => router.replace(`${pathname}?${next.toString()}`, { scroll: false }));
   };
   const active = KEYS.some((k) => sp.get(k));
+  const detailCount = DETAIL_KEYS.filter((k) => sp.get(k)).length;
+  const clear = () => set(Object.fromEntries(DETAIL_KEYS.map((k) => [k, null])));
 
   const select = (key: string, label: string, opts: { value: string; label: string }[], all = "All") => (
     <label className="grid gap-1 text-xs font-medium text-muted-foreground">
@@ -68,6 +71,7 @@ export function AnalyticsFilters({
             <option value="none">No comparison</option>
           </NativeSelect>
         </label>
+        {simple ? null : (<>
         {select("pillar", "Pillar", [...options.pillars.map((p) => ({ value: p.id, label: p.name })), { value: "none", label: "No pillar" }])}
         {select("funnel", "Funnel stage", FUNNEL_STAGES.map((s) => ({ value: s, label: FUNNEL_LABELS[s] })))}
         {select("platform", "Platform", options.platforms.map((p) => ({ value: p, label: PLATFORM_LABELS[p as Platform] ?? p })))}
@@ -75,6 +79,13 @@ export function AnalyticsFilters({
         {options.campaigns.length ? select("campaign", "Campaign", options.campaigns.map((c) => ({ value: c.id, label: c.name }))) : null}
         {select("status", "Production stage", STAGES.map((s) => ({ value: s, label: STAGE_LABELS[s] })))}
         {options.people.length > 1 ? select("assignee", "Collaborator", [...options.people.map((p) => ({ value: p.user_id, label: p.name })), { value: "none", label: "Unassigned" }], "Everyone") : null}
+        </>)}
+        {simple && detailCount ? (
+          <div className="col-span-2 flex items-end gap-2 text-[13px] text-muted-foreground">
+            <span>{detailCount} detailed filter{detailCount === 1 ? "" : "s"} applied (set in Expert view).</span>
+            <Button type="button" variant="link" size="sm" className="h-8 px-0" onClick={clear}>Clear</Button>
+          </div>
+        ) : null}
         <div className="flex items-end">
           <Button type="button" variant="ghost" size="sm" className="h-8" disabled={!active || pending} onClick={() => start(() => router.replace(pathname, { scroll: false }))}>
             <RotateCcw className="size-3.5" /> Reset

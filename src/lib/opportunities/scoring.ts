@@ -82,7 +82,7 @@ function gapDimension(cited: Signal[]): Omit<DimensionScore, "weight"> {
 /** Search demand from cited SERP signals (real Google results); excluded when the project has no SERP analysis. */
 function searchDimension(cited: Signal[], serpData: boolean): Omit<DimensionScore, "weight"> {
   const s = cited.filter((x) => x.kind === "search_demand");
-  if (!serpData) return { score: null, basis: "excluded", reason: "No keyword analysed in SERP Intelligence: excluded, its weight is spread over the other dimensions." };
+  if (!serpData) return { score: null, basis: "excluded", reason: "No keyword analysed in Google search: excluded, its weight is spread over the other dimensions." };
   if (!s.length) return { score: 30, basis: "data", reason: "No analysed search query is cited for this idea." };
   const best = Math.max(...s.map((x) => 60 + (Number(x.metrics.questions ?? 0) > 0 ? 15 : 0) + (x.metrics.own_position == null ? 15 : Number(x.metrics.own_position) > 3 ? 10 : 0)));
   return { score: clamp(best), basis: "data", reason: `${s.length} analysed search quer${s.length > 1 ? "ies" : "y"}: ${s.map((x) => x.metrics.keyword).join(", ")} (People also ask questions and your current position counted).` };

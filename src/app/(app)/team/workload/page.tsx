@@ -51,7 +51,7 @@ export default async function WorkloadPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow={ws.name} title="Team" description="Members, their roles, and what each role can see and do." />
+      <PageHeader eyebrow={ws.name} title="Team" description="Who is working on what, and where deadlines pile up. Use it to spread work before it slips." />
       <TabNav
         label="Team sections"
         items={[

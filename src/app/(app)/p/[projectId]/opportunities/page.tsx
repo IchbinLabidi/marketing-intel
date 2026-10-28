@@ -47,7 +47,7 @@ export default async function Page({ params }: { params: Promise<{ projectId: st
     <div className="space-y-6">
       <PageHeader
         title="Content Opportunities"
-        description="Prioritised content ideas grounded in your strategy, your posts’ real results and, when imported, your competitors. Every number shown is calculated from your data; hypotheses are labelled as such."
+        description="Content ideas ranked by how much they should help, each with the evidence behind it (your strategy, your past results, competitors). Use it to decide what to create next; accepted ideas go to the calendar."
       />
       <Suspense fallback={<div className="h-[74px] animate-pulse rounded-xl border bg-card" aria-busy="true" aria-label="Loading signals" />}>
         <Signals projectId={projectId} canGenerate={canEdit(role) && isAIConfigured()} />

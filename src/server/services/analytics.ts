@@ -7,6 +7,7 @@ import {
   type AnalyticsItem, type AnalyticsTask, type Filters, type Period, type PerfRow,
 } from "@/lib/analytics/compute";
 import { STAGE_LABELS, type ProductionStage } from "@/lib/production/model";
+import { actionCenter, executiveSummary, explain, fiveQuestions, type CeoInput } from "@/lib/analytics/ceo";
 import { getProjectContext } from "./projects";
 import { getStrategyBundle } from "./strategy";
 import { listChannels } from "./projects";
@@ -83,7 +84,9 @@ export async function loadAnalytics(projectId: string, sp: Record<string, string
       : Promise.resolve([]),
   ]);
 
-  const prevPeriod = previousPeriod(params.period);
+  // While the period is still running, results so far are compared with the same number of days just before it.
+  const periodOpen = params.period.to > today;
+  const prevPeriod = previousPeriod(periodOpen && params.period.from <= today ? { from: params.period.from, to: today } : params.period);
   const events = parseStageEvents(activity);
   const tasks = tasksRes;
   const filtered = filterItems(items, tasks, params.filters);
@@ -132,8 +135,20 @@ export async function loadAnalytics(projectId: string, sp: Record<string, string
     stageLabel: (s) => STAGE_LABELS[s as ProductionStage] ?? s,
   });
 
+  const ceoInput: CeoInput = {
+    period: params.period, periodDays, overview: ov, overviewPrev: params.compare ? ovPrev : null, production: prod, productionPrev: params.compare ? prodPrev : null,
+    balance, targetsOff, hasPillarTargets: bundle.pillars.some((p) => p.target_share != null), hasChannelTargets: channels.some((c) => c.is_active && c.target_posts_per_week != null),
+    team, social: socialNow, socialPrev: params.compare ? socialPrev : null, canSeeSocial,
+    meta: meta ? { status: meta.status, lastSyncStatus: meta.last_sync_status, error: meta.last_error } : null,
+    kpiCount: bundle.kpis.length, stageLabel: (s) => STAGE_LABELS[s as ProductionStage] ?? s,
+    links: { strategy: `${base}/strategy`, calendar: `${base}/calendar?view=list`, overdue: `${base}/calendar?view=list&overdue=1`, production: `${base}/production`, team: "/team/workload", history: `${base}/history`, settings: `${base}/settings` },
+  };
+  const issues = actionCenter(ceoInput);
+  const ceo = { issues, summary: executiveSummary(ceoInput, issues), answers: fiveQuestions(ceoInput, issues), explain: explain(ceoInput) };
+
   return {
-    project, tz, today, params, prevPeriod, nowIso,
+    ceo,
+    project, tz, today, params, prevPeriod, periodOpen, nowIso,
     access: { canSeeTeam, canSeeSocial, canExport, canSeeAllContent: perms.has("content.view_all") },
     options: {
       pillars: bundle.pillars.map((p) => ({ id: p.id, name: p.name })),

@@ -29,11 +29,11 @@ export default async function Page({ params }: { params: Promise<{ projectId: st
   return (
     <div className="space-y-6">
       <BackLink href={`/p/${projectId}/calendar`}>Editorial Calendar</BackLink>
-      <PageHeader title="Plan a month" description="A strategic, data-driven editorial calendar: available data → content opportunities → content mix → platform-specific posts → checks → approval." />
+      <PageHeader title="Plan a month" description="Builds a month of posts from your strategy, past results and content ideas. You review and approve the plan before anything is scheduled." />
       <StartForm projectId={projectId} defaults={{ month: next, platforms: defaults }} readOnly={!canEdit(role)} />
       <section className="space-y-2">
         <h2 className="text-[13px] font-semibold">Planned calendars</h2>
-        {!calendars.length ? <EmptyState icon={CalendarRange} title="No calendar planned with the engine yet" description="Start with a month above. Calendars created from Historical Intelligence stay in the Editorial Calendar." /> : (
+        {!calendars.length ? <EmptyState icon={CalendarRange} title="No calendar planned with the engine yet" description="Start with a month above. Calendars created from Content history stay in the Editorial Calendar." /> : (
           <ul className="grid gap-2 md:grid-cols-2">
             {calendars.map((c) => (
               <li key={c.id}>

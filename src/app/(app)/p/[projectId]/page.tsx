@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { ArrowRight, CheckCircle2, CircleDashed, Globe } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { FormSection } from "@/components/app/form-section";
@@ -8,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { BrandProfileForm } from "@/components/projects/brand-profile-form";
 import { ChannelsManager } from "@/components/projects/channels-manager";
 import { ProjectActions } from "@/components/projects/project-actions";
+import { ProjectSnapshot } from "@/components/analytics/project-snapshot";
 import { canAdmin, canEdit, LANGUAGE_LABELS } from "@/lib/domain/constants";
 import { getBrandProfile, getProjectContext, listChannels } from "@/server/services/projects";
 import { getStrategyBundle, strategyCompleteness } from "@/server/services/strategy";
@@ -52,6 +54,10 @@ export default async function ProjectOverviewPage({ params }: PageProps<"/p/[pro
         actions={<ProjectActions project={project} canEdit={canEdit(role)} canAdmin={canAdmin(role)} />}
       />
 
+      <Suspense fallback={<div className="h-40 animate-pulse rounded-xl bg-muted" aria-label="Loading the project summary" />}>
+        <ProjectSnapshot projectId={projectId} workspaceId={project.workspace_id} strategyPercent={completeness.percent} />
+      </Suspense>
+
       <section
         aria-label="Marketing strategy status"
         className="grid gap-5 rounded-xl border bg-card p-5 shadow-xs md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
@@ -76,7 +82,7 @@ export default async function ProjectOverviewPage({ params }: PageProps<"/p/[pro
               </li>
             ))}
           </ul>
-          <p className="text-xs text-muted-foreground">The strategy feeds every AI feature, from opportunities to calendar generation.</p>
+          <p className="text-xs text-muted-foreground">The strategy is the reference for everything else: content ideas, the calendar, and the targets Analytics checks.</p>
         </div>
         <Button asChild variant={completeness.percent < 100 ? "default" : "outline"} className="md:self-center">
           <Link href={`/p/${projectId}/strategy`}>

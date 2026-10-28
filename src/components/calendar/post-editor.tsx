@@ -297,7 +297,7 @@ export function PostEditor({
           {!readOnly && !locked ? (
             <p className="flex gap-1.5 text-xs text-muted-foreground">
               <Info className="mt-0.5 size-3.5 shrink-0" />
-              “Schedule” books an internal slot after production approval. Publish on the platform, sync Historical Intelligence, then verify the live post here.
+              “Schedule” books an internal slot after production approval. Publish on the platform, sync Content history, then verify the live post here.
             </p>
           ) : null}
         </div>
@@ -376,7 +376,7 @@ function ConfirmPublished({ projectId, post, tz, onClose, onDone }: { projectId:
         <DialogHeader>
           <DialogTitle>Confirm publication</DialogTitle>
           <DialogDescription>
-            Paste the live post link after syncing Historical Intelligence. The connected platform will verify publication; its actual timestamp is used.
+            Paste the live post link after syncing Content history. The connected platform will verify publication; its actual timestamp is used.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">

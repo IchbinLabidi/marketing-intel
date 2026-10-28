@@ -28,7 +28,7 @@ const NO_EDIT: ActionResult<never> = { ok: false, error: "Your role in this work
 const refresh = (projectId: string) => revalidatePath(`/p/${projectId}`, "layout");
 const fail = (e: unknown, fallback: string): ActionResult<never> => {
   const m = e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : fallback;
-  return { ok: false, error: /schema cache|does not exist/.test(m) ? "SERP Intelligence needs database migration 0010." : m };
+  return { ok: false, error: /schema cache|does not exist/.test(m) ? "Google search needs database migration 0010." : m };
 };
 
 async function guard(projectId: string) {

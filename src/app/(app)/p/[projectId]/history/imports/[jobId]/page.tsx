@@ -35,7 +35,7 @@ export default async function ImportJobPage({ params }: PageProps<"/p/[projectId
   return (
     <div className="space-y-6">
       <PageHeader
-        back={{ href: `/p/${projectId}/history?tab=imports`, label: "Historical Intelligence" }}
+        back={{ href: `/p/${projectId}/history?tab=imports`, label: "Content history" }}
         title={<span className="flex items-center gap-2">{job.label || job.file_name} <ImportStatusBadge status={job.status} /></span>}
         description={`${job.file_name}${job.sheet_name ? ` · sheet “${job.sheet_name}”` : ""} · uploaded ${formatDateTime(job.created_at)}`}
         actions={

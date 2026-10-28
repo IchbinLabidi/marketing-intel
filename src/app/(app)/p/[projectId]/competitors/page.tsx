@@ -18,7 +18,7 @@ import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
 import { getStrategyBundle } from "@/server/services/strategy";
 
-export const metadata = { title: "Competitor Intelligence" };
+export const metadata = { title: "Competitors" };
 
 const TABS = [
   { id: "competitors", label: "Competitors" },
@@ -102,8 +102,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Competitor Intelligence" description="Track what competitors publish through official data sources, compare it with your own results and turn the gaps into original content opportunities." />
-      <TabNav label="Competitor Intelligence sections" items={TABS.map((t) => ({ key: t.id, label: t.label, href: `/p/${projectId}/competitors?tab=${t.id}`, active: tab === t.id }))} />
+      <PageHeader title="Competitors" description="What your competitors publish and how well it works, next to your own results. Use it to spot topics they cover that you don't. Data comes from official sources only." />
+      <TabNav label="Competitors sections" items={TABS.map((t) => ({ key: t.id, label: t.label, href: `/p/${projectId}/competitors?tab=${t.id}`, active: tab === t.id }))} />
       {body}
     </div>
   );

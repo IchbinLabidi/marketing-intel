@@ -15,7 +15,7 @@ export function InsightsPanel({ projectId, timing, performance, tz }: { projectI
       <aside className="rounded-xl border bg-card p-4 text-[13px] shadow-xs">
         <p className="flex items-center gap-2 font-medium"><Lightbulb className="size-4" /> Publishing insights</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Connect Meta in <Link className="text-primary hover:underline" href={`/p/${projectId}/history`}>Historical Intelligence</Link> to see your best days and times, based on your own posts.
+          Connect Meta in <Link className="text-primary hover:underline" href={`/p/${projectId}/history`}>Content history</Link> to see your best days and times, based on your own posts.
         </p>
       </aside>
     );
@@ -42,7 +42,7 @@ export function InsightsPanel({ projectId, timing, performance, tz }: { projectI
             </p>
             {!t ? (
               <p className="text-xs text-muted-foreground">
-                Best days and times need exact publication times. Run “Refresh all metrics” in <Link className="text-primary hover:underline" href={`/p/${projectId}/history`}>Historical Intelligence</Link> to sync them.
+                Best days and times need exact publication times. Run “Refresh all metrics” in <Link className="text-primary hover:underline" href={`/p/${projectId}/history`}>Content history</Link> to sync them.
               </p>
             ) : t.suggestions.length ? (
               <div>

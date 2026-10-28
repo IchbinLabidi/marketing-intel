@@ -241,7 +241,7 @@ export type Opportunity = {
   source: string;
   analysis_report_id: string | null;
   score_breakdown: import("@/lib/opportunities/scoring").ScoreBreakdown | null;
-  /** SEO opportunities (SERP Intelligence): keyword, intent, market, slug, outline */
+  /** SEO opportunities (Google search): keyword, intent, market, slug, outline */
   seo?: { keyword: string; intent: string; country: string; language: string; content_type: string; slug: string; outline: string[]; kind: string } | null;
   serp_analysis_id?: string | null;
   campaign_id?: string | null;

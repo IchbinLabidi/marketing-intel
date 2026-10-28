@@ -13,7 +13,7 @@ import { COUNTRIES, SERP_LANGUAGES, serpProvider } from "@/server/serp/provider"
 import { itemsFor, listAnalyses, listBriefs, type SerpAnalysis } from "@/server/services/serp";
 import { getProjectContext } from "@/server/services/projects";
 
-export const metadata = { title: "SERP Intelligence" };
+export const metadata = { title: "Google search" };
 
 const TABS = [{ id: "keywords", label: "Keywords" }, { id: "domains", label: "Ranking domains" }, { id: "briefs", label: "SEO briefs" }] as const;
 const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—");
@@ -106,7 +106,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
 
   return (
     <div className="space-y-6">
-      <PageHeader title="SERP Intelligence" description="Analyze Google search results, understand search intent, discover competitors, and identify SEO content opportunities." />
+      <PageHeader title="Google search" description="What people type into Google about your topics, and which sites appear first (the results page, or SERP). Use it to find articles worth writing so customers find you on Google." />
       <AnalyzeForm
         projectId={projectId}
         countries={Object.entries(COUNTRIES).map(([code, c]) => ({ code, label: `${c.label} (searched from ${c.city})` }))}
@@ -114,7 +114,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         configured={provider.configured()} setupHint={provider.setupHint} readOnly={!canEdit(role)}
       />
       {!ownDomain ? <p className="text-xs text-muted-foreground">Tip: add your website in the project settings to see where your own pages rank and compare them with the results.</p> : null}
-      <TabNav label="SERP Intelligence sections" items={TABS.map((t) => ({ key: t.id, label: t.label, href: `/p/${projectId}/seo?tab=${t.id}`, active: tab === t.id }))} />
+      <TabNav label="Google search sections" items={TABS.map((t) => ({ key: t.id, label: t.label, href: `/p/${projectId}/seo?tab=${t.id}`, active: tab === t.id }))} />
       {body}
     </div>
   );
