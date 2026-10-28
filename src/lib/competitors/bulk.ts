@@ -63,8 +63,20 @@ export function parseBulkPosts(text: string, today: string): BulkRow[] {
  * Meta's public Ad Library for a competitor's Facebook Page: the exact Page when its numeric id is known
  * (facebook.com/profile.php?id=…), otherwise a search on the Page name. Opens in the browser; nothing is collected.
  */
-export function adLibraryUrl(channel: { handle: string | null; url: string | null; display_name: string | null }, country = "ALL") {
-  const id = channel.url?.match(/[?&]id=(\d{5,})/)?.[1] ?? (/^\d{5,}$/.test(channel.handle ?? "") ? channel.handle : null);
+/** Numeric Facebook Page id from a pasted Ad Library link (view_all_page_id=…), a profile.php?id=… link or the bare id. */
+export function pageIdFromInput(input: string): string | null {
+  const s = input.trim();
+  if (/^\d{5,20}$/.test(s)) return s;
+  return s.match(/[?&](?:view_all_page_id|id)=(\d{5,20})/)?.[1] ?? null;
+}
+
+export function facebookPageId(channel: { handle: string | null; url: string | null; external_id?: string | null }) {
+  if (channel.external_id && /^\d{5,20}$/.test(channel.external_id)) return channel.external_id;
+  return channel.url?.match(/[?&]id=(\d{5,})/)?.[1] ?? (/^\d{5,}$/.test(channel.handle ?? "") ? channel.handle : null);
+}
+
+export function adLibraryUrl(channel: { handle: string | null; url: string | null; display_name: string | null; external_id?: string | null }, country = "ALL") {
+  const id = facebookPageId(channel);
   const u = new URL("https://www.facebook.com/ads/library/");
   u.searchParams.set("active_status", "all");
   u.searchParams.set("ad_type", "all");

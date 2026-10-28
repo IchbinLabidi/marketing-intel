@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { canEdit, type Platform } from "@/lib/domain/constants";
 import { engagementOfPost, summarize, type AnalysisPost } from "@/lib/competitors/analysis";
 import { hashtagsOf, mentionsOf, normalizeWebsite, parseProfileUrl } from "@/lib/competitors/urls";
+import { pageIdFromInput } from "@/lib/competitors/bulk";
 import { normalizeText, stripRefs } from "@/lib/history/text";
 import { captionHook } from "@/lib/meta/normalize";
 import { classify, computeScore, isDuplicate, normalizeWeights } from "@/lib/opportunities/scoring";
@@ -221,6 +222,25 @@ export async function addManualPostsAction(projectId: string, channelId: string,
     return { ok: true, data: { saved: byId.size, errors }, message: `${byId.size} post${byId.size === 1 ? "" : "s"} saved${errors.length ? `, ${errors.length} line${errors.length === 1 ? "" : "s"} skipped` : ""}` };
   } catch (e) {
     return fail(e, "Could not import the posts");
+  }
+}
+
+/** Saves the numeric Page id of a competitor's Facebook profile (from a pasted Ad Library link), for the Ad Library button. */
+export async function setFacebookPageIdAction(projectId: string, channelId: string, input: string): Promise<ActionResult> {
+  const { allowed } = await guard(projectId);
+  if (!allowed) return NO_EDIT;
+  const pageId = pageIdFromInput(input);
+  if (!pageId) return { ok: false, error: "Paste the Ad Library address of their Page (it contains view_all_page_id=…) or the Page id." };
+  try {
+    const db = await createClient();
+    const { data: ch } = await db.from("competitor_channels").select("id, platform").eq("project_id", projectId).eq("id", channelId).maybeSingle();
+    if (!ch || ch.platform !== "facebook") return { ok: false, error: "Facebook profile not found." };
+    const { error } = await db.from("competitor_channels").update({ external_id: pageId }).eq("id", channelId);
+    if (error) throw error;
+    refresh(projectId);
+    return { ok: true, message: "Page linked. The Ad Library button now opens their ads directly." };
+  } catch (e) {
+    return fail(e, "Could not link the Page");
   }
 }
 

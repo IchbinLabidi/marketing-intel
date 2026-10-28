@@ -12,13 +12,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { PlatformIcon } from "@/components/calendar/platform-icon";
 import { PLATFORM_LABELS } from "@/lib/domain/constants";
 import type { Summary } from "@/lib/competitors/analysis";
-import { addManualPostAction, addManualPostsAction, analyzeCompetitorAction, collectCompetitorAction, removeProfileAction, toggleProfileAction } from "@/server/actions/competitors";
+import { setFacebookPageIdAction, addManualPostAction, addManualPostsAction, analyzeCompetitorAction, collectCompetitorAction, removeProfileAction, toggleProfileAction } from "@/server/actions/competitors";
 import type { Competitor, CompetitorChannel, CompetitorRun } from "@/server/services/competitors";
 import { CompetitorForm, type ProviderStatus } from "./competitor-form";
 import { useLivePolling } from "./competitor-list";
 import { ago, Bars, Basis, fmt, MetricLegend, StatusBadge } from "./ui";
 import { formatDateTime } from "@/lib/format";
-import { adLibraryUrl, parseBulkPosts } from "@/lib/competitors/bulk";
+import { adLibraryUrl, facebookPageId, parseBulkPosts } from "@/lib/competitors/bulk";
 
 type Statement = { category: string; text: string; basis: "fact" | "hypothesis"; refs: string[] };
 export type AnalysisReport = { id: string; created_at: string; result: { summary: string; strategy: Statement[]; performance: Statement[]; weaknesses: Statement[]; notes?: { data_limits?: string[] }; posts_analysed?: number } } | null;
@@ -102,11 +102,7 @@ export function CompetitorDashboard({ projectId, competitor, summary, followers,
               </div>
               {c.platform === "facebook" || !readOnly ? (
                 <div className="flex flex-wrap items-center gap-1 md:justify-end">
-                  {c.platform === "facebook" ? (
-                    <Button asChild size="sm" variant="outline" title="Meta's public Ad Library: every ad this Page runs (opens facebook.com)">
-                      <a href={adLibraryUrl(c)} target="_blank" rel="noreferrer"><Library /> Ads in Ad Library</a>
-                    </Button>
-                  ) : null}
+                  {c.platform === "facebook" ? <AdLibraryButton projectId={projectId} channel={c} name={competitor.name} readOnly={readOnly} /> : null}
                   {readOnly ? null : <>
                   {!providers[c.platform]?.ok || c.status === "unsupported" || c.status === "needs_config" ? <Button size="sm" variant="outline" onClick={() => setManual(c)}><Plus /> Add posts manually</Button> : null}
                   <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => run(c.id, () => toggleProfileAction(projectId, c.id, !c.enabled))}>{c.enabled ? <><Pause /> Pause</> : <><Play /> Resume</>}</Button>
@@ -316,4 +312,40 @@ function BulkPosts({ projectId, channel, onDone }: { projectId: string; channel:
       </DialogFooter>
     </div>
   );
+}
+
+/**
+ * Meta's public Ad Library for a competitor's Facebook Page. With the Page id it opens their ads directly; without it,
+ * it opens a search and asks once for the Page's Ad Library address (Meta's search box suggests the advertiser).
+ */
+function AdLibraryButton({ projectId, channel, name, readOnly }: { projectId: string; channel: CompetitorChannel; name: string; readOnly: boolean }) {
+  const router = useRouter();
+  const [open, setOpen] = React.useState(false);
+  const [value, setValue] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  if (facebookPageId(channel)) {
+    return (
+      <Button asChild size="sm" variant="outline" title="Meta's public Ad Library: every ad this Page has run (opens facebook.com)">
+        <a href={adLibraryUrl(channel)} target="_blank" rel="noreferrer"><Library /> Ads in Ad Library</a>
+      </Button>
+    );
+  }
+  const search = `https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=ALL&media_type=all&search_type=keyword_unordered&q=${encodeURIComponent(channel.display_name || name)}`;
+  if (readOnly) return <Button asChild size="sm" variant="outline"><a href={search} target="_blank" rel="noreferrer"><Library /> Search Ad Library</a></Button>;
+  return open ? (
+    <span className="flex w-full flex-wrap items-center gap-1.5 rounded-md border bg-muted/40 p-2 text-xs md:w-auto">
+      <span className="basis-full text-muted-foreground">1. <a href={search} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">Open the Ad Library</a>, type their name and pick their Page under “Advertisers”. 2. Paste that page&apos;s address here:</span>
+      <Input className="h-8 w-72 max-w-full text-xs" value={value} onChange={(e) => setValue(e.target.value)} placeholder="https://www.facebook.com/ads/library/?…view_all_page_id=…" aria-label="Ad Library address of their Page" />
+      <Button size="sm" disabled={busy || !value.trim()} onClick={async () => {
+        setBusy(true);
+        const r = await setFacebookPageIdAction(projectId, channel.id, value);
+        setBusy(false);
+        if (!r.ok) return toast.error(r.error);
+        toast.success(r.message);
+        setOpen(false);
+        router.refresh();
+      }}>Link</Button>
+      <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+    </span>
+  ) : <Button size="sm" variant="outline" onClick={() => setOpen(true)}><Library /> Link Ad Library</Button>;
 }
