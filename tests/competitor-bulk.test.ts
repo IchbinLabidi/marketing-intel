@@ -43,3 +43,13 @@ describe("bulk manual posts", () => {
     expect(byName.hostname).toBe("www.facebook.com");
   });
 });
+
+describe("Ad Library page id", () => {
+  it("reads the Page id from a pasted Ad Library address or a bare id", async () => {
+    const { pageIdFromInput, facebookPageId } = await import("@/lib/competitors/bulk");
+    expect(pageIdFromInput("https://www.facebook.com/ads/library/?active_status=active&search_type=page&view_all_page_id=100696658038458")).toBe("100696658038458");
+    expect(pageIdFromInput("100696658038458")).toBe("100696658038458");
+    expect(pageIdFromInput("https://www.facebook.com/tunisianonlineteachers")).toBeNull();
+    expect(facebookPageId({ handle: "tunisianonlineteachers", url: null, external_id: "100696658038458" })).toBe("100696658038458");
+  });
+});
