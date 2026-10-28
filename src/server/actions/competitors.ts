@@ -183,6 +183,47 @@ export async function addManualPostAction(projectId: string, input: unknown): Pr
   }
 }
 
+/**
+ * Several manual posts at once for one profile (pasted lines, see lib/competitors/bulk). Each row is validated with
+ * the same rules as a single post; valid rows are saved, invalid ones are reported back with their line number.
+ * Re-importing the same link updates that post instead of duplicating it.
+ */
+export async function addManualPostsAction(projectId: string, channelId: string, rows: unknown[]): Promise<ActionResult<{ saved: number; errors: { line: number; error: string }[] }>> {
+  const { allowed } = await guard(projectId);
+  if (!allowed) return NO_EDIT;
+  if (!Array.isArray(rows) || !rows.length) return { ok: false, error: "Nothing to import." };
+  if (rows.length > 200) return { ok: false, error: "Import at most 200 posts at a time." };
+  try {
+    const db = await createClient();
+    const { data: ch } = await db.from("competitor_channels").select("id, competitor_id, platform, followers_count").eq("project_id", projectId).eq("id", channelId).maybeSingle();
+    if (!ch) return { ok: false, error: "Profile not found." };
+    const errors: { line: number; error: string }[] = [];
+    const now = new Date().toISOString();
+    const byId = new Map<string, Record<string, unknown>>();
+    rows.forEach((raw, i) => {
+      const line = typeof (raw as { line?: unknown })?.line === "number" ? (raw as { line: number }).line : i + 1;
+      const parsed = manualPostSchema.safeParse({ ...(raw as object), channel_id: channelId });
+      if (!parsed.success) return errors.push({ line, error: parsed.error.issues[0]?.message ?? "Invalid row" });
+      const p = parsed.data;
+      const externalId = p.url.replace(/[?#].*$/, "");
+      byId.set(externalId, {
+        project_id: projectId, competitor_id: ch.competitor_id, channel_id: ch.id, source: "manual", external_id: externalId,
+        platform: ch.platform, url: p.url, published_at: new Date(p.published_at).toISOString(), caption: p.caption, hook: captionHook(p.caption),
+        title: captionHook(p.caption, 120), format: p.format, hashtags: hashtagsOf(p.caption), mentions: mentionsOf(p.caption),
+        likes: p.likes, comments: p.comments, shares: p.shares, views: p.views, followers_at_collection: ch.followers_count, metrics_updated_at: now,
+      });
+    });
+    if (byId.size) {
+      const { error } = await db.from("competitor_content_items").upsert([...byId.values()], { onConflict: "competitor_id,source,external_id" });
+      if (error) throw error;
+      refresh(projectId);
+    }
+    return { ok: true, data: { saved: byId.size, errors }, message: `${byId.size} post${byId.size === 1 ? "" : "s"} saved${errors.length ? `, ${errors.length} line${errors.length === 1 ? "" : "s"} skipped` : ""}` };
+  } catch (e) {
+    return fail(e, "Could not import the posts");
+  }
+}
+
 export async function postHistoryAction(projectId: string, postId: string) {
   await requireUser();
   await getProjectContext(projectId);
