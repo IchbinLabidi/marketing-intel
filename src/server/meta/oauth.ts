@@ -3,7 +3,8 @@ import { META_GRAPH_VERSION, META_SCOPES, metaConfig } from "./config";
 import { graphGet, graphUrl } from "./graph";
 
 /** Official Facebook Login dialog URL. Uses a Login for Business configuration when META_LOGIN_CONFIG_ID is set. */
-export function buildAuthUrl(state: string) {
+/** `publish` adds the two publishing permissions on top of the read-only set (asked only when publishing is enabled). */
+export function buildAuthUrl(state: string, opts: { publish?: boolean } = {}) {
   const c = metaConfig();
   const url = new URL(`https://www.facebook.com/${META_GRAPH_VERSION}/dialog/oauth`);
   url.searchParams.set("client_id", c.appId);
@@ -11,7 +12,7 @@ export function buildAuthUrl(state: string) {
   url.searchParams.set("state", state);
   url.searchParams.set("response_type", "code");
   if (c.configId) url.searchParams.set("config_id", c.configId);
-  else url.searchParams.set("scope", META_SCOPES.join(","));
+  else url.searchParams.set("scope", [...META_SCOPES, ...(opts.publish ? ["pages_manage_posts", "instagram_content_publish"] : [])].join(","));
   url.searchParams.set("auth_type", "rerequest"); // lets people re-grant permissions they declined earlier
   return url.toString();
 }

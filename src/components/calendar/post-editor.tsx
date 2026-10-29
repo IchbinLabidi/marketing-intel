@@ -1,5 +1,6 @@
 "use client";
 
+import { PublishDialog } from "./publish-dialog";
 import * as React from "react";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Copy, ExternalLink, Info, Loader2, Send, Sparkles, Trash2 } from "lucide-react";
@@ -86,6 +87,7 @@ export function PostEditor({
   const [instruction, setInstruction] = React.useState("");
   const [aiNotes, setAiNotes] = React.useState<{ rationale: string; assumptions: string[]; suggested: string | null } | null>(null);
   const [publishOpen, setPublishOpen] = React.useState(false);
+  const [sendOpen, setSendOpen] = React.useState(false);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const state = post ? stateOf(post) : "draft";
@@ -328,6 +330,7 @@ export function PostEditor({
               ) : null}
               {post ? <Button variant="ghost" size="sm" onClick={duplicate} disabled={busy !== null}><Copy /> Duplicate</Button> : null}
               {post && !locked && ["instagram", "facebook", "youtube", "linkedin", "tiktok"].includes(post.platform ?? "") ? <Button variant="ghost" size="sm" onClick={() => setPublishOpen(true)} disabled={busy !== null}><CheckCircle2 /> Verify publication</Button> : null}
+              {post && !locked && (post.status === "approved" || post.status === "scheduled") && ["instagram", "facebook"].includes(post.platform ?? "") ? <Button variant="outline" size="sm" onClick={() => setSendOpen(true)} disabled={busy !== null}><Send /> Publish…</Button> : null}
               {post ? <Button asChild variant="outline" size="sm"><Link href={`/p/${projectId}/production?item=${post.id}`}>Open in Content Production</Link></Button> : null}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -351,6 +354,7 @@ export function PostEditor({
           </DialogFooter>
         ) : null}
 
+        {sendOpen && post ? <PublishDialog projectId={projectId} post={post} tz={tz} onClose={() => setSendOpen(false)} onPublished={() => undefined} /> : null}
         {publishOpen && post ? (
           <ConfirmPublished projectId={projectId} post={post} tz={tz} onClose={() => setPublishOpen(false)} onDone={(p) => { setPublishOpen(false); onSaved(p); }} />
         ) : null}
