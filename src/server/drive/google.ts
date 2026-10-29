@@ -14,7 +14,9 @@ export function driveConfig() {
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() ?? "";
   // The Picker needs an API key and the Cloud project number ("app id"); the YouTube key works if the Picker API is enabled on its project.
   const apiKey = process.env.GOOGLE_PICKER_API_KEY?.trim() || process.env.YOUTUBE_API_KEY?.trim() || "";
-  const appId = process.env.GOOGLE_CLOUD_PROJECT_NUMBER?.trim() ?? "";
+  // The project number is digits only; anything else (e.g. a pasted secret) would silently stop Drive from granting picked files
+  const rawAppId = process.env.GOOGLE_CLOUD_PROJECT_NUMBER?.trim() ?? "";
+  const appId = /^\d{6,20}$/.test(rawAppId) ? rawAppId : "";
   const missing = [
     !clientId && "GOOGLE_OAUTH_CLIENT_ID", !clientSecret && "GOOGLE_OAUTH_CLIENT_SECRET", !apiKey && "GOOGLE_PICKER_API_KEY",
     !appId && "GOOGLE_CLOUD_PROJECT_NUMBER", !socialTokenKey() && "SOCIAL_TOKEN_ENCRYPTION_KEY",

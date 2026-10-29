@@ -21,6 +21,13 @@ describe("Google Drive", () => {
     expect(driveConfig().missing).toEqual(expect.arrayContaining(["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_CLOUD_PROJECT_NUMBER"]));
   });
 
+  it("treats a project number that is not digits as missing (e.g. a secret pasted in the wrong field)", () => {
+    vi.stubEnv("GOOGLE_CLOUD_PROJECT_NUMBER", "GOCSPX-abc");
+    expect(driveConfig().missing).toContain("GOOGLE_CLOUD_PROJECT_NUMBER");
+    vi.stubEnv("GOOGLE_CLOUD_PROJECT_NUMBER", "682897425313");
+    expect(driveConfig().appId).toBe("682897425313");
+  });
+
   it("refuses malformed file ids before calling Google", async () => {
     const f = vi.fn();
     vi.stubGlobal("fetch", f);
