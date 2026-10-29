@@ -307,7 +307,9 @@ export async function generateCalendarAction(projectId: string, calendarId: stri
     const recent = await recentContent(projectId, addDays(cal.starts_on, -180), calendarId);
     const timing = bestPublicationTimes((await loadSignals(projectId)).items, tz);
 
-    // one AI call per week (≤ 14 slots), at most 2 at a time; only the signals for that week's platforms/pillars/formats
+    // one AI call per week (≤ 14 slots), all weeks at once: each call takes ~2 minutes and the whole request must
+    // finish within the hosting limit (300 s). Cross-week repeats are caught by the repetition check afterwards.
+    // Only the signals for that week's platforms/pillars/formats are sent.
     const weeks = new Map<string, Slot[]>();
     for (const s of slots) { const w = addDays(cal.starts_on, Math.floor((Date.parse(s.date) - Date.parse(cal.starts_on)) / 86400000 / 7) * 7); weeks.set(w, [...(weeks.get(w) ?? []), s]); }
     const batches = [...weeks.values()].flatMap((list) => (list.length > 14 ? [list.slice(0, 14), list.slice(14)] : [list]));
@@ -333,8 +335,18 @@ export async function generateCalendarAction(projectId: string, calendarId: stri
         if (c) results.push({ slot: s, c });
       }
     };
-    for (let k = 0; k < batches.length; k += 2) await Promise.all(batches.slice(k, k + 2).map(runBatch));
-    if (!results.length) return { ok: false, error: "The AI returned no usable post. Try again." };
+    // A week that fails doesn't sink the others: its slots stay empty and the message says so.
+    const settled = await Promise.allSettled(batches.map(runBatch));
+    const failedWeeks = settled.filter((r) => r.status === "rejected").length;
+    // posts of a failed week are kept as they are (nothing new was written for them)
+    const failedDates = new Set(batches.filter((_, k) => settled[k].status === "rejected").flat().map((s) => s.date));
+    const failedStarts = new Set([...failedDates].map((d) => addDays(cal.starts_on, Math.floor((Date.parse(d) - Date.parse(cal.starts_on)) / 86400000 / 7) * 7)));
+    const weekOf = (d: string | null) => (d ? addDays(cal.starts_on, Math.floor((Date.parse(d) - Date.parse(cal.starts_on)) / 86400000 / 7) * 7) : "");
+    replace = replace.filter((i) => !failedStarts.has(weekOf(i.scheduled_date)) && !(scope.kind === "post" && failedWeeks));
+    if (!results.length) {
+      const firstError = settled.find((r): r is PromiseRejectedResult => r.status === "rejected")?.reason;
+      return { ok: false, error: firstError ? describeAIError(firstError) : "The AI returned no usable post. Try again." };
+    }
 
     // Replace the unlocked posts (content is ready), then insert the new ones
     const db = await createClient();
@@ -364,7 +376,7 @@ export async function generateCalendarAction(projectId: string, calendarId: stri
     await checkCalendar(projectId, calendarId, { userId: user.id, workspaceId: project.workspace_id });
     refresh(projectId);
     const cost = await calendarAICost(calendarId);
-    return { ok: true, data: { created: rows.length, cost: cost.cost }, message: `${rows.length} post${rows.length > 1 ? "s" : ""} written${replace.length ? ` (${replace.length} replaced, locked posts kept)` : ""}` };
+    return { ok: true, data: { created: rows.length, cost: cost.cost }, message: `${rows.length} post${rows.length > 1 ? "s" : ""} written${replace.length ? ` (${replace.length} replaced, locked posts kept)` : ""}${failedWeeks ? `. ${failedWeeks} week${failedWeeks > 1 ? "s" : ""} failed: generate ${failedWeeks > 1 ? "them" : "it"} again with the week button` : ""}` };
   } catch (e) {
     return { ok: false, error: describeAIError(e) };
   }
