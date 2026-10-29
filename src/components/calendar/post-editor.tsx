@@ -1,5 +1,6 @@
 "use client";
 
+import { isDrivePickerOpen } from "./drive-picker";
 import { PublishDialog } from "./publish-dialog";
 import * as React from "react";
 import Link from "next/link";
@@ -161,7 +162,7 @@ export function PostEditor({
   const draftStatus: ContentStatus = post && DRAFT_STAGES.includes(post.status) ? post.status : "planned";
 
   return (
-    <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
+    <Dialog open onOpenChange={(o) => !o && !busy && !isDrivePickerOpen() && onClose()}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2">

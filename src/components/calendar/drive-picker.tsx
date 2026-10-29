@@ -25,6 +25,10 @@ type PickerBuilderChain = {
 declare global { interface Window { gapi?: { load(lib: string, cb: () => void): void }; google?: GoogleNS } }
 
 let pickerLib: Promise<void> | null = null;
+
+/** True while Google's Picker is on screen: dialogs underneath must not close on clicks that land in it. */
+export const isDrivePickerOpen = () => typeof document !== "undefined" && document.body.dataset.drivePicker === "open";
+const setPickerOpen = (open: boolean) => { if (open) document.body.dataset.drivePicker = "open"; else delete document.body.dataset.drivePicker; };
 function loadPicker() {
   pickerLib ??= new Promise<void>((resolve, reject) => {
     const s = document.createElement("script");
@@ -61,10 +65,12 @@ export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { proj
       view.setIncludeFolders(true);
       view.setMimeTypes("image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime");
       onPicking(true);
+      setPickerOpen(true);
       new g.PickerBuilder().addView(view).setOAuthToken(state.picker.accessToken).setDeveloperKey(state.picker.apiKey).setAppId(state.picker.appId).setTitle("Choose an image or a video")
         .setCallback(async (data: PickerData) => {
-          if (data.action === g.Action.CANCEL) { onPicking(false); setBusy(false); return; }
+          if (data.action === g.Action.CANCEL) { setPickerOpen(false); onPicking(false); setBusy(false); return; }
           if (data.action !== g.Action.PICKED || !data.docs?.[0]) return;
+          setPickerOpen(false);
           onPicking(false);
           const r = await attachDriveFileAction(projectId, itemId, data.docs[0].id);
           setBusy(false);
@@ -73,6 +79,7 @@ export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { proj
           onAttached();
         }).build().setVisible(true);
     } catch (e) {
+      setPickerOpen(false);
       onPicking(false);
       setBusy(false);
       toast.error(e instanceof Error ? e.message : "Google Picker failed");

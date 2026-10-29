@@ -306,3 +306,7 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Google's Picker is appended to <body>; an open modal dialog sets pointer-events: none there, which would make the
+   picker unclickable (clicks fell through to the dialog underneath). */
+.picker-dialog, .picker-dialog-bg { pointer-events: auto; }
