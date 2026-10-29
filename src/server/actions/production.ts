@@ -185,7 +185,7 @@ export async function addMediaLinkAction(projectId: string, id: string, name: st
   } catch (e) { return failure(e); }
 }
 export async function mediaUploadTicketAction(projectId: string, id: string, name: string, mime: string, size: number): Promise<ActionResult<{ path: string; token: string }>> {
-  if (!['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/quicktime','application/pdf'].includes(mime) || size <= 0 || size > 25 * 1024 * 1024) return { ok: false, error: "Use JPG, PNG, WebP, GIF, MP4, MOV or PDF up to 25 MB." };
+  if (!['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/quicktime','application/pdf'].includes(mime) || size <= 0 || size > 50 * 1024 * 1024) return { ok: false, error: "Use JPG, PNG, WebP, GIF, MP4, MOV or PDF up to 50 MB." };
   try {
     const { db } = await editable(projectId, id);
     const path = `${projectId}/${id}/${crypto.randomUUID()}-${name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100)}`;

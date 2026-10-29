@@ -5,7 +5,8 @@ export const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v26.0";
 export const META_GRAPH_HOST = "https://graph.facebook.com";
 
 /**
- * Permissions requested when no Facebook Login for Business configuration id is set. All are read-only.
+ * Permissions requested when no Facebook Login for Business configuration id is set. All are read-only;
+ * publishing permissions are only requested when someone chooses "Enable publishing" (see buildAuthUrl).
  * META_SCOPES (comma-separated) overrides the list, e.g. when Meta renames a permission for your app's use cases.
  */
 export const META_SCOPES = process.env.META_SCOPES?.split(",").map((s) => s.trim()).filter(Boolean) ?? [

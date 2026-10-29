@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(back);
   }
   const state = randomBytes(24).toString("base64url");
-  const res = NextResponse.redirect(buildAuthUrl(state));
+  // publish=1 also asks for the publishing permissions (used by the calendar's Publish button)
+  const res = NextResponse.redirect(buildAuthUrl(state, { publish: request.nextUrl.searchParams.get("publish") === "1" }));
   res.cookies.set(META_STATE_COOKIE, JSON.stringify({ state, projectId }), {
     httpOnly: true,
     secure: request.nextUrl.protocol === "https:",
