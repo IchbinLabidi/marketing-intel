@@ -3,7 +3,11 @@ import type { ContentItem } from "@/types/domain";
 
 export const STAGES = ["idea", "brief", "in_production", "internal_review", "approval", "ready", "published"] as const;
 export type ProductionStage = typeof STAGES[number];
-export const STAGE_LABELS: Record<ProductionStage, string> = { idea: "Idea", brief: "Brief", in_production: "In Production", internal_review: "Internal Review", approval: "Client/Manager Approval", ready: "Ready to Publish", published: "Published" };
+export const STAGE_LABELS: Record<ProductionStage, string> = { idea: "Idea", brief: "Brief", in_production: "In Production", internal_review: "Internal Review", approval: "Awaiting approval", ready: "Done", published: "Published" };
+/** The five board columns. Content awaiting approval sits in Internal review; published content sits in Done. */
+export const BOARD = ["idea", "brief", "in_production", "internal_review", "ready"] as const;
+export type BoardStage = typeof BOARD[number];
+export const columnOf = (stage: ProductionStage): BoardStage => (stage === "approval" ? "internal_review" : stage === "published" ? "ready" : stage);
 export const FORMATS = ["Social caption", "Instagram Reel", "Facebook video", "Carousel", "Story sequence", "Educational post", "Promotional post", "Product announcement", "Creative brief", "Visual direction"] as const;
 export const WRITING_FIELDS = ["title", "hook", "caption", "main_content", "cta", "hashtags", "creative_brief", "visual_direction"] as const;
 export type Writing = { title: string; hook: string; caption: string; main_content: string; cta: string; hashtags: string[]; creative_brief: string; visual_direction: string };
