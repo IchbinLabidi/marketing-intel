@@ -12,6 +12,7 @@ import { driveAccessToken, getDriveConnection } from "@/server/drive/service";
 import { SocialApiError } from "@/server/social/http";
 import { describeSocialError } from "@/server/social/sync";
 import { MAX_FILE_BYTES } from "@/lib/publishing/rules";
+import { isJpeg, toInstagramJpeg } from "@/server/publishing/convert";
 import { getPost, updatePost } from "@/server/services/calendar";
 import { getMetaConnection, readMetaTokens } from "@/server/services/meta";
 import { getProjectContext } from "@/server/services/projects";
@@ -47,6 +48,22 @@ export async function listPublicationsAction(projectId: string, itemId: string):
 type Asset = { id: string; body: { path?: string; url?: string; name?: string; mime?: string; source_type?: string; source_file_id?: string } };
 type Prepared = { media: MediaInput; tempPath: string | null };
 
+/** Stores a temporary private copy for Instagram to download, and returns a signed link to it (valid one hour). */
+async function temporaryLink(db: Awaited<ReturnType<typeof createClient>>, projectId: string, itemId: string, bytes: Blob, filename: string, mime: string) {
+  const tempPath = `${projectId}/${itemId}/publish-tmp-${crypto.randomUUID()}-${filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80)}`;
+  const up = await db.storage.from(BUCKET).upload(tempPath, bytes, { contentType: mime, upsert: false });
+  if (up.error) throw new Error("Could not prepare the file for Instagram.");
+  const { data } = await db.storage.from(BUCKET).createSignedUrl(tempPath, SIGNED_LINK_SECONDS);
+  if (!data?.signedUrl) { await db.storage.from(BUCKET).remove([tempPath]); throw new Error("Could not prepare the file for Instagram."); }
+  return { url: data.signedUrl, tempPath };
+}
+
+/** Instagram only takes JPEG photos: anything else is converted (file name gets a .jpg extension). */
+async function forInstagram(bytes: Blob, filename: string, mime: string, kind: "image" | "video") {
+  if (kind !== "image" || isJpeg(mime)) return { bytes, filename, mime };
+  return { bytes: await toInstagramJpeg(bytes), filename: `${filename.replace(/\.[a-z0-9]+$/i, "")}.jpg`, mime: "image/jpeg" };
+}
+
 /**
  * Turns a media attachment into what each network accepts. Never makes a private file public.
  * Google Drive files are downloaded through the Drive API with the project's authorization (no sharing link); for
@@ -64,14 +81,15 @@ async function mediaFor(db: Awaited<ReturnType<typeof createClient>>, projectId:
     const filename = asset.body.name ?? "media";
     if (target === "facebook") return { media: { kind, bytes, filename, mime }, tempPath: null };
     if (!allowTemporaryLink) throw new Error("Instagram downloads media from a link. Allow the temporary private link (valid 1 hour) to publish this file.");
-    const tempPath = `${projectId}/${itemId}/publish-tmp-${crypto.randomUUID()}-${filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80)}`;
-    const up = await db.storage.from(BUCKET).upload(tempPath, bytes, { contentType: mime, upsert: false });
-    if (up.error) throw new Error("Could not prepare the Drive file for Instagram.");
-    const { data } = await db.storage.from(BUCKET).createSignedUrl(tempPath, SIGNED_LINK_SECONDS);
-    if (!data?.signedUrl) { await db.storage.from(BUCKET).remove([tempPath]); throw new Error("Could not prepare the Drive file for Instagram."); }
-    return { media: { kind, url: data.signedUrl, mime }, tempPath };
+    const ig = await forInstagram(bytes, filename, mime, kind);
+    const link = await temporaryLink(db, projectId, itemId, ig.bytes, ig.filename, ig.mime);
+    return { media: { kind, url: link.url, mime: ig.mime }, tempPath: link.tempPath };
   }
-  if (asset.body.url) return { media: { kind, url: asset.body.url, mime }, tempPath: null }; // already a public https link chosen by the team
+  if (asset.body.url) {
+    // already a public https link chosen by the team: sent as is, so Instagram needs it to be a JPEG already
+    if (target === "instagram" && kind === "image" && !isJpeg(mime)) throw new Error("Instagram only accepts JPEG photos by link. Attach the file itself (Drive or computer) so Signal can convert it.");
+    return { media: { kind, url: asset.body.url, mime }, tempPath: null };
+  }
   if (!asset.body.path) throw new Error("The attachment has no stored file.");
   if (target === "facebook") {
     // Facebook receives the bytes directly: no link to the private file is ever created
@@ -81,6 +99,14 @@ async function mediaFor(db: Awaited<ReturnType<typeof createClient>>, projectId:
   }
   // Instagram only accepts a URL it downloads itself: a signed link valid for one hour, only with explicit consent
   if (!allowTemporaryLink) throw new Error("Instagram downloads media from a link. Allow the temporary private link (valid 1 hour) to publish this file.");
+  if (kind === "image" && !isJpeg(mime)) {
+    // not a JPEG: a converted temporary copy is sent instead of the original
+    const { data: original, error } = await db.storage.from(BUCKET).download(asset.body.path);
+    if (error || !original) throw new Error("The stored file could not be read. Re-attach it.");
+    const ig = await forInstagram(original, asset.body.name ?? "photo", mime, kind);
+    const link = await temporaryLink(db, projectId, itemId, ig.bytes, ig.filename, ig.mime);
+    return { media: { kind, url: link.url, mime: ig.mime }, tempPath: link.tempPath };
+  }
   const { data, error } = await db.storage.from(BUCKET).createSignedUrl(asset.body.path, SIGNED_LINK_SECONDS);
   if (error || !data?.signedUrl) throw new Error("Could not prepare the file for Instagram.");
   return { media: { kind, url: data.signedUrl, mime }, tempPath: null };

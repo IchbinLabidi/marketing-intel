@@ -4,8 +4,9 @@ export type PublishTarget = "facebook" | "instagram";
 
 export const LIMITS = {
   facebook: { caption: 63_206, image: ["image/jpeg", "image/png", "image/gif", "image/webp"], video: ["video/mp4", "video/quicktime"] },
-  // Instagram Content Publishing API: JPEG images only; Reels as MP4/MOV; caption ≤ 2,200 characters, ≤ 30 hashtags
-  instagram: { caption: 2_200, hashtags: 30, image: ["image/jpeg"], video: ["video/mp4", "video/quicktime"] },
+  // Instagram Content Publishing API: JPEG images only (stored and Drive photos in other formats are converted to JPEG
+  // before sending); Reels as MP4/MOV; caption ≤ 2,200 characters, ≤ 30 hashtags
+  instagram: { caption: 2_200, hashtags: 30, image: ["image/jpeg", "image/png", "image/webp", "image/gif"], video: ["video/mp4", "video/quicktime"] },
 } as const;
 
 export const MAX_FILE_BYTES = 50 * 1024 * 1024; // storage limit for files kept for publishing
@@ -33,7 +34,7 @@ export function validateForTarget(target: PublishTarget, p: { caption: string; m
     const tags = (p.caption.match(/#[\p{L}\p{N}_]+/gu) ?? []).length;
     if (tags > LIMITS.instagram.hashtags) return `Instagram allows at most 30 hashtags (this post has ${tags}).`;
     const kind = mediaKindOf(p.mime);
-    if (kind === "image" && !(LIMITS.instagram.image as readonly string[]).includes(p.mime!)) return "Instagram's publishing API only accepts JPEG images. Export the image as JPG.";
+    if (kind === "image" && !(LIMITS.instagram.image as readonly string[]).includes(p.mime!)) return "Instagram accepts JPEG, PNG, WebP or GIF photos (sent as JPEG).";
     if (kind === "video" && !(LIMITS.instagram.video as readonly string[]).includes(p.mime!)) return "Instagram Reels must be MP4 or MOV videos.";
     if (!kind) return "Instagram needs an image or a video.";
   } else {
@@ -52,7 +53,7 @@ export function validateGroup(target: PublishTarget, mimes: (string | null | und
   if (mimes.length < 2) return null;
   if (mimes.length > MAX_GROUP) return `Choose at most ${MAX_GROUP} photos for one post.`;
   if (mimes.some((m) => mediaKindOf(m) !== "image")) return "Several files in one post must all be photos. Publish a video on its own.";
-  if (target === "instagram" && mimes.some((m) => !(LIMITS.instagram.image as readonly string[]).includes(m!))) return "Instagram's publishing API only accepts JPEG images. Export the photos as JPG.";
+  if (target === "instagram" && mimes.some((m) => !(LIMITS.instagram.image as readonly string[]).includes(m!))) return "Instagram accepts JPEG, PNG, WebP or GIF photos (sent as JPEG).";
   return null;
 }
 

@@ -13,7 +13,8 @@ describe("publishing rules", () => {
 
   it("applies Instagram's documented limits", () => {
     expect(validateForTarget("instagram", { caption: "hi", mime: null, hasMedia: false })).toMatch(/needs an image or a video/);
-    expect(validateForTarget("instagram", { caption: "hi", mime: "image/png", hasMedia: true })).toMatch(/only accepts JPEG/);
+    expect(validateForTarget("instagram", { caption: "hi", mime: "image/png", hasMedia: true })).toBeNull(); // converted to JPEG before sending
+    expect(validateForTarget("instagram", { caption: "hi", mime: "image/svg+xml", hasMedia: true })).toMatch(/JPEG, PNG, WebP or GIF/);
     expect(validateForTarget("instagram", { caption: "x".repeat(2201), mime: "image/jpeg", hasMedia: true })).toMatch(/2,200/);
     expect(validateForTarget("instagram", { caption: Array.from({ length: 31 }, (_, i) => `#t${i}`).join(" "), mime: "image/jpeg", hasMedia: true })).toMatch(/30 hashtags/);
     expect(validateForTarget("instagram", { caption: "ok", mime: "video/mp4", hasMedia: true })).toBeNull();
@@ -23,7 +24,8 @@ describe("publishing rules", () => {
   it("allows several photos in one post, never videos, at most 10, JPEG on Instagram", () => {
     expect(validateGroup("instagram", ["image/jpeg"])).toBeNull();
     expect(validateGroup("instagram", ["image/jpeg", "image/jpeg"])).toBeNull();
-    expect(validateGroup("instagram", ["image/jpeg", "image/png"])).toMatch(/JPEG/);
+    expect(validateGroup("instagram", ["image/jpeg", "image/png"])).toBeNull();
+    expect(validateGroup("instagram", ["image/jpeg", "image/svg+xml"])).toMatch(/JPEG, PNG, WebP or GIF/);
     expect(validateGroup("facebook", ["image/jpeg", "image/png"])).toBeNull();
     expect(validateGroup("facebook", ["image/jpeg", "video/mp4"])).toMatch(/must all be photos/);
     expect(validateGroup("facebook", Array(11).fill("image/jpeg"))).toMatch(/at most 10/);
