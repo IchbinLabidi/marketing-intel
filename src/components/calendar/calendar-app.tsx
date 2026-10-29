@@ -550,6 +550,7 @@ export function CalendarApp({
           projectId={projectId}
           post={selectedPost}
           time={placement(selectedPost, tz).time}
+          tz={tz}
           tasks={tasks}
           people={people}
           perms={perms}

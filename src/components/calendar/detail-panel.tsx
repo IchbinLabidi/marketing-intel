@@ -3,7 +3,7 @@
 import { PublishedPerformanceBlock } from "./published-performance";
 import * as React from "react";
 import Link from "next/link";
-import { CalendarClock, Copy, ExternalLink, FileText, Flag, MessageSquare, Pencil, X } from "lucide-react";
+import { CalendarClock, Copy, ExternalLink, FileText, Flag, MessageSquare, Pencil, Send, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import type { Task } from "@/server/services/team";
 import type { ContentItem } from "@/types/domain";
 import { PersonChip, TaskStatusBadge } from "@/components/team/task-badges";
 import { PlatformIcon } from "./platform-icon";
+import { PublishDialog } from "./publish-dialog";
 import { StatePill, stateOf } from "./post-card";
 import { contentType, isOverdue, type Person } from "./planning";
 
@@ -28,9 +29,10 @@ import { contentType, isOverdue, type Person } from "./planning";
  * Publication date (when it goes live) and the internal deadline (when the work is due) are edited separately.
  */
 export function DetailPanel({
-  projectId, post, time, tasks, people, perms, userId, today, readOnly, onClose, onChanged, onMove, onDuplicate, onEdit,
+  projectId, post, time, tz, tasks, people, perms, userId, today, readOnly, onClose, onChanged, onMove, onDuplicate, onEdit,
 }: {
   projectId: string;
+  tz: string;
   post: ContentItem;
   time: string | null;
   tasks: Task[];
@@ -46,6 +48,7 @@ export function DetailPanel({
   onEdit: (post: ContentItem) => void;
 }) {
   const [busy, setBusy] = React.useState<string | null>(null);
+  const [publishing, setPublishing] = React.useState(false);
   const [date, setDate] = React.useState(post.scheduled_date ?? "");
   const [slot, setSlot] = React.useState(time ?? "");
   const [comment, setComment] = React.useState("");
@@ -218,8 +221,10 @@ export function DetailPanel({
           {!locked ? <Button size="sm" variant="outline" onClick={() => onEdit(post)}><Pencil /> Quick edit</Button> : <span />}
           {!locked && post.production_stage === "idea" ? <Button size="sm" variant="outline" loading={busy === "brief"} onClick={toBrief}><FileText /> Make it a brief</Button> : null}
           {!locked ? <Button size="sm" variant="ghost" onClick={() => onDuplicate(post)}><Copy /> Duplicate</Button> : null}
+          {!locked && (post.status === "approved" || post.status === "scheduled") && ["facebook", "instagram"].includes(post.platform ?? "") ? <Button size="sm" onClick={() => setPublishing(true)}><Send /> Publish…</Button> : null}
         </footer>
       </aside>
+      {publishing ? <PublishDialog projectId={projectId} post={post} tz={tz} onClose={() => setPublishing(false)} onPublished={() => onChanged(post)} /> : null}
     </>
   );
 }
