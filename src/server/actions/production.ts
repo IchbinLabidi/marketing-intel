@@ -20,6 +20,7 @@ import { loadHistoryAnalysis } from "@/server/services/history-analysis";
 import { recentPostTitles } from "@/server/services/calendar";
 import { isIsoDate, isTime, utcToZoned, zonedToUtc } from "@/lib/calendar/time";
 import { runStructured } from "@/server/ai/run";
+import { deleteMediaAction } from "@/server/actions/media";
 import { PRODUCTION_SYSTEM, productionDraftSchema, productionPrompt, type ProductionDraft } from "@/server/ai/production";
 
 const refresh = (id: string) => revalidatePath(`/p/${id}`, "layout");
@@ -207,12 +208,11 @@ export async function finishMediaUploadAction(projectId: string, id: string, pat
 }
 export async function removeMediaAction(projectId: string, id: string, assetId: string): Promise<ActionResult> {
   try {
-    const { db } = await editable(projectId, id);
-    const { error, count } = await db.from("content_assets").delete({ count: "exact" }).eq("id", assetId).eq("project_id", projectId).eq("content_item_id", id).eq("kind", "media");
-    if (error) throw error;
-    if (!count) throw new Error("Attachment not found.");
-    // Keep stored bytes for recoverability; an attachment is only unlinked from the content.
-    refresh(projectId); return { ok: true, message: "Attachment removed" };
+    await editable(projectId, id);
+    // Permanent: the stored file is deleted from storage, then the record (Drive files only lose their reference)
+    const r = await deleteMediaAction(projectId, id, assetId);
+    if (!r.ok) throw new Error(r.error);
+    refresh(projectId); return { ok: true, message: r.message ?? "Attachment deleted" };
   } catch (e) { return failure(e); }
 }
 

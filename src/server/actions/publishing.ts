@@ -288,14 +288,14 @@ function summary(pubs: Publication[]) {
 }
 
 export type PublishContext = {
-  assets: { id: string; name: string; mime: string | null; source: "stored" | "link" | "google_drive"; previewUrl: string | null }[];
+  assets: { id: string; name: string; mime: string | null; source: "stored" | "link" | "google_drive"; previewUrl: string | null; fullUrl: string | null }[];
   facebook: { name: string } | null;
   instagram: { name: string } | null;
   missingScopes: string[];
   publications: Publication[];
 };
 
-/** What the publish dialog needs: the post's media (with short-lived previews), the connected accounts, past attempts. */
+/** What the publish dialog needs: the post's media (with stable preview addresses), the connected accounts, past attempts. */
 export async function publishContextAction(projectId: string, itemId: string): Promise<ActionResult<PublishContext>> {
   await requireUser();
   await getProjectContext(projectId);
@@ -305,9 +305,9 @@ export async function publishContextAction(projectId: string, itemId: string): P
   for (const r of (rows ?? []) as (Asset & { created_at: string })[]) {
     const b = r.body;
     const source = b.source_type === "google_drive" ? "google_drive" : b.path ? "stored" : "link";
-    let previewUrl: string | null = b.url ?? null;
-    if (b.path) previewUrl = (await db.storage.from(BUCKET).createSignedUrl(b.path, 600)).data?.signedUrl ?? null; // 10-minute preview link
-    assets.push({ id: r.id, name: b.name ?? "Media", mime: b.mime ?? (b.url ? guessMime(b.url) : null), source, previewUrl });
+    // the media route checks access on every request and renews signed links, so previews survive a refresh
+    const media = `/api/media/${r.id}?project=${projectId}`;
+    assets.push({ id: r.id, name: b.name ?? "Media", mime: b.mime ?? (b.url ? guessMime(b.url) : null), source, previewUrl: `${media}&size=thumb`, fullUrl: media });
   }
   const conn = await getMetaConnection(projectId);
   const active = conn && conn.status === "active" && conn.page_id;

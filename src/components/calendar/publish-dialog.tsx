@@ -9,13 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
-import { mediaKindOf, validateLocalFile, type PublishTarget } from "@/lib/publishing/rules";
+import { validateLocalFile, type PublishTarget } from "@/lib/publishing/rules";
 import { utcToZoned, zonedToUtc } from "@/lib/calendar/time";
 import { cn } from "@/lib/utils";
 import { checkPublicationAction, publishContextAction, publishPostAction, type Publication, type PublishContext } from "@/server/actions/publishing";
 import { finishMediaUploadAction, mediaUploadTicketAction } from "@/server/actions/production";
 import type { ContentItem } from "@/types/domain";
 import { DrivePicker } from "./drive-picker";
+import { DeleteMediaDialog, Maximize2, MediaLightbox, MediaPreview, TileButton, Trash2, type TileAsset } from "./media-tile";
 
 const STATUS: Record<string, { label: string; tone: "success" | "info" | "warning" | "destructive" | "outline" }> = {
   published: { label: "Published", tone: "success" }, scheduled: { label: "Scheduled on Facebook", tone: "info" }, processing: { label: "Processing", tone: "info" },
@@ -40,7 +41,9 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
   const [time, setTime] = React.useState(initial?.time ?? "09:00");
   const [consent, setConsent] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
-  const [picking, setPicking] = React.useState(false); // Google's Picker opens over the page: the dialog stops trapping focus meanwhile
+  const [picking, setPicking] = React.useState(false);
+  const [zoom, setZoom] = React.useState<{ list: TileAsset[]; index: number } | null>(null);
+  const [toDelete, setToDelete] = React.useState<TileAsset | null>(null); // Google's Picker opens over the page: the dialog stops trapping focus meanwhile
 
   const load = React.useCallback(async () => {
     const r = await publishContextAction(projectId, post.id);
@@ -143,21 +146,39 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
               {tab === "post" ? (
                 ctx.assets.length ? (
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <button type="button" onClick={() => setAssetIds([])} className={cn("flex h-24 items-center justify-center rounded-lg border text-xs text-muted-foreground", !selected.length && "ring-2 ring-primary")}>No media</button>
+                    <button type="button" onClick={() => setAssetIds([])} className={cn("flex h-32 items-center justify-center rounded-lg border text-xs text-muted-foreground", !selected.length && "ring-2 ring-primary")}>No media</button>
                     {ctx.assets.map((a) => (
-                      <button key={a.id} type="button" aria-pressed={selected.includes(a)} onClick={() => toggleAsset(a.id)} title={a.name} className={cn("relative h-24 overflow-hidden rounded-lg border bg-muted", selected.includes(a) && "ring-2 ring-primary")}>
-                        {selected.includes(a) ? <span className="absolute right-1 top-1 z-10 flex size-5 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">{selected.indexOf(a) + 1}</span> : null}
-                        {a.previewUrl && mediaKindOf(a.mime) === "image" ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- signed preview link
-                          <img src={a.previewUrl} alt="" className="size-full object-cover" />
-                        ) : a.previewUrl && mediaKindOf(a.mime) === "video" ? <video src={a.previewUrl} muted className="size-full object-cover" /> : <span className="p-2 text-xs">{a.name}</span>}
-                        <span className="absolute inset-x-0 bottom-0 truncate bg-background/80 px-1 text-[10px]">{a.source === "stored" ? "Stored" : a.source === "link" ? "Link" : "Drive"} · {a.name}</span>
-                      </button>
+                      <div key={a.id} className={cn("group relative h-32 overflow-hidden rounded-lg border bg-muted", selected.includes(a) && "ring-2 ring-primary")}>
+                        <button type="button" aria-pressed={selected.includes(a)} onClick={() => toggleAsset(a.id)} title={`Select ${a.name}`} className="absolute inset-0">
+                          <MediaPreview asset={a} className="size-full" />
+                        </button>
+                        {selected.includes(a) ? <span className="pointer-events-none absolute left-1 top-1 z-10 flex size-5 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">{selected.indexOf(a) + 1}</span> : null}
+                        <div className="absolute right-1 top-1 z-10 flex gap-1">
+                          <TileButton label={`View ${a.name} larger`} onClick={() => setZoom({ list: ctx.assets, index: ctx.assets.indexOf(a) })}><Maximize2 className="size-3.5" /></TileButton>
+                          <TileButton label={`Delete ${a.name}`} danger onClick={() => setToDelete(a)}><Trash2 className="size-3.5" /></TileButton>
+                        </div>
+                        <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-background/80 px-1 text-[10px]">{a.source === "stored" ? "Stored" : a.source === "link" ? "Link" : "Drive"} · {a.name}</span>
+                      </div>
                     ))}
                   </div>
                 ) : <p className="text-muted-foreground">No media attached yet. Choose a file from your computer, or publish text only on Facebook.</p>
               ) : null}
               {tab === "post" && ctx.assets.length > 1 ? <p className="text-xs text-muted-foreground">Click several photos to publish them together (Instagram carousel or Facebook multi-photo post, up to 10). The numbers show the order.</p> : null}
+              {tab === "post" && selected.length > 1 ? (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium">Carousel order</p>
+                  <ol className="flex gap-2 overflow-x-auto pb-1">
+                    {selected.map((a, i) => (
+                      <li key={a.id} className="relative shrink-0">
+                        <button type="button" onClick={() => setZoom({ list: selected, index: i })} className="block size-16 overflow-hidden rounded-md border bg-muted" aria-label={`View photo ${i + 1}, ${a.name}`}>
+                          <MediaPreview asset={a} className="size-full" />
+                        </button>
+                        <span className="absolute left-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">{i + 1}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              ) : null}
               {tab === "post" ? null : tab === "computer" ? (
                 <div className="space-y-2">
                   <Input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime" onChange={(e) => pick(e.target.files?.[0])} aria-label="Choose a file from your computer" />
@@ -243,6 +264,11 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
           </Button>
         </DialogFooter>
       </DialogContent>
+      {zoom ? <MediaLightbox assets={zoom.list} index={zoom.index} onIndex={(index) => setZoom({ ...zoom, index })} onClose={() => setZoom(null)} /> : null}
+      {toDelete ? (
+        <DeleteMediaDialog projectId={projectId} itemId={post.id} asset={toDelete} onClose={() => setToDelete(null)}
+          onDeleted={async (id) => { setToDelete(null); setAssetIds((cur) => (cur ?? []).filter((x) => x !== id)); setCtx((c) => (c ? { ...c, assets: c.assets.filter((x) => x.id !== id) } : c)); await load(); }} />
+      ) : null}
     </Dialog>
   );
 }
