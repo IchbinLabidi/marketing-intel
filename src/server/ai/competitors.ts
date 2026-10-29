@@ -70,7 +70,7 @@ export function summaryDigest(label: string, s: Summary) {
   ].join("\n");
 }
 
-export function buildCompetitorPrompt(input: { context: string; competitor: string; profiles: string; stats: string; posts: string }) {
+export function buildCompetitorPrompt(input: { context: string; competitor: string; profiles: string; stats: string; posts: string; ads?: string }) {
   return [
     "# Task",
     `Analyse the competitor "${input.competitor}": content strategy (pillars, recurring topics, positioning, tone, formats, frequency, promotional / educational / community strategy), performance (best posts and outliers vs their own baseline, topics with repeated engagement, successful hooks, effective CTAs, stronger formats, timing) and weaknesses (repetition, underused formats, missing topics, weak coverage, openings for differentiation).`,
@@ -82,6 +82,7 @@ export function buildCompetitorPrompt(input: { context: string; competitor: stri
     input.stats,
     "\n# Posts (ref | platform | date | format | hook | public metrics | lift vs own median)",
     input.posts,
+    ...(input.ads ? ["\n# Paid ads recorded from Meta Ad Library (separate from organic posts; no reach or spend available; a long-running ad suggests it works for them, but that is a hypothesis)", input.ads] : []),
   ].join("\n");
 }
 

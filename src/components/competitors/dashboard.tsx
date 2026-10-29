@@ -13,7 +13,8 @@ import { PlatformIcon } from "@/components/calendar/platform-icon";
 import { PLATFORM_LABELS } from "@/lib/domain/constants";
 import type { Summary } from "@/lib/competitors/analysis";
 import { setFacebookPageIdAction, addManualPostAction, addManualPostsAction, analyzeCompetitorAction, collectCompetitorAction, removeProfileAction, toggleProfileAction } from "@/server/actions/competitors";
-import type { Competitor, CompetitorChannel, CompetitorRun } from "@/server/services/competitors";
+import type { Competitor, CompetitorAd, CompetitorChannel, CompetitorRun } from "@/server/services/competitors";
+import { CompetitorAds } from "./ads";
 import { CompetitorForm, type ProviderStatus } from "./competitor-form";
 import { useLivePolling } from "./competitor-list";
 import { ago, Bars, Basis, fmt, MetricLegend, StatusBadge } from "./ui";
@@ -23,10 +24,10 @@ import { adLibraryUrl, facebookPageId, parseBulkPosts } from "@/lib/competitors/
 type Statement = { category: string; text: string; basis: "fact" | "hypothesis"; refs: string[] };
 export type AnalysisReport = { id: string; created_at: string; result: { summary: string; strategy: Statement[]; performance: Statement[]; weaknesses: Statement[]; notes?: { data_limits?: string[] }; posts_analysed?: number } } | null;
 
-export function CompetitorDashboard({ projectId, competitor, summary, followers, runs, report, postLinks, providers, readOnly, aiEnabled }: {
+export function CompetitorDashboard({ projectId, competitor, summary, followers, runs, report, postLinks, providers, readOnly, aiEnabled, ads = [] }: {
   projectId: string; competitor: Competitor; summary: Summary; followers: { channel_id: string; collected_at: string; followers: number | null }[];
   runs: CompetitorRun[]; report: AnalysisReport; postLinks: Record<string, { url: string | null; hook: string | null }>;
-  providers: ProviderStatus; readOnly: boolean; aiEnabled: boolean;
+  providers: ProviderStatus; readOnly: boolean; aiEnabled: boolean; ads?: CompetitorAd[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -120,6 +121,11 @@ export function CompetitorDashboard({ projectId, competitor, summary, followers,
           {!channels.length ? <li className="px-4 py-3 text-[13px] text-muted-foreground">No profile. Edit the competitor to add links.</li> : null}
         </ul>
       </section>
+
+      <CompetitorAds
+        projectId={projectId} competitorId={competitor.id} ads={ads} readOnly={readOnly}
+        adLibraryHref={(() => { const fb = channels.find((c) => c.platform === "facebook" && facebookPageId(c)); return fb ? adLibraryUrl(fb) : null; })()}
+      />
 
       {summary.posts ? (
         <>

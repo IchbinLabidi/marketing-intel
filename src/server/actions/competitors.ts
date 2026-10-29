@@ -5,6 +5,7 @@ import { canEdit, type Platform } from "@/lib/domain/constants";
 import { engagementOfPost, summarize, type AnalysisPost } from "@/lib/competitors/analysis";
 import { hashtagsOf, mentionsOf, normalizeWebsite, parseProfileUrl } from "@/lib/competitors/urls";
 import { pageIdFromInput } from "@/lib/competitors/bulk";
+import { AD_PLATFORMS, adUrl, adsDigest, libraryIdFrom } from "@/lib/competitors/ads";
 import { normalizeText, stripRefs } from "@/lib/history/text";
 import { captionHook } from "@/lib/meta/normalize";
 import { classify, computeScore, isDuplicate, normalizeWeights } from "@/lib/opportunities/scoring";
@@ -20,7 +21,7 @@ import {
 import { buildProjectContext } from "@/server/ai/context";
 import { runStructuredWithMeta } from "@/server/ai/run";
 import { startCompetitorSync } from "@/server/competitors/start";
-import { getCompetitor, listCompetitors, metricHistory, postsForAnalysis, type CompetitorPost } from "@/server/services/competitors";
+import { getCompetitor, listCompetitorAds, listCompetitors, metricHistory, postsForAnalysis, type CompetitorPost } from "@/server/services/competitors";
 import { loadHistoryAnalysis } from "@/server/services/history-analysis";
 import { saveAnalysisReport } from "@/server/services/history";
 import { insertOpportunities, listOpportunities } from "@/server/services/opportunities";
@@ -244,6 +245,79 @@ export async function setFacebookPageIdAction(projectId: string, channelId: stri
   }
 }
 
+// --- Ads recorded from Meta's Ad Library ------------------------------------------------------------------
+
+type AdInput = { library_id?: unknown; started_on?: unknown; ended_on?: unknown; platforms?: unknown; body?: unknown; line?: unknown };
+const isoDate = (v: unknown) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
+
+/**
+ * Saves ads a person copied from Meta's public Ad Library for one competitor. Each line is checked again here;
+ * saving the same Library ID again updates that ad (e.g. to record its end date) instead of duplicating it.
+ */
+export async function saveCompetitorAdsAction(projectId: string, competitorId: string, rows: AdInput[]): Promise<ActionResult<{ saved: number; errors: { line: number; error: string }[] }>> {
+  const { user, allowed } = await guard(projectId);
+  if (!allowed) return NO_EDIT;
+  if (!Array.isArray(rows) || !rows.length) return { ok: false, error: "Nothing to save." };
+  if (rows.length > 200) return { ok: false, error: "Save at most 200 ads at a time." };
+  try {
+    const db = await createClient();
+    const { data: comp } = await db.from("competitors").select("id").eq("project_id", projectId).eq("id", competitorId).maybeSingle();
+    if (!comp) return { ok: false, error: "Competitor not found." };
+    const today = new Date().toISOString().slice(0, 10);
+    const errors: { line: number; error: string }[] = [];
+    const byId = new Map<string, Record<string, unknown>>();
+    rows.forEach((r, i) => {
+      const line = typeof r.line === "number" ? r.line : i + 1;
+      const id = typeof r.library_id === "string" ? libraryIdFrom(r.library_id) : null;
+      const started = isoDate(r.started_on) ? (r.started_on as string) : null;
+      const ended = r.ended_on == null || r.ended_on === "" ? null : isoDate(r.ended_on) ? (r.ended_on as string) : "bad";
+      const platforms = Array.isArray(r.platforms) ? r.platforms.filter((p): p is string => typeof p === "string" && (AD_PLATFORMS as readonly string[]).includes(p)) : [];
+      const body = typeof r.body === "string" ? r.body.slice(0, 5000) : "";
+      if (!id) return errors.push({ line, error: "Missing Library ID" });
+      if (!started || started > today) return errors.push({ line, error: "Invalid start date" });
+      if (ended === "bad" || (ended && ended < started)) return errors.push({ line, error: "Invalid end date" });
+      byId.set(id, { project_id: projectId, competitor_id: competitorId, library_id: id, url: adUrl(id), started_on: started, ended_on: ended, platforms, body, created_by: user.id });
+    });
+    if (byId.size) {
+      const { error } = await db.from("competitor_ads").upsert([...byId.values()], { onConflict: "competitor_id,library_id" });
+      if (error) throw error;
+      refresh(projectId);
+    }
+    return { ok: true, data: { saved: byId.size, errors }, message: `${byId.size} ad${byId.size === 1 ? "" : "s"} saved${errors.length ? `, ${errors.length} line${errors.length === 1 ? "" : "s"} skipped` : ""}` };
+  } catch (e) {
+    return fail(e, "Could not save the ads");
+  }
+}
+
+/** Marks an ad as no longer running (today), or as running again. */
+export async function setCompetitorAdEndedAction(projectId: string, adId: string, ended: boolean): Promise<ActionResult> {
+  const { allowed } = await guard(projectId);
+  if (!allowed) return NO_EDIT;
+  try {
+    const db = await createClient();
+    const { error } = await db.from("competitor_ads").update({ ended_on: ended ? new Date().toISOString().slice(0, 10) : null }).eq("project_id", projectId).eq("id", adId);
+    if (error) throw error;
+    refresh(projectId);
+    return { ok: true, message: ended ? "Ad marked as ended today" : "Ad marked as active" };
+  } catch (e) {
+    return fail(e, "Could not update the ad");
+  }
+}
+
+export async function deleteCompetitorAdAction(projectId: string, adId: string): Promise<ActionResult> {
+  const { allowed } = await guard(projectId);
+  if (!allowed) return NO_EDIT;
+  try {
+    const db = await createClient();
+    const { error } = await db.from("competitor_ads").delete().eq("project_id", projectId).eq("id", adId);
+    if (error) throw error;
+    refresh(projectId);
+    return { ok: true, message: "Ad removed" };
+  } catch (e) {
+    return fail(e, "Could not remove the ad");
+  }
+}
+
 export async function postHistoryAction(projectId: string, postId: string) {
   await requireUser();
   await getProjectContext(projectId);
@@ -302,6 +376,7 @@ export async function analyzeCompetitorAction(projectId: string, id: string): Pr
         profiles: c.competitor_channels.map((ch) => `${platformLabel(ch.platform)} ${ch.url}: ${ch.display_name ?? ch.handle ?? ""}, followers ${ch.followers_count ?? "not available"}, ${ch.posts_collected} posts collected${ch.bio ? `; bio: ${ch.bio.slice(0, 300)}` : ""}`).join("\n") || "(none)",
         stats: summaryDigest(c.name, stats),
         posts: digest.text,
+        ads: adsDigest(await listCompetitorAds(projectId, id), new Date().toISOString().slice(0, 10)),
       }),
     });
     // a "fact" must cite at least one real collected post; otherwise it is shown as a hypothesis
