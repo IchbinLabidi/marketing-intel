@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { canEdit } from "@/lib/domain/constants";
-import { composeCaption, mediaKindOf, validateForTarget, type PublishTarget } from "@/lib/publishing/rules";
+import { composeCaption, MAX_GROUP, mediaKindOf, validateForTarget, validateGroup, type PublishTarget } from "@/lib/publishing/rules";
 import type { ActionResult } from "@/lib/validation/common";
-import { classifyMetaError, facebookScheduleError, publishFacebook, publishInstagram, PUBLISH_SCOPES, type MediaInput, type PublishResult } from "@/server/publishing/meta";
+import { classifyMetaError, facebookScheduleError, publishFacebook, publishFacebookPhotos, publishInstagram, publishInstagramCarousel, PUBLISH_SCOPES, type MediaInput, type PublishResult } from "@/server/publishing/meta";
 import { MetaApiError } from "@/server/meta/graph";
 import { downloadDriveFile } from "@/server/drive/google";
 import { driveAccessToken, getDriveConnection } from "@/server/drive/service";
@@ -86,9 +86,10 @@ async function mediaFor(db: Awaited<ReturnType<typeof createClient>>, projectId:
   return { media: { kind, url: data.signedUrl, mime }, tempPath: null };
 }
 
-/** Removes a temporary copy made for Instagram (best effort; never blocks the publication result). */
+/** Removes temporary copies made for Instagram (best effort; never blocks the publication result). Several paths are stored one per line. */
 async function cleanup(db: Awaited<ReturnType<typeof createClient>>, path: string | null | undefined) {
-  if (path) await db.storage.from(BUCKET).remove([path]).catch(() => undefined);
+  const paths = (path ?? "").split("\n").filter(Boolean);
+  if (paths.length) await db.storage.from(BUCKET).remove(paths).catch(() => undefined);
 }
 
 const guessMime = (url: string) => (/\.(mp4|mov)(\?|$)/i.test(url) ? "video/mp4" : /\.png(\?|$)/i.test(url) ? "image/png" : "image/jpeg");
@@ -100,7 +101,7 @@ const guessMime = (url: string) => (/\.(mp4|mov)(\?|$)/i.test(url) ? "video/mp4"
 export async function publishPostAction(
   projectId: string,
   itemId: string,
-  input: { targets: PublishTarget[]; mediaAssetId: string | null; scheduleAt: string | null; allowTemporaryLink: boolean },
+  input: { targets: PublishTarget[]; mediaAssetId?: string | null; mediaAssetIds?: string[]; scheduleAt: string | null; allowTemporaryLink: boolean },
 ): Promise<ActionResult<{ publications: Publication[] }>> {
   const { user, allowed } = await guard(projectId);
   if (!allowed) return { ok: false, error: "Your role can't publish from the calendar." };
@@ -125,15 +126,21 @@ export async function publishPostAction(
   if (!pageToken) return { ok: false, error: "The Page access token is missing. Reconnect Meta." };
 
   const db = await createClient();
-  let asset: Asset | null = null;
-  if (input.mediaAssetId) {
-    const { data } = await db.from("content_assets").select("id, body").eq("project_id", projectId).eq("content_item_id", itemId).eq("kind", "media").eq("id", input.mediaAssetId).maybeSingle();
-    if (!data) return { ok: false, error: "The selected media isn't attached to this post." };
-    asset = data as Asset;
+  // Media in the order the person selected it (the first one leads the carousel)
+  const ids = [...new Set(input.mediaAssetIds ?? (input.mediaAssetId ? [input.mediaAssetId] : []))];
+  if (ids.length > MAX_GROUP) return { ok: false, error: `Choose at most ${MAX_GROUP} photos for one post.` };
+  let assets: Asset[] = [];
+  if (ids.length) {
+    const { data } = await db.from("content_assets").select("id, body").eq("project_id", projectId).eq("content_item_id", itemId).eq("kind", "media").in("id", ids);
+    const found = (data ?? []) as Asset[];
+    if (found.length !== ids.length) return { ok: false, error: "The selected media isn't attached to this post." };
+    assets = ids.map((id) => found.find((a) => a.id === id)!);
   }
+  const asset = assets[0] ?? null;
+  const mimeOf = (a: Asset) => a.body.mime ?? (a.body.url ? guessMime(a.body.url) : null);
   const caption = composeCaption(item);
   for (const t of targets) {
-    const problem = validateForTarget(t, { caption, mime: asset?.body.mime ?? (asset?.body.url ? guessMime(asset.body.url) : null), hasMedia: Boolean(asset) });
+    const problem = validateGroup(t, assets.map(mimeOf)) ?? validateForTarget(t, { caption, mime: asset ? mimeOf(asset) : null, hasMedia: Boolean(asset) });
     if (problem) return { ok: false, error: problem };
   }
 
@@ -157,14 +164,25 @@ export async function publishPostAction(
     }
     let tempPath: string | null = null;
     try {
-      const prepared = await mediaFor(db, projectId, itemId, asset, target, input.allowTemporaryLink);
-      const media = prepared.media;
-      tempPath = prepared.tempPath;
+      const prepared: { media: MediaInput; tempPath: string | null }[] = [];
+      try {
+        for (const a of assets.length ? assets : [null]) prepared.push(await mediaFor(db, projectId, itemId, a, target, input.allowTemporaryLink));
+      } finally {
+        tempPath = prepared.map((p) => p.tempPath).filter(Boolean).join("\n") || null;
+      }
+      const media = prepared[0].media;
       let r: PublishResult;
-      if (target === "facebook") r = await publishFacebook({ pageId: conn.page_id, pageToken, message: caption, media, scheduleAt });
-      else {
-        if (media.kind === "none" || !("url" in media)) throw new Error("Instagram needs an image or a video.");
-        r = await publishInstagram({ igUserId: conn.ig_user_id!, pageToken, caption, media, waitMs: 90_000 });
+      if (target === "facebook") {
+        r = prepared.length > 1
+          ? await publishFacebookPhotos({ pageId: conn.page_id, pageToken, message: caption, photos: prepared.map((p) => p.media), scheduleAt })
+          : await publishFacebook({ pageId: conn.page_id, pageToken, message: caption, media, scheduleAt });
+      } else {
+        const items = prepared.map((p) => p.media);
+        if (items.some((m) => m.kind === "none" || !("url" in m))) throw new Error("Instagram needs an image or a video.");
+        const urls = items as Extract<MediaInput, { url: string }>[];
+        r = urls.length > 1
+          ? await publishInstagramCarousel({ igUserId: conn.ig_user_id!, pageToken, caption, items: urls, waitMs: 90_000 })
+          : await publishInstagram({ igUserId: conn.ig_user_id!, pageToken, caption, media: urls[0], waitMs: 90_000 });
       }
       const status = r.processing ? "processing" : r.scheduledFor ? "scheduled" : "published";
       const { data: row } = await db.from("content_publications").update({

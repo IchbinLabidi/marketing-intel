@@ -84,6 +84,38 @@ export async function publishFacebook(opts: { pageId: string; pageToken: string;
   return { postId: id, url: scheduleAt ? null : `https://www.facebook.com/${id}`, scheduledFor: scheduleAt ? scheduleAt.toISOString() : null };
 }
 
+/** Several photos in one Facebook post: each photo is uploaded unpublished, then attached to one feed post. */
+export async function publishFacebookPhotos(opts: { pageId: string; pageToken: string; message: string; photos: MediaInput[]; scheduleAt: Date | null }): Promise<PublishResult> {
+  const { pageId, pageToken, message, photos, scheduleAt } = opts;
+  const ids: string[] = [];
+  for (const p of photos) {
+    if (p.kind !== "image") throw new Error("Only photos can be grouped in one Facebook post.");
+    // a scheduled post needs its photos uploaded as temporary (Pages API)
+    const fields: Record<string, string> = { published: "false", ...(scheduleAt ? { temporary: "true" } : {}) };
+    const r = "bytes" in p
+      ? await graphPost<{ id: string }>(`${pageId}/photos`, fields, pageToken, { file: { field: "source", blob: p.bytes, filename: p.filename } })
+      : await graphPost<{ id: string }>(`${pageId}/photos`, { ...fields, url: p.url }, pageToken);
+    ids.push(r.id);
+  }
+  const fields: Record<string, string> = { message, ...(scheduleAt ? { published: "false", scheduled_publish_time: String(Math.floor(scheduleAt.getTime() / 1000)) } : {}) };
+  ids.forEach((id, i) => { fields[`attached_media[${i}]`] = JSON.stringify({ media_fbid: id }); });
+  const id = (await graphPost<{ id: string }>(`${pageId}/feed`, fields, pageToken)).id;
+  return { postId: id, url: scheduleAt ? null : `https://www.facebook.com/${id}`, scheduledFor: scheduleAt ? scheduleAt.toISOString() : null };
+}
+
+/** Instagram carousel (2 to 10 photos): one container per photo, a carousel container, then the same publish step. */
+export async function publishInstagramCarousel(opts: { igUserId: string; pageToken: string; caption: string; items: Extract<MediaInput, { url: string }>[]; waitMs?: number }): Promise<PublishResult> {
+  const { igUserId, pageToken, caption, items } = opts;
+  const children: string[] = [];
+  for (const m of items) {
+    if (m.kind !== "image") throw new Error("Instagram carousels from Signal can only contain photos.");
+    children.push((await graphPost<{ id: string }>(`${igUserId}/media`, { image_url: m.url, is_carousel_item: "true" }, pageToken)).id);
+  }
+  const parent = (await graphPost<{ id: string }>(`${igUserId}/media`, { media_type: "CAROUSEL", children: children.join(","), caption }, pageToken)).id;
+  // "video" makes the shared step wait for FINISHED, which a carousel container reports like a video does
+  return publishInstagram({ igUserId, pageToken, caption, media: { kind: "video", url: "", mime: "" }, containerId: parent, waitMs: opts.waitMs });
+}
+
 /**
  * Instagram: create a media container from a URL Meta can download, wait until it is processed (videos), publish it.
  * If processing takes longer than `waitMs`, returns { processing: true, containerId } so the caller can resume later.

@@ -31,7 +31,7 @@ const fmtSize = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1
 export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { projectId: string; post: ContentItem; tz: string; onClose: () => void; onPublished: () => void }) {
   const [ctx, setCtx] = React.useState<PublishContext | null>(null);
   const [tab, setTab] = React.useState<"post" | "computer" | "drive">("post");
-  const [assetId, setAssetId] = React.useState<string | null>(null);
+  const [assetIds, setAssetIds] = React.useState<string[] | null>(null); // selection order = carousel order
   const [local, setLocal] = React.useState<{ file: File; url: string; error: string | null } | null>(null);
   const [targets, setTargets] = React.useState<PublishTarget[]>(post.platform === "instagram" ? ["instagram"] : ["facebook"]);
   const [when, setWhen] = React.useState<"now" | "schedule">("now");
@@ -46,7 +46,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
     const r = await publishContextAction(projectId, post.id);
     if (r.ok && r.data) {
       setCtx(r.data);
-      setAssetId((cur) => cur ?? r.data!.assets[0]?.id ?? null);
+      setAssetIds((cur) => cur ?? (r.data!.assets[0] ? [r.data!.assets[0].id] : []));
     }
   }, [projectId, post.id]);
   React.useEffect(() => {
@@ -54,13 +54,14 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
     publishContextAction(projectId, post.id).then((r) => {
       if (!alive || !r.ok || !r.data) return;
       setCtx(r.data);
-      setAssetId((cur) => cur ?? r.data!.assets[0]?.id ?? null);
+      setAssetIds((cur) => cur ?? (r.data!.assets[0] ? [r.data!.assets[0].id] : []));
     });
     return () => { alive = false; };
   }, [projectId, post.id]);
   React.useEffect(() => () => { if (local) URL.revokeObjectURL(local.url); }, [local]);
 
-  const asset = ctx?.assets.find((a) => a.id === assetId) ?? null;
+  const selected = (assetIds ?? []).map((id) => ctx?.assets.find((a) => a.id === id)).filter((a): a is NonNullable<typeof a> => Boolean(a));
+  const toggleAsset = (id: string) => setAssetIds((cur) => ((cur ?? []).includes(id) ? (cur ?? []).filter((x) => x !== id) : [...(cur ?? []), id]));
   const pick = (file: File | undefined) => {
     if (!file) return;
     if (local) URL.revokeObjectURL(local.url);
@@ -79,7 +80,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
       toast.success("File kept for publishing");
       URL.revokeObjectURL(local.url);
       setLocal(null);
-      setAssetId(null);
+      setAssetIds(null);
       await load();
       setTab("post");
     } catch (e) {
@@ -91,7 +92,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
   const publish = async () => {
     setBusy("publish");
     const scheduleAt = when === "schedule" && date && time ? new Date(zonedToUtc(date, time, tz)).toISOString() : null;
-    const r = await publishPostAction(projectId, post.id, { targets, mediaAssetId: asset?.id ?? null, scheduleAt, allowTemporaryLink: consent });
+    const r = await publishPostAction(projectId, post.id, { targets, mediaAssetIds: selected.map((a) => a.id), scheduleAt, allowTemporaryLink: consent });
     setBusy(null);
     if (!r.ok) { toast.error(r.error); await load(); return; }
     toast.success(r.message ?? "Done");
@@ -107,7 +108,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
     onPublished();
   };
 
-  const needsConsent = targets.includes("instagram") && (asset?.source === "stored" || asset?.source === "google_drive");
+  const needsConsent = targets.includes("instagram") && selected.some((a) => a.source === "stored" || a.source === "google_drive");
   const approved = ["approved", "scheduled"].includes(post.status);
   const toggle = (t: PublishTarget) => setTargets((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]));
   const done = (t: PublishTarget) => ctx?.publications.find((p) => p.provider === t && ["published", "scheduled", "processing", "uploading"].includes(p.status));
@@ -142,9 +143,10 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
               {tab === "post" ? (
                 ctx.assets.length ? (
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <button type="button" onClick={() => setAssetId(null)} className={cn("flex h-24 items-center justify-center rounded-lg border text-xs text-muted-foreground", !assetId && "ring-2 ring-primary")}>No media</button>
+                    <button type="button" onClick={() => setAssetIds([])} className={cn("flex h-24 items-center justify-center rounded-lg border text-xs text-muted-foreground", !selected.length && "ring-2 ring-primary")}>No media</button>
                     {ctx.assets.map((a) => (
-                      <button key={a.id} type="button" onClick={() => setAssetId(a.id)} title={a.name} className={cn("relative h-24 overflow-hidden rounded-lg border bg-muted", assetId === a.id && "ring-2 ring-primary")}>
+                      <button key={a.id} type="button" aria-pressed={selected.includes(a)} onClick={() => toggleAsset(a.id)} title={a.name} className={cn("relative h-24 overflow-hidden rounded-lg border bg-muted", selected.includes(a) && "ring-2 ring-primary")}>
+                        {selected.includes(a) ? <span className="absolute right-1 top-1 z-10 flex size-5 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">{selected.indexOf(a) + 1}</span> : null}
                         {a.previewUrl && mediaKindOf(a.mime) === "image" ? (
                           // eslint-disable-next-line @next/next/no-img-element -- signed preview link
                           <img src={a.previewUrl} alt="" className="size-full object-cover" />
@@ -154,7 +156,9 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
                     ))}
                   </div>
                 ) : <p className="text-muted-foreground">No media attached yet. Choose a file from your computer, or publish text only on Facebook.</p>
-              ) : tab === "computer" ? (
+              ) : null}
+              {tab === "post" && ctx.assets.length > 1 ? <p className="text-xs text-muted-foreground">Click several photos to publish them together (Instagram carousel or Facebook multi-photo post, up to 10). The numbers show the order.</p> : null}
+              {tab === "post" ? null : tab === "computer" ? (
                 <div className="space-y-2">
                   <Input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime" onChange={(e) => pick(e.target.files?.[0])} aria-label="Choose a file from your computer" />
                   {local ? (
@@ -177,7 +181,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
                   ) : null}
                 </div>
               ) : (
-                <DrivePicker projectId={projectId} itemId={post.id} onPicking={setPicking} onAttached={async () => { setAssetId(null); await load(); setTab("post"); }} />
+                <DrivePicker projectId={projectId} itemId={post.id} onPicking={setPicking} onAttached={async (ids) => { setAssetIds(ids); await load(); setTab("post"); }} />
               )}
             </section>
 

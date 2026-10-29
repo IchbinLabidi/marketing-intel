@@ -44,7 +44,7 @@ export async function drivePickerAction(projectId: string): Promise<ActionResult
  * checked through the Drive API with the project's authorization: it must exist, be downloadable and be an image
  * or a video small enough to publish.
  */
-export async function attachDriveFileAction(projectId: string, itemId: string, fileId: string): Promise<ActionResult> {
+export async function attachDriveFileAction(projectId: string, itemId: string, fileId: string): Promise<ActionResult<{ id: string }>> {
   if (!(await guard(projectId))) return { ok: false, error: "Your role can't attach media in the calendar." };
   const conn = await getDriveConnection(projectId);
   if (!conn) return { ok: false, error: "Connect Google Drive first." };
@@ -58,7 +58,7 @@ export async function attachDriveFileAction(projectId: string, itemId: string, f
     if (size > MAX_FILE_BYTES) return { ok: false, error: `This file is ${(size / 1024 / 1024).toFixed(1)} MB; publishing supports up to 50 MB.` };
     const { data: item } = await db.from("content_items").select("language").eq("project_id", projectId).eq("id", itemId).maybeSingle();
     if (!item) return { ok: false, error: "Post not found." };
-    const { error } = await db.from("content_assets").insert({
+    const { data: row, error } = await db.from("content_assets").insert({
       project_id: projectId, content_item_id: itemId, kind: "media", language: item.language || "fr",
       body: {
         source_type: "google_drive", source_file_id: meta.id, name: meta.name.slice(0, 200), mime: meta.mimeType, size_bytes: size || null,
@@ -66,10 +66,10 @@ export async function attachDriveFileAction(projectId: string, itemId: string, f
         // Persistent while the file exists in Drive and the project's Drive authorization is valid; re-checked at publication.
         persistence_status: "google_drive",
       },
-    });
+    }).select("id").single();
     if (error) throw error;
     revalidatePath(`/p/${projectId}`, "layout");
-    return { ok: true, message: `${meta.name} attached from Google Drive` };
+    return { ok: true, data: { id: row.id }, message: `${meta.name} attached from Google Drive` };
   } catch (e) {
     if (e instanceof SocialApiError && e.kind === "not_found") return { ok: false, error: "This file can't be found with the project's Drive access." };
     return { ok: false, error: describeSocialError(e) };

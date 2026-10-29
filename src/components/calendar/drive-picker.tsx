@@ -13,13 +13,14 @@ type PickerData = { action: string; docs?: PickerDoc[] };
 type GoogleNS = {
   picker: {
     Action: { PICKED: string; CANCEL: string };
+    Feature: { MULTISELECT_ENABLED: string };
     ViewId: { DOCS_IMAGES_AND_VIDEOS: string };
     DocsView: new (viewId: string) => { setIncludeFolders(b: boolean): unknown; setMimeTypes(m: string): unknown };
     PickerBuilder: new () => PickerBuilderChain;
   };
 };
 type PickerBuilderChain = {
-  addView(v: unknown): PickerBuilderChain; setOAuthToken(t: string): PickerBuilderChain; setDeveloperKey(k: string): PickerBuilderChain; setAppId(a: string): PickerBuilderChain;
+  addView(v: unknown): PickerBuilderChain; enableFeature(f: string): PickerBuilderChain; setOAuthToken(t: string): PickerBuilderChain; setDeveloperKey(k: string): PickerBuilderChain; setAppId(a: string): PickerBuilderChain;
   setCallback(cb: (d: PickerData) => void): PickerBuilderChain; setTitle(t: string): PickerBuilderChain; build(): { setVisible(v: boolean): void };
 };
 declare global { interface Window { gapi?: { load(lib: string, cb: () => void): void }; google?: GoogleNS } }
@@ -45,7 +46,7 @@ function loadPicker() {
  * Google Drive tab: connect (once per project), then pick images/videos with Google's own Picker. Only the file id
  * and metadata are saved; the bytes are read through the Drive API when the post is published.
  */
-export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { projectId: string; itemId: string; onPicking: (open: boolean) => void; onAttached: () => void }) {
+export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { projectId: string; itemId: string; onPicking: (open: boolean) => void; onAttached: (assetIds: string[]) => void }) {
   const [state, setState] = React.useState<DrivePickerState | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -66,17 +67,23 @@ export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { proj
       view.setMimeTypes("image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime");
       onPicking(true);
       setPickerOpen(true);
-      new g.PickerBuilder().addView(view).setOAuthToken(state.picker.accessToken).setDeveloperKey(state.picker.apiKey).setAppId(state.picker.appId).setTitle("Choose an image or a video")
+      new g.PickerBuilder().addView(view).enableFeature(g.Feature.MULTISELECT_ENABLED).setOAuthToken(state.picker.accessToken).setDeveloperKey(state.picker.apiKey).setAppId(state.picker.appId).setTitle("Choose images or a video (Ctrl/Shift-click for several)")
         .setCallback(async (data: PickerData) => {
           if (data.action === g.Action.CANCEL) { setPickerOpen(false); onPicking(false); setBusy(false); return; }
           if (data.action !== g.Action.PICKED || !data.docs?.[0]) return;
           setPickerOpen(false);
           onPicking(false);
-          const r = await attachDriveFileAction(projectId, itemId, data.docs[0].id);
+          const ids: string[] = [];
+          for (const doc of data.docs.slice(0, 10)) {
+            const r = await attachDriveFileAction(projectId, itemId, doc.id);
+            if (!r.ok) toast.error(`${doc.name}: ${r.error}`);
+            else if (r.data) ids.push(r.data.id);
+          }
           setBusy(false);
-          if (!r.ok) return toast.error(r.error);
-          toast.success(r.message ?? "Attached");
-          onAttached();
+          if (data.docs.length > 10) toast.info("Only the first 10 files were attached (the most one post can hold).");
+          if (!ids.length) return;
+          toast.success(ids.length === 1 ? "Attached from Google Drive" : `${ids.length} files attached from Google Drive`);
+          onAttached(ids);
         }).build().setVisible(true);
     } catch (e) {
       setPickerOpen(false);

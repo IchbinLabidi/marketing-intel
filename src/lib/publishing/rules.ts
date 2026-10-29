@@ -45,6 +45,17 @@ export function validateForTarget(target: PublishTarget, p: { caption: string; m
   return null;
 }
 
+export const MAX_GROUP = 10; // Instagram carousels and Facebook multi-photo posts
+
+/** Several files in one post: only photos, at most 10 (Instagram carousel limit). Null when fine. */
+export function validateGroup(target: PublishTarget, mimes: (string | null | undefined)[]): string | null {
+  if (mimes.length < 2) return null;
+  if (mimes.length > MAX_GROUP) return `Choose at most ${MAX_GROUP} photos for one post.`;
+  if (mimes.some((m) => mediaKindOf(m) !== "image")) return "Several files in one post must all be photos. Publish a video on its own.";
+  if (target === "instagram" && mimes.some((m) => !(LIMITS.instagram.image as readonly string[]).includes(m!))) return "Instagram's publishing API only accepts JPEG images. Export the photos as JPG.";
+  return null;
+}
+
 /** Checks a file chosen on the computer before anything is uploaded. */
 export function validateLocalFile(f: { type: string; size: number }): string | null {
   if (!mediaKindOf(f.type)) return "Choose an image or a video.";
