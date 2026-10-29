@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { checkPublicationAction, publishContextAction, publishPostAction, type Publication, type PublishContext } from "@/server/actions/publishing";
 import { finishMediaUploadAction, mediaUploadTicketAction } from "@/server/actions/production";
 import type { ContentItem } from "@/types/domain";
+import { DrivePicker } from "./drive-picker";
 
 const STATUS: Record<string, { label: string; tone: "success" | "info" | "warning" | "destructive" | "outline" }> = {
   published: { label: "Published", tone: "success" }, scheduled: { label: "Scheduled on Facebook", tone: "info" }, processing: { label: "Processing", tone: "info" },
@@ -39,6 +40,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
   const [time, setTime] = React.useState(initial?.time ?? "09:00");
   const [consent, setConsent] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
+  const [picking, setPicking] = React.useState(false); // Google's Picker opens over the page: the dialog stops trapping focus meanwhile
 
   const load = React.useCallback(async () => {
     const r = await publishContextAction(projectId, post.id);
@@ -105,13 +107,13 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
     onPublished();
   };
 
-  const needsConsent = targets.includes("instagram") && asset?.source === "stored";
+  const needsConsent = targets.includes("instagram") && (asset?.source === "stored" || asset?.source === "google_drive");
   const approved = ["approved", "scheduled"].includes(post.status);
   const toggle = (t: PublishTarget) => setTargets((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]));
   const done = (t: PublishTarget) => ctx?.publications.find((p) => p.provider === t && ["published", "scheduled", "processing", "uploading"].includes(p.status));
 
   return (
-    <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
+    <Dialog open modal={!picking} onOpenChange={(o) => !o && !busy && !picking && onClose()}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Send className="size-4" /> Publish “{post.title}”</DialogTitle>
@@ -175,7 +177,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
                   ) : null}
                 </div>
               ) : (
-                <Alert>Google Drive selection arrives in the next phase. It needs a Google Cloud OAuth client and the Picker API enabled. Until then, download the file and choose it from your computer.</Alert>
+                <DrivePicker projectId={projectId} itemId={post.id} onPicking={setPicking} onAttached={async () => { setAssetId(null); await load(); setTab("post"); }} />
               )}
             </section>
 

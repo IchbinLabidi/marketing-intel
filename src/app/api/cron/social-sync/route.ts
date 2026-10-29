@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   if (!admin) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for scheduled sync" }, { status: 501 });
 
   const dueBefore = new Date(Date.now() - 20 * 3600 * 1000).toISOString();
-  const { data, error } = await admin.from("social_connections").select("*").eq("status", "connected").eq("auto_sync", true)
+  const { data, error } = await admin.from("social_connections").select("*").neq("provider", "google_drive").eq("status", "connected").eq("auto_sync", true)
     .or(`last_sync_at.is.null,last_sync_at.lt.${dueBefore}`).order("last_sync_at", { ascending: true, nullsFirst: true }).limit(30);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
