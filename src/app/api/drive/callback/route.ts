@@ -15,23 +15,25 @@ export async function GET(request: NextRequest) {
   const user = await requireUser();
   let saved: { state: string; verifier: string; projectId: string; userId: string; back: string } | null = null;
   try { saved = JSON.parse(request.cookies.get("drive_oauth")?.value ?? "null"); } catch { saved = null; }
-  const back = new URL(saved ? `/p/${saved.projectId}/${saved.back === "calendar" ? "calendar" : "integrations"}` : "/projects", request.url);
+  const page = (to: string) => new URL(saved ? `/p/${saved.projectId}/${to}` : "/projects", request.url);
+  // Success returns where the person started; failures always land on Integrations, which explains them.
   const done = (params: Record<string, string>) => {
-    for (const [k, v] of Object.entries(params)) back.searchParams.set(k, v);
+    const back = page(params.error ? "integrations" : saved?.back === "calendar" ? "calendar" : "integrations");
+    for (const [k, v] of Object.entries({ provider: "google_drive", ...params })) back.searchParams.set(k, v);
     const res = NextResponse.redirect(back);
     res.cookies.delete({ name: "drive_oauth", path: "/api/drive" });
     return res;
   };
   const state = request.nextUrl.searchParams.get("state") ?? "";
-  if (!saved || saved.userId !== user.id || !state || !same(state, saved.state)) return done({ drive_error: "state" });
-  if (request.nextUrl.searchParams.get("error")) return done({ drive_error: "denied" });
+  if (!saved || saved.userId !== user.id || !state || !same(state, saved.state)) return done({ error: "state" });
+  if (request.nextUrl.searchParams.get("error")) return done({ error: "denied" });
   const code = request.nextUrl.searchParams.get("code");
-  if (!code) return done({ drive_error: "provider" });
+  if (!code) return done({ error: "provider" });
   const { project } = await getProjectContext(saved.projectId);
-  if (!(await hasPermission(project.workspace_id, "calendar.edit"))) return done({ drive_error: "read_only" });
+  if (!(await hasPermission(project.workspace_id, "calendar.edit"))) return done({ error: "read_only" });
   try {
     const tokens = await exchangeDriveCode(code, saved.verifier);
-    if (!tokens.scopes.includes(DRIVE_SCOPES[0])) return done({ drive_error: "scope" });
+    if (!tokens.scopes.includes(DRIVE_SCOPES[0])) return done({ error: "scope" });
     const account = await driveAccount(tokens.access);
     const db = await createClient();
     const { data, error } = await db.from("social_connections").upsert({
@@ -40,8 +42,8 @@ export async function GET(request: NextRequest) {
     }, { onConflict: "project_id,provider,external_account_id" }).select("id").single();
     if (error) throw error;
     await storeSocialTokens(db, data.id, tokens);
-    return done({ drive: "connected" });
+    return done({ connected: "1" });
   } catch (e) {
-    return done({ drive_error: "provider", detail: describeSocialError(e).slice(0, 200) });
+    return done({ error: "provider", detail: describeSocialError(e).slice(0, 200) });
   }
 }

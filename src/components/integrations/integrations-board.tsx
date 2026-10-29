@@ -40,6 +40,7 @@ const ERRORS: Record<string, string> = {
   read_only: "Your role can't manage integrations for this project.",
   no_accounts: "Sign-in worked, but no account you can read was found (for LinkedIn you must be an administrator of the page).",
   provider: "The provider returned an error.",
+  scope: "Google didn't grant access to Drive files. Connect again and tick the Google Drive checkbox on Google's permission screen.",
 };
 const when = (d: string | null | undefined) => (d ? formatDateTime(d) : "never");
 
@@ -67,10 +68,10 @@ export function IntegrationsBoard({ projectId, canEdit, schemaReady, flash, meta
     return () => clearInterval(t);
   }, [syncing, router]);
 
-  const label = (k?: string) => (k === "youtube" ? "YouTube" : k === "linkedin" ? "LinkedIn" : k === "tiktok" ? "TikTok" : "The provider");
+  const label = (k?: string) => (k === "youtube" ? "YouTube" : k === "linkedin" ? "LinkedIn" : k === "tiktok" ? "TikTok" : k === "google_drive" ? "Google Drive" : "The provider");
   return (
     <div className="space-y-4">
-      {flash.connected ? <Alert variant="success" title={`${label(flash.provider)} connected`}>{flash.connected === "1" ? "One account was" : `${flash.connected} accounts were`} connected. The first import has started.</Alert> : null}
+      {flash.connected ? <Alert variant="success" title={`${label(flash.provider)} connected`}>{flash.connected === "1" ? "One account was" : `${flash.connected} accounts were`} connected.{flash.provider === "google_drive" ? " Choose Drive files from a post's Publish… dialog." : " The first import has started."}</Alert> : null}
       {flash.error ? <Alert variant="destructive" title={`${label(flash.provider)}: not connected`}>{ERRORS[flash.error] ?? "Something went wrong."}{flash.detail ? ` (${flash.detail})` : ""}</Alert> : null}
       <MetaCard projectId={projectId} canEdit={canEdit} meta={meta} />
       {providers.map((p) => <ProviderCard key={p.key} projectId={projectId} canEdit={canEdit} schemaReady={schemaReady} p={p} />)}

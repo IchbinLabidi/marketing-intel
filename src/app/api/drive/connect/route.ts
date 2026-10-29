@@ -11,13 +11,13 @@ export async function GET(request: NextRequest) {
   const back = request.nextUrl.searchParams.get("back") === "calendar" ? "calendar" : "integrations";
   const user = await requireUser();
   const { project } = await getProjectContext(projectId);
-  const done = new URL(`/p/${projectId}/${back}`, request.url);
+  const done = new URL(`/p/${projectId}/integrations?provider=google_drive`, request.url); // errors are explained on Integrations
   if (!(await hasPermission(project.workspace_id, "calendar.edit"))) {
-    done.searchParams.set("drive_error", "read_only");
+    done.searchParams.set("error", "read_only");
     return NextResponse.redirect(done);
   }
   if (driveConfig().missing.length) {
-    done.searchParams.set("drive_error", "not_configured");
+    done.searchParams.set("error", "not_configured");
     return NextResponse.redirect(done);
   }
   const state = randomBytes(24).toString("base64url");
