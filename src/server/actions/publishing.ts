@@ -7,6 +7,11 @@ import { composeCaption, mediaKindOf, validateForTarget, type PublishTarget } fr
 import type { ActionResult } from "@/lib/validation/common";
 import { classifyMetaError, facebookScheduleError, publishFacebook, publishInstagram, PUBLISH_SCOPES, type MediaInput, type PublishResult } from "@/server/publishing/meta";
 import { MetaApiError } from "@/server/meta/graph";
+import { downloadDriveFile } from "@/server/drive/google";
+import { driveAccessToken, getDriveConnection } from "@/server/drive/service";
+import { SocialApiError } from "@/server/social/http";
+import { describeSocialError } from "@/server/social/sync";
+import { MAX_FILE_BYTES } from "@/lib/publishing/rules";
 import { getPost, updatePost } from "@/server/services/calendar";
 import { getMetaConnection, readMetaTokens } from "@/server/services/meta";
 import { getProjectContext } from "@/server/services/projects";
@@ -39,28 +44,51 @@ export async function listPublicationsAction(projectId: string, itemId: string):
   return { ok: true, data: data as Publication[] };
 }
 
-type Asset = { id: string; body: { path?: string; url?: string; name?: string; mime?: string; source_type?: string } };
+type Asset = { id: string; body: { path?: string; url?: string; name?: string; mime?: string; source_type?: string; source_file_id?: string } };
+type Prepared = { media: MediaInput; tempPath: string | null };
 
-/** Turns a stored media attachment into what each network accepts. Never makes a private file public. */
-async function mediaFor(db: Awaited<ReturnType<typeof createClient>>, asset: Asset | null, target: PublishTarget, allowTemporaryLink: boolean): Promise<MediaInput> {
-  if (!asset) return { kind: "none" };
+/**
+ * Turns a media attachment into what each network accepts. Never makes a private file public.
+ * Google Drive files are downloaded through the Drive API with the project's authorization (no sharing link); for
+ * Instagram, which needs a URL, a temporary private copy is stored and removed once Instagram has it.
+ */
+async function mediaFor(db: Awaited<ReturnType<typeof createClient>>, projectId: string, itemId: string, asset: Asset | null, target: PublishTarget, allowTemporaryLink: boolean): Promise<Prepared> {
+  if (!asset) return { media: { kind: "none" }, tempPath: null };
   const mime = asset.body.mime ?? (asset.body.url ? guessMime(asset.body.url) : "");
   const kind = mediaKindOf(mime);
   if (!kind) throw new Error("This attachment isn't an image or a video.");
-  if (asset.body.source_type === "google_drive") throw new Error("Publishing Google Drive files arrives with the Drive integration (phase 2). Attach a file from your computer for now.");
-  if (asset.body.url) return { kind, url: asset.body.url, mime }; // already a public https link chosen by the team
+  if (asset.body.source_type === "google_drive") {
+    const conn = await getDriveConnection(projectId);
+    if (!conn || !asset.body.source_file_id) throw new Error("Google Drive isn't connected for this project. Reconnect it to publish this file.");
+    const bytes = await downloadDriveFile(await driveAccessToken(db, conn), asset.body.source_file_id, MAX_FILE_BYTES);
+    const filename = asset.body.name ?? "media";
+    if (target === "facebook") return { media: { kind, bytes, filename, mime }, tempPath: null };
+    if (!allowTemporaryLink) throw new Error("Instagram downloads media from a link. Allow the temporary private link (valid 1 hour) to publish this file.");
+    const tempPath = `${projectId}/${itemId}/publish-tmp-${crypto.randomUUID()}-${filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80)}`;
+    const up = await db.storage.from(BUCKET).upload(tempPath, bytes, { contentType: mime, upsert: false });
+    if (up.error) throw new Error("Could not prepare the Drive file for Instagram.");
+    const { data } = await db.storage.from(BUCKET).createSignedUrl(tempPath, SIGNED_LINK_SECONDS);
+    if (!data?.signedUrl) { await db.storage.from(BUCKET).remove([tempPath]); throw new Error("Could not prepare the Drive file for Instagram."); }
+    return { media: { kind, url: data.signedUrl, mime }, tempPath };
+  }
+  if (asset.body.url) return { media: { kind, url: asset.body.url, mime }, tempPath: null }; // already a public https link chosen by the team
   if (!asset.body.path) throw new Error("The attachment has no stored file.");
   if (target === "facebook") {
     // Facebook receives the bytes directly: no link to the private file is ever created
     const { data, error } = await db.storage.from(BUCKET).download(asset.body.path);
     if (error || !data) throw new Error("The stored file could not be read. Re-attach it.");
-    return { kind, bytes: data, filename: asset.body.name ?? "media", mime };
+    return { media: { kind, bytes: data, filename: asset.body.name ?? "media", mime }, tempPath: null };
   }
   // Instagram only accepts a URL it downloads itself: a signed link valid for one hour, only with explicit consent
   if (!allowTemporaryLink) throw new Error("Instagram downloads media from a link. Allow the temporary private link (valid 1 hour) to publish this file.");
   const { data, error } = await db.storage.from(BUCKET).createSignedUrl(asset.body.path, SIGNED_LINK_SECONDS);
   if (error || !data?.signedUrl) throw new Error("Could not prepare the file for Instagram.");
-  return { kind, url: data.signedUrl, mime };
+  return { media: { kind, url: data.signedUrl, mime }, tempPath: null };
+}
+
+/** Removes a temporary copy made for Instagram (best effort; never blocks the publication result). */
+async function cleanup(db: Awaited<ReturnType<typeof createClient>>, path: string | null | undefined) {
+  if (path) await db.storage.from(BUCKET).remove([path]).catch(() => undefined);
 }
 
 const guessMime = (url: string) => (/\.(mp4|mov)(\?|$)/i.test(url) ? "video/mp4" : /\.png(\?|$)/i.test(url) ? "image/png" : "image/jpeg");
@@ -127,8 +155,11 @@ export async function publishPostAction(
       if (existing) results.push(existing as Publication);
       continue; // already published / scheduled / in progress
     }
+    let tempPath: string | null = null;
     try {
-      const media = await mediaFor(db, asset, target, input.allowTemporaryLink);
+      const prepared = await mediaFor(db, projectId, itemId, asset, target, input.allowTemporaryLink);
+      const media = prepared.media;
+      tempPath = prepared.tempPath;
       let r: PublishResult;
       if (target === "facebook") r = await publishFacebook({ pageId: conn.page_id, pageToken, message: caption, media, scheduleAt });
       else {
@@ -138,11 +169,17 @@ export async function publishPostAction(
       const status = r.processing ? "processing" : r.scheduledFor ? "scheduled" : "published";
       const { data: row } = await db.from("content_publications").update({
         status, platform_post_id: r.postId || null, platform_url: r.url, scheduled_for: r.scheduledFor, container_id: r.containerId ?? null, attempts: claimed.attempts + 1, next_attempt_at: null,
+        // a video still processing keeps its temporary copy until Instagram is done with it
+        temp_media_path: r.processing ? tempPath : null,
       }).eq("id", claimed.id).select("*").single();
+      if (!r.processing) await cleanup(db, tempPath);
       results.push(row as Publication);
     } catch (e) {
       // our own checks (missing file, consent) are validation errors; Meta errors are classified by their code
-      const c = e instanceof MetaApiError ? classifyMetaError(e) : { kind: "validation" as const, message: e instanceof Error ? e.message : "Unknown error" };
+      await cleanup(db, tempPath);
+      const c = e instanceof MetaApiError ? classifyMetaError(e)
+        : e instanceof SocialApiError ? { kind: (e.isAuth || e.isPermission ? "auth" : e.kind === "server" || e.kind === "network" || e.kind === "rate_limit" ? "transient" : "permanent") as "auth" | "transient" | "permanent", message: describeSocialError(e) }
+        : { kind: "validation" as const, message: e instanceof Error ? e.message : "Unknown error" };
       const { data: row } = await db.from("content_publications").update({
         status: "failed", error: c.message.slice(0, 1000), error_kind: c.kind, attempts: claimed.attempts + 1,
         next_attempt_at: c.kind === "transient" ? new Date(Date.now() + 2 ** Math.min(claimed.attempts, 6) * 60_000).toISOString() : null,
@@ -170,13 +207,15 @@ export async function checkPublicationAction(projectId: string, publicationId: s
   if (!conn || !page) return { ok: false, error: "Reconnect Meta to finish this publication." };
   try {
     const r = await publishInstagram({ igUserId: pub.account_ref, pageToken: page, caption: "", media: { kind: "video", url: "", mime: "video/mp4" }, containerId: pub.container_id, waitMs: 60_000 });
-    const { data: row } = await db.from("content_publications").update(r.processing ? { updated_at: new Date().toISOString() } : { status: "published", platform_post_id: r.postId, platform_url: r.url }).eq("id", pub.id).select("*").single();
+    const { data: row } = await db.from("content_publications").update(r.processing ? { updated_at: new Date().toISOString() } : { status: "published", platform_post_id: r.postId, platform_url: r.url, temp_media_path: null }).eq("id", pub.id).select("*").single();
+    if (!r.processing) await cleanup(db, pub.temp_media_path);
     await syncItemStatus(projectId, pub.content_item_id, [row as Publication]);
     refresh(projectId);
     return { ok: true, data: { publication: row as Publication }, message: r.processing ? "Instagram is still processing the video. Check again in a minute." : "Published on Instagram" };
   } catch (e) {
     const c = classifyMetaError(e);
-    const { data: row } = await db.from("content_publications").update({ status: "failed", error: c.message.slice(0, 1000), error_kind: c.kind }).eq("id", pub.id).select("*").single();
+    const { data: row } = await db.from("content_publications").update({ status: "failed", error: c.message.slice(0, 1000), error_kind: c.kind, temp_media_path: null }).eq("id", pub.id).select("*").single();
+    await cleanup(db, pub.temp_media_path);
     refresh(projectId);
     return { ok: false, error: c.message, data: { publication: row as Publication } } as ActionResult<{ publication: Publication }>;
   }

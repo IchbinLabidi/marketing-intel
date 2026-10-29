@@ -25,7 +25,8 @@ export const isMissingSocialSchema = (e: unknown) => isMissingTeamSchema(e);
 
 export async function listSocialConnections(projectId: string): Promise<{ connections: SocialConnection[]; ready: boolean }> {
   const db = await createClient();
-  const { data, error } = await db.from("social_connections").select("*").eq("project_id", projectId).order("created_at");
+  // Google Drive authorizations live in the same table but aren't social accounts (no posts to sync)
+  const { data, error } = await db.from("social_connections").select("*").eq("project_id", projectId).neq("provider", "google_drive").order("created_at");
   if (error) {
     if (isMissingSocialSchema(error)) return { connections: [], ready: false };
     throw error;
