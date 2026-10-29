@@ -130,3 +130,14 @@ export async function projectCredentials(projectId: string): Promise<ProviderCre
   }
   return { meta, ...env };
 }
+
+export type CompetitorAd = { id: string; competitor_id: string; library_id: string; url: string; started_on: string; ended_on: string | null; platforms: string[]; body: string; created_at: string };
+
+/** Ads recorded from Meta's Ad Library: running ones first, then newest. Empty while migration 0016 isn't applied. */
+export async function listCompetitorAds(projectId: string, competitorId: string): Promise<CompetitorAd[]> {
+  const db = await createClient();
+  const { data, error } = await db.from("competitor_ads").select("id, competitor_id, library_id, url, started_on, ended_on, platforms, body, created_at")
+    .eq("project_id", projectId).eq("competitor_id", competitorId).order("ended_on", { ascending: false, nullsFirst: true }).order("started_on", { ascending: false }).limit(500);
+  if (error) return [];
+  return data as CompetitorAd[];
+}
