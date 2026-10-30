@@ -15,6 +15,8 @@ export type SlotInput = {
   targetPlatforms?: string[];
   format?: string | null;
   audience?: string | null;
+  /** students | parents | teachers | both: takes precedence over the free-text audience */
+  segment?: string | null;
   pillar?: string | null;
   today: string;                    // YYYY-MM-DD in the project's timezone
   timing: PlatformTiming[];         // from bestPublicationTimes (may be empty)
@@ -29,8 +31,10 @@ const weekdayOf = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay();
 const hhmm = (h: number, m = 0) => `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 
 /** Parents are reached in the evening and at weekends; students on weekday evenings after school. */
-export function audienceOf(text: string | null | undefined): "parents" | "students" | "general" {
+export function audienceOf(text: string | null | undefined, segment?: string | null): "parents" | "students" | "teachers" | "general" {
+  if (segment === "teachers" || segment === "parents" || segment === "students") return segment;
   const t = (text ?? "").toLowerCase();
+  if (/enseignant|professeur|teacher|tutor|أستاذ|أساتذة|اساتذة/.test(t)) return "teachers";
   if (/parent|أولياء|الأولياء|wali|famil/.test(t)) return "parents";
   if (/élève|eleve|student|lyc|bac|تلميذ|تلامذة|طالب|étudiant/.test(t)) return "students";
   return "general";
@@ -50,6 +54,10 @@ type Pattern = { weekdays: number[]; time: string; why: string };
 function heuristicPatterns(platform: string, audience: ReturnType<typeof audienceOf>, format: string): Pattern[] {
   const video = /reel|video|vidéo|tiktok|short/i.test(format) || platform === "tiktok";
   if (platform === "linkedin") return [{ weekdays: [2, 3, 4], time: "12:30", why: "professional audiences are more available around lunch on weekdays" }];
+  if (audience === "teachers") return [
+    { weekdays: [1, 2, 3, 4], time: "21:00", why: "teachers are more available in the evening, after their lessons" },
+    { weekdays: [0], time: "10:30", why: "teachers often plan their week on Sunday mornings" },
+  ];
   if (audience === "parents") return [
     { weekdays: [0, 6], time: "10:00", why: "parents are more available on weekend mornings" },
     { weekdays: [1, 2, 3, 4], time: "20:30", why: "parents are more available after dinner on weekdays" },
@@ -80,7 +88,7 @@ export function suggestSlot(input: SlotInput): SuggestedSlot | null {
   const horizon = input.horizonDays ?? 21;
   const maxPerDay = input.maxPerDay ?? 2;
   const computed_at = (input.now ?? new Date()).toISOString();
-  const exam = (d: string) => (examPeriod(d) && /educ|révis|revis|bac|exam|cours|astuce|méthod|tip/i.test(`${input.pillar ?? ""} ${input.format ?? ""}`) ? ` It falls during ${examPeriod(d)}, when revision content is timely.` : "");
+  const exam = (d: string) => (examPeriod(d) && audienceOf(input.audience, input.segment) !== "teachers" && /educ|révis|revis|bac|exam|cours|astuce|méthod|tip/i.test(`${input.pillar ?? ""} ${input.format ?? ""}`) ? ` It falls during ${examPeriod(d)}, when revision content is timely.` : "");
 
   const timing = input.timing.find((t) => t.platform === platform);
   if (timing?.suggestions.length) {
@@ -98,7 +106,7 @@ export function suggestSlot(input: SlotInput): SuggestedSlot | null {
     }
   }
 
-  const patterns = heuristicPatterns(platform, audienceOf(input.audience), input.format ?? "");
+  const patterns = heuristicPatterns(platform, audienceOf(input.audience, input.segment), input.format ?? "");
   const candidates = patterns.flatMap((p) => p.weekdays.flatMap((wd) => nextDates(input.today, wd, busy, maxPerDay, horizon).slice(0, 1).map((date) => ({ date, time: p.time, why: p.why }))))
     .sort((a, b) => a.date.localeCompare(b.date));
   if (!candidates.length) return null;

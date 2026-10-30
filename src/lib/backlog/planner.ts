@@ -2,12 +2,17 @@
 // writes anything; the person reviews the preview and saves what they approve.
 import { WEEKDAY_LABELS, suggestedTime, type PlatformTiming } from "@/lib/calendar/insights";
 import { audienceOf } from "./slots";
+import { sideOf, SIDE_LABELS, type Side } from "./audience";
 
-export type PlanIdea = { id: string; title: string; score: number | null; pillar_id: string | null; format: string | null; platform: string | null; target_platforms: string[]; target_audience: string | null; priority?: string | null };
+export type PlanIdea = { id: string; title: string; score: number | null; pillar_id: string | null; format: string | null; platform: string | null; target_platforms: string[]; target_audience: string | null; priority?: string | null; segment?: string | null };
 export type PlanRequest = {
   from: string; to: string; postsPerWeek: number; platforms: string[];
   /** share of posts per pillar id, in % (optional): the planner fills the most under-served pillar first */
   pillarMix?: Record<string, number>;
+  /** share of posts per marketplace side (students_parents / teachers / both), in % (optional) */
+  audienceMix?: Partial<Record<Side, number>>;
+  /** only these segments (students, parents, teachers, both) */
+  segments?: string[];
   formats?: string[]; audience?: string; maxPerDay?: number;
 };
 export type Placement = { ideaId: string; title: string; date: string; time: string; platform: string; score: number | null; pillar_id: string | null; reason: string };
@@ -22,9 +27,10 @@ function preferredDays(timing: PlatformTiming | undefined) {
   return [...new Set([...fromData, 2, 0, 4, 3, 1, 6, 5])];
 }
 
-function heuristicTime(platform: string, audience: string | null, fmt: string | null, wd: number) {
-  const who = audienceOf(audience);
+function heuristicTime(platform: string, audience: string | null, fmt: string | null, wd: number, segment?: string | null) {
+  const who = audienceOf(audience, segment);
   if (platform === "linkedin") return "12:30";
+  if (who === "teachers") return wd === 0 ? "10:30" : "21:00";
   if (who === "parents") return wd === 0 || wd === 6 ? "10:00" : "20:30";
   if (/reel|video|tiktok|short/i.test(fmt ?? "") || platform === "tiktok") return "20:00";
   return wd === 1 || wd === 4 ? "18:00" : "19:30";
@@ -52,37 +58,50 @@ export function planCalendar(ideas: PlanIdea[], req: PlanRequest, ctx: { timing:
   // 2. Candidates: matching filters, best score (then priority) first
   let pool = ideas.filter((i) => (!req.formats?.length || (i.format && req.formats.includes(i.format)))
     && (!req.audience || (i.target_audience ?? "").toLowerCase().includes(req.audience.toLowerCase()))
+    && (!req.segments?.length || (i.segment != null && req.segments.includes(i.segment)))
     && (!req.pillarMix || !Object.keys(req.pillarMix).length || (i.pillar_id && i.pillar_id in req.pillarMix)));
   pool = pool.sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || (PRIORITY_RANK[b.priority ?? "medium"] ?? 1) - (PRIORITY_RANK[a.priority ?? "medium"] ?? 1));
   if (pool.length < slots.length) notes.push(`${slots.length} slots but only ${pool.length} matching Backlog idea${pool.length === 1 ? "" : "s"}: add or score more ideas to fill the plan.`);
 
   // 3. Fill each slot with the best idea of the most under-served pillar, avoiding the same pillar twice in a row
   const mix = req.pillarMix && Object.keys(req.pillarMix).length ? req.pillarMix : null;
+  const sides = req.audienceMix && Object.values(req.audienceMix).some((v) => (v ?? 0) > 0) ? req.audienceMix : null;
+  const placedSide: Record<string, number> = {};
   const placed: Record<string, number> = {};
   const placements: Placement[] = [];
   let lastPillar: string | null = null;
   for (const date of slots) {
     if (!pool.length) break;
-    let pick = 0;
+    // a. which side of the audience is most under-served (teacher and student strategies are balanced separately)
+    let candidates = pool.map((_, k) => k);
+    if (sides) {
+      const total = placements.length + 1;
+      const ranked = (Object.keys(sides) as Side[]).filter((sd) => (sides[sd] ?? 0) > 0)
+        .sort((a, b) => ((sides[b] ?? 0) / 100 - (placedSide[b] ?? 0) / total) - ((sides[a] ?? 0) / 100 - (placedSide[a] ?? 0) / total));
+      for (const sd of ranked) { const c = candidates.filter((k) => sideOf(pool[k].segment) === sd); if (c.length) { candidates = c; break; } }
+    }
+    // b. within it, the most under-served pillar (or simply not the same pillar twice in a row)
+    let pick = candidates[0];
     if (mix) {
       const total = placements.length + 1;
       const deficit = (p: string | null) => (p && mix[p] != null ? mix[p] / 100 - (placed[p] ?? 0) / total : -1);
-      pick = pool.reduce((best, i, k) => (deficit(i.pillar_id) > deficit(pool[best].pillar_id) + 1e-9 ? k : best), 0);
+      pick = candidates.reduce((best, k) => (deficit(pool[k].pillar_id) > deficit(pool[best].pillar_id) + 1e-9 ? k : best), candidates[0]);
     } else {
-      const k = pool.findIndex((i) => !i.pillar_id || i.pillar_id !== lastPillar);
-      pick = k >= 0 ? k : 0;
+      const k = candidates.find((k) => !pool[k].pillar_id || pool[k].pillar_id !== lastPillar);
+      pick = k ?? candidates[0];
     }
     const idea = pool.splice(pick, 1)[0];
     const platform = (idea.target_platforms?.find((p) => platforms.includes(p)) ?? idea.platform ?? platforms[0])!;
     const wd = weekday(date);
     const t = ctx.timing.find((x) => x.platform === platform);
     const real = suggestedTime(t, wd);
-    const time = real ?? heuristicTime(platform, idea.target_audience, idea.format, wd);
+    const time = real ?? heuristicTime(platform, idea.target_audience, idea.format, wd, idea.segment);
     placements.push({
       ideaId: idea.id, title: idea.title, date, time, platform, score: idea.score, pillar_id: idea.pillar_id,
-      reason: `${idea.score != null ? `Score ${idea.score}` : "Not scored"}${mix && idea.pillar_id ? " · balances the pillar mix" : ""} · ${WEEKDAY_LABELS[wd]} ${time} ${real ? "from your best-performing slot" : "(heuristic time)"}`,
+      reason: `${idea.score != null ? `Score ${idea.score}` : "Not scored"}${sides && sideOf(idea.segment) ? ` · ${SIDE_LABELS[sideOf(idea.segment)!]}` : ""}${mix && idea.pillar_id ? " · balances the pillar mix" : ""} · ${WEEKDAY_LABELS[wd]} ${time} ${real ? "from your best-performing slot" : "(heuristic time)"}`,
     });
     placed[idea.pillar_id ?? "none"] = (placed[idea.pillar_id ?? "none"] ?? 0) + 1;
+    placedSide[sideOf(idea.segment) ?? "unset"] = (placedSide[sideOf(idea.segment) ?? "unset"] ?? 0) + 1;
     busy[date] = (busy[date] ?? 0) + 1;
     lastPillar = idea.pillar_id;
   }

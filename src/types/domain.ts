@@ -14,6 +14,8 @@ export type Project = {
   opportunity_weights?: unknown;
   /** Ideas Backlog scoring weights per criterion (null: defaults) */
   idea_score_weights?: unknown;
+  /** monthly audience distribution in %, e.g. {students_parents: 60, teachers: 35, both: 5} */
+  audience_mix?: unknown;
   production_workflow?: import("@/lib/production/model").WorkflowSettings;
   archived_at: string | null;
   created_at: string;
@@ -79,6 +81,8 @@ export type ContentPillar = {
   description: string | null;
   target_share: number | null;
   color: string | null;
+  /** marketplace side: students_parents (default) | teachers | both */
+  audience_segment?: string;
 };
 
 export type Campaign = {

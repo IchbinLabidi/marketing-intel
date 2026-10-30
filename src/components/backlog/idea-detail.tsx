@@ -12,6 +12,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
 import { CRITERIA } from "@/lib/backlog/score";
+import { goalsFor, SEGMENTS, SEGMENT_LABELS, SIDE_LABELS, conversionLabel, type Side } from "@/lib/backlog/audience";
 import { FORMATS } from "@/lib/production/model";
 import { dismissSuggestionAction, refreshSuggestionsAction, scoreIdeasAction, setScoreAction, updateIdeaAction } from "@/server/actions/backlog";
 import { productionDetailsAction } from "@/server/actions/production";
@@ -27,13 +28,14 @@ export const lifecycleOf = (i: Pick<Idea, "status" | "production_stage" | "sched
 
 /** Everything about one idea: editable fields, score breakdown, publishing recommendation and attachments. */
 export function IdeaDetail({ projectId, idea, pillars, tz, canEdit, onClose, onChanged, onPlace }: {
-  projectId: string; idea: Idea; pillars: { id: string; name: string }[]; tz: string; canEdit: boolean;
+  projectId: string; idea: Idea; pillars: { id: string; name: string; segment?: string }[]; tz: string; canEdit: boolean;
   onClose: () => void; onChanged: (i: Partial<Idea> & { id: string }) => void; onPlace: (i: Idea, date?: string, time?: string) => void;
 }) {
   const [form, setForm] = React.useState({
     title: idea.title, description: idea.description ?? idea.hook ?? "", pillar_id: idea.pillar_id ?? "", format: idea.format ?? "",
     target_platforms: idea.target_platforms?.length ? idea.target_platforms : idea.platform ? [idea.platform] : [], target_audience: idea.target_audience ?? "",
     tags: (idea.tags ?? []).join(", "), priority: idea.priority ?? "medium",
+    audience_segment: idea.audience_segment ?? "", conversion_goal: idea.conversion_goal ?? "",
   });
   const [busy, setBusy] = React.useState<string | null>(null);
   const [override, setOverride] = React.useState<{ score: string; note: string } | null>(null);
@@ -54,6 +56,7 @@ export function IdeaDetail({ projectId, idea, pillars, tz, canEdit, onClose, onC
       title: form.title, description: form.description || null, pillar_id: form.pillar_id || null, format: form.format || null,
       target_platforms: form.target_platforms, target_audience: form.target_audience || null, priority: form.priority,
       tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
+      audience_segment: (form.audience_segment || null) as never, conversion_goal: form.conversion_goal || null,
     });
     if (!r.ok) return void toast.error(r.error);
     toast.success(r.message ?? "Saved"); onChanged(r.data!);
@@ -70,6 +73,7 @@ export function IdeaDetail({ projectId, idea, pillars, tz, canEdit, onClose, onC
             <Badge variant="outline">{lifecycleOf(idea)}</Badge>
             {idea.scheduled_date ? <span>Calendar: {idea.scheduled_date}{idea.scheduled_time ? ` ${idea.scheduled_time.slice(0, 5)}` : ""}</span> : <span>Not on the calendar</span>}
             <span>· Created {idea.created_at.slice(0, 10)}</span>
+            {idea.audience_segment ? <span>· {SEGMENT_LABELS[idea.audience_segment as keyof typeof SEGMENT_LABELS]}{idea.conversion_goal ? ` → ${conversionLabel(idea.conversion_goal)}` : ""}</span> : null}
             {idea.idea_source ? <span>· Source: {idea.idea_source}</span> : null}
           </DialogDescription>
         </DialogHeader>
@@ -79,8 +83,12 @@ export function IdeaDetail({ projectId, idea, pillars, tz, canEdit, onClose, onC
             <label className="block space-y-1"><span className="text-xs text-muted-foreground">Title</span><Input value={form.title} disabled={!canEdit} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
             <label className="block space-y-1"><span className="text-xs text-muted-foreground">Description</span><Textarea rows={4} value={form.description} disabled={!canEdit} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
             <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1"><span className="text-xs text-muted-foreground">Audience</span>
+                <NativeSelect value={form.audience_segment} disabled={!canEdit} onChange={(e) => { const seg = e.target.value; setForm({ ...form, audience_segment: seg, conversion_goal: goalsFor(seg).some((g) => g.key === form.conversion_goal) ? form.conversion_goal : "" }); }}><option value="">Not set</option>{SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_LABELS[s]}</option>)}</NativeSelect></label>
+              <label className="space-y-1"><span className="text-xs text-muted-foreground">Conversion goal</span>
+                <NativeSelect value={form.conversion_goal} disabled={!canEdit} onChange={(e) => setForm({ ...form, conversion_goal: e.target.value })}><option value="">Not set</option>{goalsFor(form.audience_segment).map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}</NativeSelect></label>
               <label className="space-y-1"><span className="text-xs text-muted-foreground">Content pillar</span>
-                <NativeSelect value={form.pillar_id} disabled={!canEdit} onChange={(e) => setForm({ ...form, pillar_id: e.target.value })}><option value="">No pillar</option>{pillars.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</NativeSelect></label>
+                <NativeSelect value={form.pillar_id} disabled={!canEdit} onChange={(e) => setForm({ ...form, pillar_id: e.target.value })}><option value="">No pillar</option>{(["students_parents", "teachers", "both"] as Side[]).map((side) => { const list = pillars.filter((p) => (p.segment ?? "students_parents") === side); return list.length ? <optgroup key={side} label={SIDE_LABELS[side]}>{list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup> : null; })}</NativeSelect></label>
               <label className="space-y-1"><span className="text-xs text-muted-foreground">Format</span>
                 <NativeSelect value={form.format} disabled={!canEdit} onChange={(e) => setForm({ ...form, format: e.target.value })}><option value="">Not set</option>{[...new Set([...FORMATS, ...(form.format ? [form.format] : [])])].map((f) => <option key={f} value={f}>{f}</option>)}</NativeSelect></label>
               <label className="space-y-1"><span className="text-xs text-muted-foreground">Target audience</span><Input value={form.target_audience} disabled={!canEdit} placeholder="e.g. Bac students, parents" onChange={(e) => setForm({ ...form, target_audience: e.target.value })} /></label>
