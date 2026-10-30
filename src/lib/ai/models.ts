@@ -28,6 +28,7 @@ const FEATURE_TIERS: Record<string, AITier> = {
   "production.improve_cta": "light",
   "production.hashtags": "light",
   "serp.draft": "premium",
+  "backlog.score": "light",
   // Editorial engine: cheap model for repetition judgments; standard for opportunities and the weekly content
   "editorial.repetition": "light",
 };
@@ -38,7 +39,7 @@ export const TIERED_FEATURES = Object.entries(FEATURE_TIERS) as [string, AITier]
 /** Module part of a feature name, for grouping ("production.hashtags" → "Content production"). */
 export const MODULE_LABELS: Record<string, string> = {
   strategy: "Marketing strategy", history: "Content history", competitors: "Competitors", serp: "Google search",
-  opportunities: "Content opportunities", calendar: "Editorial calendar", production: "Content production", editorial: "Editorial engine",
+  opportunities: "Content opportunities", calendar: "Editorial calendar", production: "Content production", editorial: "Editorial engine", backlog: "Ideas Backlog",
 };
 
 export type AIRoute = { provider: AIProvider; model: string };
