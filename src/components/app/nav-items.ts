@@ -4,6 +4,7 @@ import {
   Compass,
   FolderKanban,
   Gauge,
+  Inbox,
   History,
   LayoutDashboard,
   Lightbulb,
@@ -55,6 +56,7 @@ export function projectNavSections(projectId: string): NavSection[] {
       label: "Plan & produce",
       items: [
         { label: "Opportunities", hint: "Ranked ideas for what to create next", href: `${base}/opportunities`, icon: Lightbulb, permission: "opportunities.view" },
+        { label: "Ideas Backlog", hint: "Every idea, scored and waiting for a date", href: `${base}/backlog`, icon: Inbox },
         { label: "Calendar", hint: "What gets published, when and where", href: `${base}/calendar`, icon: CalendarDays, permission: "calendar.view" },
         { label: "Production", hint: "Content being written, reviewed and approved", href: `${base}/production`, icon: PenSquare },
       ],

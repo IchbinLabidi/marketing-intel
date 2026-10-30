@@ -12,6 +12,8 @@ export type Project = {
   default_language: Language;
   timezone: string;
   opportunity_weights?: unknown;
+  /** Ideas Backlog scoring weights per criterion (null: defaults) */
+  idea_score_weights?: unknown;
   production_workflow?: import("@/lib/production/model").WorkflowSettings;
   archived_at: string | null;
   created_at: string;

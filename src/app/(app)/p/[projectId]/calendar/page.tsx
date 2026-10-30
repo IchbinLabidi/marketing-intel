@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { DeleteCalendarButton } from "@/components/history/delete-calendar-button";
 import { canEdit, CONTENT_STATUSES, STATUS_TO_WORKFLOW, WORKFLOW_STATES } from "@/lib/domain/constants";
 import { bestPublicationTimes } from "@/lib/calendar/insights";
+import { detectGaps } from "@/lib/backlog/planner";
+import { GapsPanel } from "@/components/backlog/gaps-panel";
 import { addDays, CALENDAR_VIEWS, isIsoDate, isValidTimeZone, todayInZone, viewRange, zonedToUtc, type CalendarView } from "@/lib/calendar/time";
 import { isAIConfigured } from "@/server/ai/client";
 import { getPost, listCalendars, listDeadlinesInRange, listPostsInRange, listUndatedPosts, myContentIds, type PostFilters } from "@/server/services/calendar";
@@ -84,6 +86,13 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const tasks = await listTasksForItems(projectId, [...new Set([...posts, ...undated, ...deadlines].map((p) => p.id))]);
   const selectedPlan = plans.find((p) => p.id === filters.plan);
   const editable = canEdit(role) && perms.has("calendar.edit");
+  // Calendar check: gaps, overloads, streaks and conflicts in the visible period (posts already loaded, no AI call)
+  const backlogIdeas = undated as (typeof undated[number] & { idea_score?: number | null; suggested_slot?: { date: string; time: string } | null })[];
+  const gaps = detectGaps(
+    posts.filter((p) => p.scheduled_date).map((p) => ({ id: p.id, title: p.title, date: p.scheduled_date!, time: p.scheduled_time?.slice(0, 5) ?? null, platform: p.platform, pillar_id: p.pillar_id, format: p.format, funnel_stage: p.funnel_stage, scheduled_at: p.scheduled_at })),
+    { from, to, today },
+    { pillarName: (id) => bundle.pillars.find((x) => x.id === id)?.name ?? "No pillar", topIdea: backlogIdeas[0] ? { title: backlogIdeas[0].title, score: backlogIdeas[0].idea_score ?? null, slot: backlogIdeas[0].suggested_slot ?? null } : null, highUnscheduled: backlogIdeas.filter((i) => (i.idea_score ?? 0) >= 85).length },
+  );
 
   return (
     <div className="space-y-6">
@@ -121,9 +130,12 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         aiEnabled={isAIConfigured()}
         timing={timing}
         insights={
-          <Suspense fallback={<InsightsLoading />}>
-            <Insights projectId={projectId} tz={tz} history={history} timing={timing} />
-          </Suspense>
+          <div className="space-y-4">
+            {view !== "list" && view !== "timeline" ? <GapsPanel projectId={projectId} gaps={gaps} today={today} tz={tz} pillars={bundle.pillars.map((p) => ({ id: p.id, name: p.name }))} canEdit={editable} /> : null}
+            <Suspense fallback={<InsightsLoading />}>
+              <Insights projectId={projectId} tz={tz} history={history} timing={timing} />
+            </Suspense>
+          </div>
         }
       />
     </div>

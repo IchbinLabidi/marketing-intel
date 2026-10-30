@@ -1,7 +1,10 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { ScheduleDialog } from "@/components/backlog/schedule-dialog";
+import type { Idea } from "@/server/services/backlog";
 import {
   DndContext, DragOverlay, KeyboardSensor, PointerSensor, TouchSensor, pointerWithin, rectIntersection, useDroppable, useSensor, useSensors,
   type CollisionDetection, type DragEndEvent, type DragStartEvent,
@@ -129,6 +132,7 @@ export function CalendarApp({
   const [extra, setExtra] = React.useState<ContentItem | null>(initialItem ?? null);
   const [quick, setQuick] = React.useState<{ date: string | null; time: string | null } | null>(null);
   const [dragging, setDragging] = React.useState<ContentItem | null>(null);
+  const [placing, setPlacing] = React.useState<{ post: ContentItem; date: string; time: string | null } | null>(null);
   const [conflict, setConflict] = React.useState<{ post: ContentItem; date: string; time: string | null; list: Conflict[]; previous: ContentItem } | null>(null);
   const [showFilters, setShowFilters] = React.useState(false);
   const [showDeadlines, setShowDeadlines] = React.useState(true);
@@ -290,6 +294,11 @@ export function CalendarApp({
     if (!post || !target) return;
     const [kind, d, hour] = target.split("|");
     const pl = placement(post, tz);
+    // an idea dropped from the Backlog opens the scheduling panel (suggested time, alternatives, platforms) first
+    if (!post.scheduled_date && (kind === "day" || kind === "slot")) {
+      setPlacing({ post, date: d, time: kind === "slot" ? `${hour.padStart(2, "0")}:00` : null });
+      return;
+    }
     if (kind === "day") {
       if (pl.date === d) return;
       void move(post, d, null);
@@ -534,7 +543,7 @@ export function CalendarApp({
           </div>
           {view !== "list" && view !== "timeline" ? (
             <div className="space-y-4">
-              <UndatedTray posts={undated} card={card} />
+              <UndatedTray posts={undated} card={card} projectId={projectId} />
               {insights}
             </div>
           ) : null}
@@ -596,6 +605,8 @@ export function CalendarApp({
           onDeleted={(id) => { removeLocal(id); setEditor(null); }}
         />
       ) : null}
+
+      {placing ? <ScheduleDialog projectId={projectId} tz={tz} idea={placing.post as Idea} date={placing.date} onClose={() => setPlacing(null)} onPlaced={() => { setPlacing(null); router.refresh(); }} /> : null}
 
       <Dialog open={conflict !== null} onOpenChange={(o) => !o && setConflict(null)}>
         <DialogContent>
@@ -775,11 +786,11 @@ function TimeGrid({ days, today, byDate, deadlinesByDate, deadlineChip, conflict
   );
 }
 
-function UndatedTray({ posts, card }: { posts: ContentItem[]; card: (e: Entry, compact?: boolean) => React.ReactNode }) {
+function UndatedTray({ posts, card, projectId }: { posts: ContentItem[]; card: (e: Entry, compact?: boolean) => React.ReactNode; projectId: string }) {
   if (!posts.length) return null;
   return (
     <div className="rounded-xl border bg-card p-3 shadow-xs">
-      <p className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold"><Inbox className="size-4" /> Unscheduled ideas <span className="text-xs font-normal text-muted-foreground">· drag onto a day</span></p>
+      <p className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold"><Inbox className="size-4" /> Ideas Backlog <span className="text-xs font-normal text-muted-foreground">· drag onto a day</span> <Link href={`/p/${projectId}/backlog`} className="ml-auto text-xs font-normal text-primary hover:underline">Open</Link></p>
       <div className="scrollbar-thin max-h-72 space-y-1.5 overflow-y-auto pr-1">
         {posts.map((p) => card({ post: p, time: null, hour: null }))}
       </div>
