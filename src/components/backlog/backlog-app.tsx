@@ -24,7 +24,7 @@ import { FORMATS, STAGE_LABELS, type ProductionStage } from "@/lib/production/mo
 import { cn } from "@/lib/utils";
 import {
   archiveIdeasAction, createIdeaAction, deleteIdeasAction, deletePresetAction, duplicateIdeaAction, listIdeasAction, refreshSuggestionsAction,
-  saveScoreWeightsAction, savePresetAction, scoreIdeasAction, sendToProductionAction, setPriorityAction, tagIdeasAction, unplanIdeasAction,
+  saveScoreWeightsAction, savePresetAction, scoreIdeasAction, sendToProductionAction, setAudienceAction, setPriorityAction, suggestAudienceAction, tagIdeasAction, unplanIdeasAction,
   type FilterPreset,
 } from "@/server/actions/backlog";
 import type { BacklogFilters, Idea } from "@/server/services/backlog";
@@ -197,6 +197,8 @@ export function BacklogApp(props: {
           {props.aiEnabled ? <Button size="sm" variant="outline" disabled={busy !== null || selected.size > 20} title={selected.size > 20 ? "Score up to 20 at a time" : undefined} onClick={() => bulk("score", () => scoreIdeasAction(projectId, ids))}>{busy === "score" ? <Loader2 className="animate-spin" /> : <Sparkles />} Score with AI</Button> : null}
           <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("suggest", () => refreshSuggestionsAction(projectId, ids))}>{busy === "suggest" ? <Loader2 className="animate-spin" /> : <CalendarPlus />} Suggest times</Button>
           <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("production", () => sendToProductionAction(projectId, ids))}><Send /> Send to Production</Button>
+          <NativeSelect aria-label="Set audience" className="h-8 w-36" value="" onChange={(e) => e.target.value && bulk("audience", () => setAudienceAction(projectId, ids, e.target.value === "none" ? null : (e.target.value as "students")))}><option value="">Set audience…</option>{SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_LABELS[s]}</option>)}<option value="none">Clear audience</option></NativeSelect>
+          {props.aiEnabled ? <Button size="sm" variant="outline" disabled={busy !== null || selected.size > 30} title={selected.size > 30 ? "Up to 30 at a time" : undefined} onClick={() => bulk("aiaudience", () => suggestAudienceAction(projectId, ids))}>{busy === "aiaudience" ? <Loader2 className="animate-spin" /> : <Sparkles />} AI: suggest audience</Button> : null}
           <NativeSelect aria-label="Set priority" className="h-8 w-32" value="" onChange={(e) => e.target.value && bulk("priority", () => setPriorityAction(projectId, ids, e.target.value as "low"))}><option value="">Priority…</option>{PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}</NativeSelect>
           <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => { const t = window.prompt("Tag to add"); if (t) void bulk("tag", () => tagIdeasAction(projectId, ids, t)); }}><Tag /> Tag</Button>
           {filters.planning === "planned" || filters.planning === "all" ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("unplan", () => unplanIdeasAction(projectId, ids))}><Undo2 /> Back to Backlog</Button> : null}

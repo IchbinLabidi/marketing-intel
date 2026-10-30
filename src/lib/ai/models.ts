@@ -29,6 +29,7 @@ const FEATURE_TIERS: Record<string, AITier> = {
   "production.hashtags": "light",
   "serp.draft": "premium",
   "backlog.score": "light",
+  "backlog.audience": "light",
   // Editorial engine: cheap model for repetition judgments; standard for opportunities and the weekly content
   "editorial.repetition": "light",
 };

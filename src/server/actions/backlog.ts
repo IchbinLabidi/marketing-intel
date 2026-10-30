@@ -422,3 +422,51 @@ export async function saveAudienceMixAction(projectId: string, mix: Record<strin
   refresh(projectId);
   return { ok: true, message: "Audience mix saved" };
 }
+
+/** Sets the audience of several ideas; a conversion goal from the other side is cleared (sides are never mixed). */
+export async function setAudienceAction(projectId: string, ids: string[], segment: Segment | null): Promise<ActionResult> {
+  const { allowed } = await guard(projectId);
+  if (!allowed) return NO_EDIT;
+  if (segment && !(SEGMENTS as readonly string[]).includes(segment)) return { ok: false, error: "Unknown audience." };
+  const db = await createClient();
+  const { data } = await db.from("content_items").select("id, conversion_goal").eq("project_id", projectId).in("id", ids.slice(0, BULK_MAX));
+  let n = 0;
+  for (const r of data ?? []) {
+    const { error } = await db.from("content_items").update({ audience_segment: segment, ...(goalFits(segment, r.conversion_goal) ? {} : { conversion_goal: null }) }).eq("id", r.id);
+    if (!error) n++;
+  }
+  refresh(projectId);
+  return { ok: true, message: `${n} idea${n === 1 ? "" : "s"} set to ${segment ? SEGMENT_LABELS[segment] : "no audience"}` };
+}
+
+const audienceSchema = z.object({ ideas: z.array(z.object({ id: z.string(), segment: z.enum(SEGMENTS), conversion_goal: z.string(), reason: z.string().max(200) })) });
+
+/** AI proposes the audience and conversion goal of up to 30 ideas (applied right away, editable afterwards). */
+export async function suggestAudienceAction(projectId: string, ids: string[]): Promise<ActionResult<{ set: number }>> {
+  const { user, project, allowed } = await guard(projectId);
+  if (!allowed) return NO_EDIT;
+  const list = [...new Set(ids)].slice(0, 30);
+  if (!list.length) return { ok: false, error: "Select ideas first." };
+  try {
+    const db = await createClient();
+    const { data: rows } = await db.from("content_items").select("id, title, description, hook, caption, format, pillar_id, target_audience").eq("project_id", projectId).in("id", list);
+    if (!rows?.length) return { ok: false, error: "Ideas not found." };
+    const { bundle } = await loadHistoryAnalysis(projectId);
+    const pillar = (id: string | null) => { const p = bundle.pillars.find((x) => x.id === id); return p ? `${p.name} (${p.audience_segment === "teachers" ? "teacher pillar" : "student & parent pillar"})` : "none"; };
+    const goals = { students_parents: ["forum_participation", "teacher_profile_visits", "lesson_requests", "completed_bookings"], teachers: ["teacher_registration", "profile_completion", "teacher_activation", "lesson_requests_received", "completed_sessions"] };
+    const { data } = await runStructuredWithMeta({
+      feature: "backlog.audience", projectId, workspaceId: project.workspace_id, userId: user.id, schema: audienceSchema, effort: "low",
+      system: `You classify social media content ideas of ${project.name}, a two-sided educational marketplace (students & parents on one side, teachers on the other). For each idea choose the audience segment: students, parents, teachers, or both (only when it genuinely speaks to both sides). Then choose ONE conversion goal from that side: students/parents → ${goals.students_parents.join(", ")}; teachers → ${goals.teachers.join(", ")}; both → any of them. Never give a teacher idea a student goal or the reverse. Give a short reason. Return the ids exactly as given.`,
+      prompt: JSON.stringify(rows.map((r) => ({ id: r.id, title: r.title, description: r.description ?? r.hook ?? (r.caption ?? "").slice(0, 300), format: r.format, pillar: pillar(r.pillar_id), audience_text: r.target_audience }))),
+    });
+    let set = 0;
+    for (const s of data.ideas) {
+      if (!list.includes(s.id)) continue;
+      const goal = goalFits(s.segment, s.conversion_goal) ? s.conversion_goal : null;
+      const { error } = await db.from("content_items").update({ audience_segment: s.segment, conversion_goal: goal }).eq("project_id", projectId).eq("id", s.id);
+      if (!error) set++;
+    }
+    refresh(projectId);
+    return { ok: true, data: { set }, message: `Audience suggested for ${set} idea${set === 1 ? "" : "s"}. Review and change any of them in the idea panel.` };
+  } catch (e) { return { ok: false, error: describeAIError(e) }; }
+}
