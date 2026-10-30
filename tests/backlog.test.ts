@@ -94,5 +94,8 @@ describe("gap detection", () => {
     const kinds = gaps.map((g) => g.kind);
     expect(kinds).toEqual(expect.arrayContaining(["empty", "overloaded", "promo_streak", "pillar_streak", "conflict", "unscheduled"]));
     expect(gaps.find((g) => g.kind === "empty")!.message).toMatch(/Forum tutorial/);
+    // 3 posts on 3 different platforms the same day is a normal plan, not an overload
+    const spread = detectGaps([post("a", "2026-11-02", "10:00"), post("b", "2026-11-02", "12:00", { platform: "instagram" }), post("c", "2026-11-02", "18:00", { platform: "tiktok" })], { from: "2026-11-02", to: "2026-11-02", today: "2026-11-01" }, { pillarName: () => "" });
+    expect(spread.some((g) => g.kind === "overloaded")).toBe(false);
   });
 });

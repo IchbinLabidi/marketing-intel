@@ -110,7 +110,13 @@ export function detectGaps(posts: CalPost[], range: { from: string; to: string; 
     const idea = opts.topIdea ? ` Consider “${opts.topIdea.title}”${opts.topIdea.slot ? ` (suggested ${opts.topIdea.slot.time})` : ""}.` : "";
     gaps.push({ key: `empty-${first}-${empty.length}`, kind: "empty", date: first, message: `${empty.length} day${empty.length > 1 ? "s" : ""} without content, starting ${WEEKDAY_LABELS[weekday(first)]} ${first}.${idea}` });
   }
-  for (const [d, list] of byDate) if (d >= from && list.length > maxPerDay) gaps.push({ key: `over-${d}`, kind: "overloaded", date: d, message: `${WEEKDAY_LABELS[weekday(d)]} ${d} has ${list.length} posts. Consider moving one to a quieter day.` });
+  // overloaded = too many posts on the SAME platform that day (several platforms a day is a normal plan)
+  for (const [d, list] of byDate) {
+    if (d < from) continue;
+    const perPlatform = new Map<string, number>();
+    for (const p of list) perPlatform.set(p.platform ?? "other", (perPlatform.get(p.platform ?? "other") ?? 0) + 1);
+    for (const [platform, n] of perPlatform) if (n > maxPerDay) gaps.push({ key: `over-${d}-${platform}`, kind: "overloaded", date: d, message: `${WEEKDAY_LABELS[weekday(d)]} ${d} has ${n} ${platform === "other" ? "posts without a platform" : `${platform[0].toUpperCase()}${platform.slice(1)} posts`}. Consider moving one to a quieter day.` });
+  }
   const sorted = [...posts].sort((a, b) => (a.scheduled_at ?? `${a.date}T${a.time ?? "12:00"}`).localeCompare(b.scheduled_at ?? `${b.date}T${b.time ?? "12:00"}`));
   for (let i = 2; i < sorted.length; i++) {
     const trio = sorted.slice(i - 2, i + 1);
