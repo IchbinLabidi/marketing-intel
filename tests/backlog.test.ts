@@ -99,3 +99,34 @@ describe("gap detection", () => {
     expect(spread.some((g) => g.kind === "overloaded")).toBe(false);
   });
 });
+
+import { distribution, goalFits, normalizeMix, sideOf } from "@/lib/backlog/audience";
+
+describe("two-sided audiences (SOSProf)", () => {
+  it("maps segments to marketplace sides and keeps conversion goals on their side", () => {
+    expect(sideOf("students")).toBe("students_parents");
+    expect(sideOf("parents")).toBe("students_parents");
+    expect(sideOf("teachers")).toBe("teachers");
+    expect(goalFits("teachers", "teacher_registration")).toBe(true);
+    expect(goalFits("teachers", "completed_bookings")).toBe(false); // never mix recruitment and bookings
+    expect(goalFits("parents", "lesson_requests")).toBe(true);
+    expect(goalFits("both", "teacher_activation")).toBe(true);
+  });
+  it("normalizes the audience mix and measures the real distribution", () => {
+    expect(normalizeMix({ students_parents: 60, teachers: 35, both: 5 })).toEqual({ students_parents: 60, teachers: 35, both: 5 });
+    expect(normalizeMix({ students_parents: 3, teachers: 1 })!.students_parents).toBe(75);
+    expect(normalizeMix(null)).toBeNull();
+    const d = distribution(["students", "parents", "teachers", null]);
+    expect(d.pct).toEqual({ students_parents: 50, teachers: 25, both: 0, unset: 25 });
+  });
+  it("plans teacher and student content in the requested proportions, with teacher-friendly times", () => {
+    const ideas = [
+      idea("s1", 95, null, { segment: "students" }), idea("s2", 94, null, { segment: "parents" }), idea("s3", 93, null, { segment: "students" }),
+      idea("t1", 60, null, { segment: "teachers" }), idea("t2", 59, null, { segment: "teachers" }),
+    ];
+    const { placements } = planCalendar(ideas, { from: "2026-11-02", to: "2026-11-08", postsPerWeek: 4, platforms: ["facebook"], audienceMix: { students_parents: 50, teachers: 50 } }, { timing: [], busy: {}, today: "2026-10-30" });
+    const teachers = placements.filter((p) => p.ideaId.startsWith("t"));
+    expect(teachers).toHaveLength(2);
+    expect(teachers.every((p) => p.time === "21:00" || p.time === "10:30")).toBe(true);
+  });
+});

@@ -6,9 +6,10 @@ import { InsightsPanel } from "@/components/calendar/insights-panel";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
 import { DeleteCalendarButton } from "@/components/history/delete-calendar-button";
-import { canEdit, CONTENT_STATUSES, STATUS_TO_WORKFLOW, WORKFLOW_STATES } from "@/lib/domain/constants";
+import { canAdmin, canEdit, CONTENT_STATUSES, STATUS_TO_WORKFLOW, WORKFLOW_STATES } from "@/lib/domain/constants";
 import { bestPublicationTimes } from "@/lib/calendar/insights";
 import { detectGaps } from "@/lib/backlog/planner";
+import { distribution, normalizeMix } from "@/lib/backlog/audience";
 import { GapsPanel } from "@/components/backlog/gaps-panel";
 import { addDays, CALENDAR_VIEWS, isIsoDate, isValidTimeZone, todayInZone, viewRange, zonedToUtc, type CalendarView } from "@/lib/calendar/time";
 import { isAIConfigured } from "@/server/ai/client";
@@ -131,7 +132,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         timing={timing}
         insights={
           <div className="space-y-4">
-            {view !== "list" && view !== "timeline" ? <GapsPanel projectId={projectId} gaps={gaps} today={today} tz={tz} pillars={bundle.pillars.map((p) => ({ id: p.id, name: p.name }))} canEdit={editable} /> : null}
+            {view !== "list" && view !== "timeline" ? <GapsPanel projectId={projectId} gaps={gaps} today={today} tz={tz} pillars={bundle.pillars.map((p) => ({ id: p.id, name: p.name, segment: p.audience_segment, target_share: p.target_share }))} canEdit={editable} canAdmin={canAdmin(role)} mix={normalizeMix(project.audience_mix)} dist={distribution(posts.filter((p) => p.scheduled_date).map((p) => (p as { audience_segment?: string | null }).audience_segment))} /> : null}
             <Suspense fallback={<InsightsLoading />}>
               <Insights projectId={projectId} tz={tz} history={history} timing={timing} />
             </Suspense>

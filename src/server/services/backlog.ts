@@ -8,6 +8,7 @@ export type Idea = ContentItem & {
   description: string | null; tags: string[]; target_platforms: string[]; target_audience?: string | null;
   idea_score: number | null; score_details: ScoreDetails | null; suggested_slot: SuggestedSlot | null;
   archived_at: string | null; idea_source: string | null; created_at: string;
+  audience_segment: string | null; conversion_goal: string | null;
 };
 
 export type BacklogFilters = {
@@ -17,7 +18,9 @@ export type BacklogFilters = {
   planning?: "backlog" | "planned" | "all"; archived?: boolean; tags?: string[];
   createdFrom?: string; createdTo?: string; suggestedFrom?: string; suggestedTo?: string;
   confidence?: string[]; slotTime?: string;
-  sort?: "score" | "newest" | "oldest" | "priority" | "suggested" | "title";
+  /** students | parents | teachers | both | none */
+  segments?: string[]; goals?: string[];
+  sort?: "score" | "newest" | "oldest" | "priority" | "suggested" | "title" | "audience";
 };
 
 export const BACKLOG_PAGE = 200;
@@ -50,10 +53,16 @@ export async function listIdeas(projectId: string, f: BacklogFilters, page = 0):
   if (f.suggestedTo) q = q.lte("suggested_slot->>date", f.suggestedTo);
   if (f.confidence?.length) q = q.in("suggested_slot->>confidence", f.confidence);
   if (f.slotTime) q = q.eq("suggested_slot->>time", f.slotTime);
+  if (f.segments?.length) {
+    const named = f.segments.filter((s) => s !== "none");
+    q = f.segments.includes("none") ? q.or(`audience_segment.is.null${named.length ? `,audience_segment.in.(${named.join(",")})` : ""}`) : q.in("audience_segment", named);
+  }
+  if (f.goals?.length) q = q.in("conversion_goal", f.goals);
   switch (f.sort ?? "score") {
     case "newest": q = q.order("created_at", { ascending: false }); break;
     case "oldest": q = q.order("created_at", { ascending: true }); break;
     case "title": q = q.order("title"); break;
+    case "audience": q = q.order("audience_segment", { ascending: true, nullsFirst: false }).order("idea_score", { ascending: false, nullsFirst: false }); break;
     case "suggested": q = q.order("suggested_slot->>date", { ascending: true, nullsFirst: false }); break;
     case "priority": q = q.order("priority", { ascending: true }).order("idea_score", { ascending: false, nullsFirst: false }); break;
     default: q = q.order("idea_score", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });

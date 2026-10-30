@@ -9,6 +9,7 @@ import { isIsoDate, isTime, todayInZone } from "@/lib/calendar/time";
 import { CRITERIA, normalizeWeights, weightedScore, type ScoreDetails } from "@/lib/backlog/score";
 import { suggestSlot, type SuggestedSlot } from "@/lib/backlog/slots";
 import { planCalendar, type PlanIdea, type PlanRequest, type Placement } from "@/lib/backlog/planner";
+import { conversionLabel, goalFits, normalizeMix, SEGMENTS, SEGMENT_LABELS, sideOf, SIDE_LABELS, type Segment } from "@/lib/backlog/audience";
 import type { ActionResult } from "@/lib/validation/common";
 import { describeAIError } from "@/server/ai/client";
 import { buildProjectContext } from "@/server/ai/context";
@@ -50,6 +51,8 @@ const ideaSchema = z.object({
   target_audience: z.string().max(500).nullish(),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+  audience_segment: z.enum(SEGMENTS).nullish(),
+  conversion_goal: z.string().max(40).nullish(),
 });
 export type IdeaInput = z.infer<typeof ideaSchema>;
 
@@ -59,6 +62,7 @@ export async function createIdeaAction(projectId: string, input: unknown): Promi
   if (!allowed) return NO_EDIT;
   const parsed = ideaSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Give the idea a title (2 to 300 characters)." };
+  if (!goalFits(parsed.data.audience_segment, parsed.data.conversion_goal)) return { ok: false, error: "This conversion goal belongs to the other side of the audience (teacher goals and student goals are kept apart)." };
   try {
     const db = await createClient();
     const v = parsed.data;
@@ -67,6 +71,7 @@ export async function createIdeaAction(projectId: string, input: unknown): Promi
       project_id: projectId, created_by: user.id, title: v.title, description: v.description ?? null, pillar_id: v.pillar_id ?? null,
       format: v.format ?? null, platform: v.platform ?? platforms[0] ?? null, target_platforms: platforms, target_audience: v.target_audience ?? null,
       tags: v.tags ?? [], status: "idea", production_stage: "idea", idea_source: "manual", language: project.default_language || "fr",
+      audience_segment: v.audience_segment ?? null, conversion_goal: v.conversion_goal ?? null,
       scheduled_date: null, scheduled_time: null, scheduled_at: null,
     }).select("*").single();
     if (error) throw error;
@@ -83,11 +88,12 @@ export async function updateIdeaAction(projectId: string, id: string, input: unk
   if (!allowed) return NO_EDIT;
   const parsed = ideaSchema.partial().safeParse(input);
   if (!parsed.success) return { ok: false, error: "Some fields are invalid." };
+  if ("conversion_goal" in parsed.data && !goalFits(parsed.data.audience_segment, parsed.data.conversion_goal)) return { ok: false, error: "This conversion goal belongs to the other side of the audience (teacher goals and student goals are kept apart)." };
   try {
     const db = await createClient();
     const v = parsed.data;
     const patch: Record<string, unknown> = {};
-    for (const k of ["title", "description", "pillar_id", "format", "target_audience", "tags", "priority"] as const) if (k in v) patch[k] = v[k] ?? null;
+    for (const k of ["title", "description", "pillar_id", "format", "target_audience", "tags", "priority", "audience_segment", "conversion_goal"] as const) if (k in v) patch[k] = v[k] ?? null;
     if ("tags" in v) patch.tags = v.tags ?? [];
     if (v.target_platforms) { patch.target_platforms = v.target_platforms; if (!("platform" in v)) patch.platform = v.target_platforms[0] ?? null; }
     if ("platform" in v) patch.platform = v.platform ?? null;
@@ -116,15 +122,15 @@ export async function scoreIdeasAction(projectId: string, ids: string[]): Promis
   if (!list.length) return { ok: false, error: "Select ideas to score." };
   try {
     const db = await createClient();
-    const { data: rows } = await db.from("content_items").select("id, title, description, hook, format, platform, target_platforms, target_audience, pillar_id, tags, funnel_stage").eq("project_id", projectId).in("id", list);
+    const { data: rows } = await db.from("content_items").select("id, title, description, hook, format, platform, target_platforms, target_audience, pillar_id, tags, funnel_stage, audience_segment, conversion_goal").eq("project_id", projectId).in("id", list);
     if (!rows?.length) return { ok: false, error: "Ideas not found." };
     const { bundle, brand, channels } = await loadHistoryAnalysis(projectId);
     const weights = normalizeWeights(project.idea_score_weights as Record<string, unknown> | null);
     const pillar = (id: string | null) => bundle.pillars.find((p) => p.id === id)?.name ?? "none";
     const { data, model } = await runStructuredWithMeta({
       feature: "backlog.score", projectId, workspaceId: project.workspace_id, userId: user.id, schema: scoreSchema, effort: "low",
-      system: "You evaluate social media content ideas for one brand. Rate each idea from 0 to 100 on: audience relevance (fits the brand's personas), engagement potential, marketing value (supports the brand's objectives and funnel), originality (not repetitive), educational value, and production feasibility (effort for a small team). Be calibrated and critical: most ideas land between 40 and 80. Explain in one or two sentences why, citing the strongest and weakest criterion. These are estimates for prioritising ideas, never performance predictions. Return the ids exactly as given.",
-      prompt: `${buildProjectContext({ project, brand, channels, strategy: bundle })}\n\nIdeas to rate (JSON):\n${JSON.stringify(rows.map((r) => ({ id: r.id, title: r.title, description: r.description ?? r.hook, format: r.format, platforms: (r.target_platforms as string[])?.length ? r.target_platforms : [r.platform], audience: r.target_audience, pillar: pillar(r.pillar_id), tags: r.tags, funnel: r.funnel_stage })))}`,
+      system: "You evaluate social media content ideas for one brand. Rate each idea from 0 to 100 on: audience relevance (fits the brand's personas), engagement potential, marketing value (supports the brand's objectives and funnel), originality (not repetitive), educational value, and production feasibility (effort for a small team). Judge each idea for ITS audience segment and conversion goal: for two-sided brands, teacher content (recruitment, activation) is evaluated only against teacher goals and student/parent content only against student-side goals (forum participation, profile visits, lesson requests, bookings); never mix the two. Be calibrated and critical: most ideas land between 40 and 80. Explain in one or two sentences why, citing the strongest and weakest criterion. These are estimates for prioritising ideas, never performance predictions. Return the ids exactly as given.",
+      prompt: `${buildProjectContext({ project, brand, channels, strategy: bundle })}\n\nIdeas to rate (JSON):\n${JSON.stringify(rows.map((r) => ({ id: r.id, title: r.title, description: r.description ?? r.hook, format: r.format, platforms: (r.target_platforms as string[])?.length ? r.target_platforms : [r.platform], audience: r.target_audience, segment: r.audience_segment ? SEGMENT_LABELS[r.audience_segment as Segment] : "not set", side: sideOf(r.audience_segment) ? SIDE_LABELS[sideOf(r.audience_segment)!] : "not set", conversion_goal: conversionLabel(r.conversion_goal) ?? "not set", pillar: pillar(r.pillar_id), tags: r.tags, funnel: r.funnel_stage })))}`,
     });
     let scored = 0;
     for (const s of data.ideas) {
@@ -165,7 +171,7 @@ export async function saveScoreWeightsAction(projectId: string, weights: Record<
 
 // --- Best time to post -------------------------------------------------------------------------------------
 
-async function computeSlots(projectId: string, ideas: Pick<Idea, "id" | "platform" | "target_platforms" | "format" | "target_audience" | "pillar_id">[], tz: string) {
+async function computeSlots(projectId: string, ideas: Pick<Idea, "id" | "platform" | "target_platforms" | "format" | "target_audience" | "pillar_id" | "audience_segment">[], tz: string) {
   const db = await createClient();
   const [{ items }, { bundle }] = await Promise.all([loadHistoryPerformance(projectId), loadHistoryAnalysis(projectId)]);
   const timing = bestPublicationTimes(items, tz);
@@ -174,7 +180,7 @@ async function computeSlots(projectId: string, ideas: Pick<Idea, "id" | "platfor
   const out: Record<string, SuggestedSlot | null> = {};
   for (const i of ideas) {
     const slot = suggestSlot({
-      platform: i.platform, targetPlatforms: i.target_platforms, format: i.format, audience: i.target_audience ?? null,
+      platform: i.platform, targetPlatforms: i.target_platforms, format: i.format, audience: i.target_audience ?? null, segment: i.audience_segment ?? null,
       pillar: bundle.pillars.find((p) => p.id === i.pillar_id)?.name ?? null, today, timing, busy,
     });
     out[i.id] = slot;
@@ -190,7 +196,7 @@ export async function refreshSuggestionsAction(projectId: string, ids: string[])
   if (!allowed) return NO_EDIT;
   try {
     const db = await createClient();
-    const { data } = await db.from("content_items").select("id, platform, target_platforms, format, target_audience, pillar_id").eq("project_id", projectId).in("id", [...new Set(ids)].slice(0, BULK_MAX));
+    const { data } = await db.from("content_items").select("id, platform, target_platforms, format, target_audience, pillar_id, audience_segment").eq("project_id", projectId).in("id", [...new Set(ids)].slice(0, BULK_MAX));
     const out = await computeSlots(projectId, (data ?? []) as Idea[], tz);
     refresh(projectId);
     return { ok: true, data: out, message: "Suggestions updated" };
@@ -329,6 +335,7 @@ export async function duplicateIdeaAction(projectId: string, id: string): Promis
     project_id: projectId, created_by: user.id, title: `${src.title} (copy)`.slice(0, 300), description: src.description, hook: src.hook, caption: src.caption,
     cta: src.cta, hashtags: src.hashtags, creative_brief: src.creative_brief, pillar_id: src.pillar_id, format: src.format, platform: src.platform,
     target_platforms: src.target_platforms, target_audience: src.target_audience, tags: src.tags, funnel_stage: src.funnel_stage, language: src.language,
+    audience_segment: src.audience_segment, conversion_goal: src.conversion_goal,
     idea_score: src.idea_score, score_details: src.score_details, status: "idea", production_stage: "idea", idea_source: "manual",
   }).select("*").single();
   if (error) return fail(error, "Could not duplicate");
@@ -377,13 +384,13 @@ export async function previewPlanAction(projectId: string, req: PlanRequest): Pr
   if (!Number.isInteger(req.postsPerWeek) || req.postsPerWeek < 1 || req.postsPerWeek > 14) return { ok: false, error: "Posts per week: 1 to 14." };
   try {
     const db = await createClient();
-    const { data } = await db.from("content_items").select("id, title, idea_score, pillar_id, format, platform, target_platforms, target_audience, priority")
+    const { data } = await db.from("content_items").select("id, title, idea_score, pillar_id, format, platform, target_platforms, target_audience, priority, audience_segment")
       .eq("project_id", projectId).is("scheduled_date", null).is("archived_at", null).neq("status", "published").order("idea_score", { ascending: false, nullsFirst: false }).limit(500);
-    const ideas: PlanIdea[] = (data ?? []).map((r) => ({ id: r.id, title: r.title, score: r.idea_score, pillar_id: r.pillar_id, format: r.format, platform: r.platform, target_platforms: (r.target_platforms as string[]) ?? [], target_audience: r.target_audience, priority: r.priority }));
+    const ideas: PlanIdea[] = (data ?? []).map((r) => ({ id: r.id, title: r.title, score: r.idea_score, pillar_id: r.pillar_id, format: r.format, platform: r.platform, target_platforms: (r.target_platforms as string[]) ?? [], target_audience: r.target_audience, priority: r.priority, segment: r.audience_segment }));
     const { items } = await loadHistoryPerformance(projectId);
     const timing = bestPublicationTimes(items, tz);
     const busy = await busyDays(projectId, req.from, req.to);
-    const plan = planCalendar(ideas, req, { timing, busy, today: todayInZone(tz) });
+    const plan = planCalendar(ideas, { ...req, audienceMix: req.audienceMix ?? normalizeMix(project.audience_mix) ?? undefined }, { timing, busy, today: todayInZone(tz) });
     return { ok: true, data: { ...plan, options: ideas } };
   } catch (e) { return fail(e, "Could not prepare the plan"); }
 }
@@ -400,4 +407,18 @@ export async function savePlanAction(projectId: string, placements: { ideaId: st
   refresh(projectId);
   if (!saved && placements.length) return { ok: false, error: failed[0] ?? "Nothing was saved." };
   return { ok: true, data: { saved, failed }, message: `${saved} idea${saved === 1 ? "" : "s"} placed on the calendar${failed.length ? `, ${failed.length} failed (${failed[0]})` : ""}. Nothing is published until you publish it.` };
+}
+
+/** The brand's monthly audience distribution (e.g. 60% students & parents, 35% teachers, 5% both). Admins only. */
+export async function saveAudienceMixAction(projectId: string, mix: Record<string, number>): Promise<ActionResult> {
+  await requireUser();
+  const { project, role } = await getProjectContext(projectId);
+  if (!canAdmin(role) && !(await hasPermission(project.workspace_id, "projects.manage"))) return { ok: false, error: "Only administrators can change the audience mix." };
+  const normalized = normalizeMix(mix);
+  if (!normalized) return { ok: false, error: "Give at least one audience a share above 0%." };
+  const db = await createClient();
+  const { error } = await db.from("projects").update({ audience_mix: normalized }).eq("id", projectId);
+  if (error) return fail(error, "Could not save the mix");
+  refresh(projectId);
+  return { ok: true, message: "Audience mix saved" };
 }

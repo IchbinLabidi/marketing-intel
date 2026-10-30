@@ -1,6 +1,7 @@
 import { BacklogApp } from "@/components/backlog/backlog-app";
 import { canAdmin, canEdit } from "@/lib/domain/constants";
 import { normalizeWeights } from "@/lib/backlog/score";
+import { normalizeMix } from "@/lib/backlog/audience";
 import { todayInZone } from "@/lib/calendar/time";
 import { isAIConfigured } from "@/server/ai/client";
 import { listPresetsAction } from "@/server/actions/backlog";
@@ -26,7 +27,7 @@ export default async function Page({ params }: { params: Promise<{ projectId: st
     <BacklogApp
       projectId={projectId} projectName={project.name} tz={project.timezone || "Africa/Tunis"}
       canEdit={canEdit(role) && create} canAdmin={canAdmin(role) || manage}
-      initial={initial} pillars={bundle.pillars.map((p) => ({ id: p.id, name: p.name }))} tags={tags}
+      initial={initial} pillars={bundle.pillars.map((p) => ({ id: p.id, name: p.name, segment: p.audience_segment, target_share: p.target_share }))} audienceMix={normalizeMix(project.audience_mix)} tags={tags}
       presets={presets.ok ? presets.data ?? [] : []} weights={normalizeWeights(project.idea_score_weights as Record<string, unknown> | null)}
       aiEnabled={isAIConfigured()} today={todayInZone(project.timezone || "Africa/Tunis")}
     />
