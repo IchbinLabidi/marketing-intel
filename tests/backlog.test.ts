@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_WEIGHTS, normalizeWeights, weightedScore } from "@/lib/backlog/score";
+import { DEFAULT_WEIGHTS, impactEffort, normalizeWeights, weightedScore } from "@/lib/backlog/score";
 import { audienceOf, examPeriod, suggestSlot } from "@/lib/backlog/slots";
 import type { PlatformTiming } from "@/lib/calendar/insights";
 
 describe("idea scoring", () => {
+  it("hook strength only counts for brands that weight it (SOSProf 30/25/15/10/10/10)", () => {
+    const c = { audience: 80, engagement: 60, marketing: 70, originality: 50, educational: 90, feasibility: 100, hook: 0 };
+    expect(DEFAULT_WEIGHTS.hook).toBe(0);
+    expect(weightedScore(c, DEFAULT_WEIGHTS)).toBe(73); // unchanged for brands without a hook weight
+    const sos = normalizeWeights({ marketing: 30, audience: 25, hook: 15, originality: 10, engagement: 10, feasibility: 10, educational: 0 });
+    expect(weightedScore({ ...c, hook: 100 }, sos)).toBe(Math.round(0.3 * 70 + 0.25 * 80 + 0.15 * 100 + 0.1 * 50 + 0.1 * 60 + 0.1 * 100));
+    expect(impactEffort({ criteria: c, source: "ai", scored_at: "" })).toEqual({ impact: 70, effort: 0 });
+    expect(impactEffort(null)).toBeNull();
+  });
   it("uses the default weights (25/20/20/15/10/10) and rescales custom ones to 100", () => {
     expect(Object.values(DEFAULT_WEIGHTS).reduce((a, b) => a + b, 0)).toBe(100);
     const w = normalizeWeights({ audience: 50, engagement: 50, marketing: 0, originality: 0, educational: 0, feasibility: 0 });

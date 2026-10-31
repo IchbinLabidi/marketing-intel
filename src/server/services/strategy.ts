@@ -8,7 +8,7 @@ export async function getStrategyBundle(projectId: string): Promise<StrategyBund
   const [strategy, personas, pillars, campaigns, kpis] = await Promise.all([
     supabase.from("strategies").select("*").eq("project_id", projectId).maybeSingle(),
     supabase.from("personas").select("*").eq("project_id", projectId).order("position").order("created_at"),
-    supabase.from("content_pillars").select("*").eq("project_id", projectId).order("position").order("created_at"),
+    supabase.from("content_pillars").select("*").eq("project_id", projectId).is("retired_at", null).order("position").order("created_at"),
     supabase.from("campaigns").select("*").eq("project_id", projectId).order("starts_on", { nullsFirst: false }),
     supabase.from("kpis").select("*").eq("project_id", projectId).order("created_at"),
   ]);

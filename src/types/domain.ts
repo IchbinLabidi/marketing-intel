@@ -16,6 +16,8 @@ export type Project = {
   idea_score_weights?: unknown;
   /** monthly audience distribution in %, e.g. {students_parents: 60, teachers: 35, both: 5} */
   audience_mix?: unknown;
+  /** default Backlog sort for this brand (null = highest score) */
+  backlog_sort?: string | null;
   production_workflow?: import("@/lib/production/model").WorkflowSettings;
   archived_at: string | null;
   created_at: string;
@@ -83,6 +85,8 @@ export type ContentPillar = {
   color: string | null;
   /** marketplace side: students_parents (default) | teachers | both */
   audience_segment?: string;
+  /** retired pillars are kept but hidden (their ideas moved to the current pillars) */
+  retired_at?: string | null;
 };
 
 export type Campaign = {
