@@ -8,6 +8,8 @@ export const CRITERIA = [
   { key: "originality", label: "Originality", weight: 15 },
   { key: "educational", label: "Educational value", weight: 10 },
   { key: "feasibility", label: "Production feasibility", weight: 10 },
+  // 0 by default: only brands that weight it (SOSProf: 15) are affected
+  { key: "hook", label: "Hook strength", weight: 0 },
 ] as const;
 
 export type CriterionKey = (typeof CRITERIA)[number]["key"];
@@ -45,3 +47,10 @@ export function weightedScore(criteria: Partial<CriteriaScores>, weights: Weight
 }
 
 export const scoreBand = (s: number | null | undefined) => (s == null ? "unscored" : s >= 85 ? "high" : s >= 65 ? "good" : s >= 45 ? "fair" : "low");
+
+/** Impact (marketing / business value) and Effort (the inverse of feasibility), 0–100, from the rated criteria. */
+export function impactEffort(d: ScoreDetails | null | undefined): { impact: number; effort: number } | null {
+  const c = d?.criteria;
+  if (!c || typeof c.marketing !== "number" || typeof c.feasibility !== "number") return null;
+  return { impact: clamp(c.marketing), effort: clamp(100 - c.feasibility) };
+}

@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { PlatformIcon } from "@/components/calendar/platform-icon";
 import { PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
-import { CRITERIA, normalizeWeights, scoreBand, type Weights } from "@/lib/backlog/score";
+import { CRITERIA, impactEffort, normalizeWeights, scoreBand, type Weights } from "@/lib/backlog/score";
 import { ALL_CONVERSIONS, goalsFor, SEGMENTS, SEGMENT_LABELS, SIDE_LABELS, type AudienceMix, type Side } from "@/lib/backlog/audience";
 import { FORMATS, STAGE_LABELS, type ProductionStage } from "@/lib/production/model";
 import { cn } from "@/lib/utils";
@@ -36,15 +36,15 @@ type View = "list" | "cards" | "kanban";
 const PRIORITIES = ["urgent", "high", "medium", "low"] as const;
 const PRIORITY_LABEL: Record<string, string> = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low" };
 const PLATFORM_CHOICES = ["facebook", "instagram", "tiktok", "linkedin", "youtube"] as const;
-const DEFAULT_FILTERS: BacklogFilters = { planning: "backlog", sort: "score" };
 const scoreTone = (s: number | null) => ({ high: "success", good: "info", fair: "warning", low: "destructive", unscored: "outline" } as const)[scoreBand(s)];
 
 export function BacklogApp(props: {
   projectId: string; projectName: string; tz: string; canEdit: boolean; canAdmin: boolean;
   initial: { ideas: Idea[]; total: number }; pillars: { id: string; name: string; segment?: string; target_share?: number | null }[]; tags: string[]; presets: FilterPreset[]; audienceMix: AudienceMix | null;
-  weights: Weights; aiEnabled: boolean; today: string;
+  weights: Weights; aiEnabled: boolean; today: string; defaultSort?: BacklogFilters["sort"];
 }) {
   const { projectId, tz, canEdit } = props;
+  const DEFAULT_FILTERS: BacklogFilters = { planning: "backlog", sort: props.defaultSort ?? "score" };
   const router = useRouter();
   const [view, setView] = React.useState<View>(() => { try { return (localStorage.getItem("backlog.view") as View) || "cards"; } catch { return "cards"; } });
   const [filters, setFilters] = React.useState<BacklogFilters>(DEFAULT_FILTERS);
@@ -134,13 +134,13 @@ export function BacklogApp(props: {
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-52 flex-1"><Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input className="pl-9" placeholder="Search titles and descriptions…" value={filters.q ?? ""} onChange={(e) => setF({ q: e.target.value })} aria-label="Search ideas" /></div>
           <NativeSelect aria-label="Planning status" className="w-40" value={filters.archived ? "archived" : filters.planning} onChange={(e) => e.target.value === "archived" ? setF({ archived: true, planning: "all" }) : setF({ archived: false, planning: e.target.value as BacklogFilters["planning"] })}>
-            <option value="backlog">In the Backlog</option><option value="planned">On the calendar</option><option value="all">Backlog + calendar</option><option value="archived">Archived</option>
+            <option value="backlog">In the Backlog</option><option value="planned">On the calendar</option><option value="all">Backlog + calendar</option><option value="published">Published</option><option value="archived">Archived</option>
           </NativeSelect>
           <NativeSelect aria-label="Audience" className="w-40" value={filters.segments?.[0] ?? ""} onChange={(e) => setF({ segments: e.target.value ? [e.target.value] : [] })}>
             <option value="">All audiences</option>{SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_LABELS[s]}</option>)}<option value="none">Audience not set</option>
           </NativeSelect>
           <NativeSelect aria-label="Sort" className="w-40" value={filters.sort} onChange={(e) => setF({ sort: e.target.value as BacklogFilters["sort"] })}>
-            <option value="score">Highest score</option><option value="audience">Audience</option><option value="priority">Priority</option><option value="suggested">Suggested date</option><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="title">Title</option>
+            <option value="score">Highest score</option><option value="audience">Audience</option><option value="priority">Highest priority</option><option value="suggested">Suggested date</option><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="title">Title</option>
           </NativeSelect>
           <Button variant={more || activeCount ? "secondary" : "outline"} onClick={() => setMore(!more)}><Filter /> Filters{activeCount ? ` (${activeCount})` : ""}</Button>
           <DropdownMenu>
@@ -180,6 +180,7 @@ export function BacklogApp(props: {
             <FilterSelect label="Tag" value={filters.tags?.[0] ?? ""} onChange={(v) => setF({ tags: v ? [v] : [] })} options={props.tags.map((t) => [t, t])} />
             <label className="space-y-1 text-xs text-muted-foreground"><span>Recommended time</span><Input type="time" value={filters.slotTime ?? ""} onChange={(e) => setF({ slotTime: e.target.value || undefined })} /></label>
             <div className="space-y-1 text-xs text-muted-foreground"><span>Created between</span><div className="flex gap-1.5"><Input type="date" value={filters.createdFrom ?? ""} onChange={(e) => setF({ createdFrom: e.target.value || undefined })} /><Input type="date" value={filters.createdTo ?? ""} onChange={(e) => setF({ createdTo: e.target.value || undefined })} /></div></div>
+            <div className="space-y-1 text-xs text-muted-foreground"><span>Publication date between</span><div className="flex gap-1.5"><Input type="date" value={filters.scheduledFrom ?? ""} onChange={(e) => setF({ scheduledFrom: e.target.value || undefined, ...(filters.planning === "backlog" && e.target.value ? { planning: "all" } : {}) })} /><Input type="date" value={filters.scheduledTo ?? ""} onChange={(e) => setF({ scheduledTo: e.target.value || undefined, ...(filters.planning === "backlog" && e.target.value ? { planning: "all" } : {}) })} /></div></div>
             <div className="space-y-1 text-xs text-muted-foreground"><span>Suggested date between</span><div className="flex gap-1.5"><Input type="date" value={filters.suggestedFrom ?? ""} onChange={(e) => setF({ suggestedFrom: e.target.value || undefined })} /><Input type="date" value={filters.suggestedTo ?? ""} onChange={(e) => setF({ suggestedTo: e.target.value || undefined })} /></div></div>
             <div className="flex items-end"><Button variant="ghost" size="sm" onClick={() => setFilters({ ...DEFAULT_FILTERS, planning: filters.planning, sort: filters.sort })}>Clear filters</Button></div>
           </div>
@@ -223,7 +224,7 @@ export function BacklogApp(props: {
               <tr key={i.id} className="border-b last:border-0 hover:bg-muted/40">
                 {canEdit ? <td className="p-2"><input type="checkbox" aria-label={`Select ${i.title}`} checked={selected.has(i.id)} onChange={() => toggle(i.id)} /></td> : null}
                 <td className="max-w-md p-2"><button className="text-left font-medium hover:text-primary" onClick={() => setOpen(i)}>{i.title}</button><Meta idea={i} pillar={pillarName(i.pillar_id)} /></td>
-                <td className="p-2"><ScoreBadge s={i.idea_score} /></td>
+                <td className="p-2"><ScoreBadge s={i.idea_score} /> <ImpactEffort idea={i} /></td>
                 <td className="p-2 text-xs">{i.suggested_slot ? <>{slotLabel(i.suggested_slot.date, i.suggested_slot.time)}<br /><span className="text-muted-foreground">{i.suggested_slot.confidence}</span></> : "—"}</td>
                 <td className="p-2 text-xs">{PRIORITY_LABEL[i.priority ?? "medium"]}</td>
                 <td className="p-2"><Badge variant="outline">{lifecycleOf(i)}</Badge></td>
@@ -266,6 +267,11 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
   return <label className="space-y-1 text-xs text-muted-foreground"><span>{label}</span><NativeSelect value={value} onChange={(e) => onChange(e.target.value)} className="text-foreground"><option value="">All</option>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</NativeSelect></label>;
 }
 const ScoreBadge = ({ s }: { s: number | null }) => <Badge variant={scoreTone(s)} className="tabular-nums">{s == null ? "Not scored" : `${s}/100`}</Badge>;
+
+function ImpactEffort({ idea }: { idea: Idea }) {
+  const ie = impactEffort(idea.score_details);
+  return ie ? <span className="whitespace-nowrap text-xs text-muted-foreground" title="Impact = business value, Effort = production complexity (0–100, from the score criteria)">Impact {ie.impact} · Effort {ie.effort}</span> : null;
+}
 
 function Meta({ idea, pillar }: { idea: Idea; pillar: string | null }) {
   const platforms = idea.target_platforms?.length ? idea.target_platforms : idea.platform ? [idea.platform] : [];
@@ -313,6 +319,7 @@ function IdeaCard({ idea, pillar, canEdit, selected, onToggle, a, compact }: { i
       {!compact && idea.description ? <p dir="auto" className="line-clamp-2 text-xs text-muted-foreground">{idea.description}</p> : null}
       <div className="mt-auto flex flex-wrap items-center gap-1.5 text-xs">
         <ScoreBadge s={idea.idea_score} />
+        <ImpactEffort idea={idea} />
         <Badge variant="outline">{lifecycleOf(idea)}</Badge>
         {!compact ? <Badge variant="secondary">{PRIORITY_LABEL[idea.priority ?? "medium"]}</Badge> : null}
       </div>

@@ -15,7 +15,9 @@ export type BacklogFilters = {
   q?: string; pillars?: string[]; formats?: string[]; platforms?: string[]; audience?: string;
   scoreMin?: number; scoreMax?: number; priorities?: string[]; stages?: string[];
   /** backlog = no calendar date; planned = placed on the calendar, not published; all = both */
-  planning?: "backlog" | "planned" | "all"; archived?: boolean; tags?: string[];
+  planning?: "backlog" | "planned" | "all" | "published"; archived?: boolean; tags?: string[];
+  /** calendar (publication) date range */
+  scheduledFrom?: string; scheduledTo?: string;
   createdFrom?: string; createdTo?: string; suggestedFrom?: string; suggestedTo?: string;
   confidence?: string[]; slotTime?: string;
   /** students | parents | teachers | both | none */
@@ -34,6 +36,9 @@ export async function listIdeas(projectId: string, f: BacklogFilters, page = 0):
   if (planning === "backlog") q = q.is("scheduled_date", null);
   if (planning === "planned") q = q.not("scheduled_date", "is", null).neq("status", "published");
   if (planning === "all") q = q.neq("status", "published");
+  if (planning === "published") q = q.eq("status", "published");
+  if (f.scheduledFrom) q = q.gte("scheduled_date", f.scheduledFrom);
+  if (f.scheduledTo) q = q.lte("scheduled_date", f.scheduledTo);
   if (f.q?.trim()) {
     const term = f.q.trim().replace(/[%,()]/g, " ").slice(0, 80);
     q = q.or(`title.ilike.%${term}%,description.ilike.%${term}%,hook.ilike.%${term}%`);
@@ -64,7 +69,8 @@ export async function listIdeas(projectId: string, f: BacklogFilters, page = 0):
     case "title": q = q.order("title"); break;
     case "audience": q = q.order("audience_segment", { ascending: true, nullsFirst: false }).order("idea_score", { ascending: false, nullsFirst: false }); break;
     case "suggested": q = q.order("suggested_slot->>date", { ascending: true, nullsFirst: false }); break;
-    case "priority": q = q.order("priority", { ascending: true }).order("idea_score", { ascending: false, nullsFirst: false }); break;
+    // highest priority first; ties follow the publishing order (calendar date, then suggested date), then the score
+    case "priority": q = q.order("priority_rank", { ascending: true }).order("scheduled_date", { ascending: true, nullsFirst: false }).order("suggested_slot->>date", { ascending: true, nullsFirst: false }).order("idea_score", { ascending: false, nullsFirst: false }); break;
     default: q = q.order("idea_score", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
   }
   const { data, error, count } = await q.range(page * BACKLOG_PAGE, page * BACKLOG_PAGE + BACKLOG_PAGE - 1);
