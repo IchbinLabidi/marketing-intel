@@ -49,7 +49,10 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
               </Alert>
             )}
             {!emailMatches ? (
-              <Button asChild variant="outline" className="w-full"><Link href="/signup">Create an account</Link></Button>
+              <div className="grid gap-2">
+                <Button asChild className="w-full"><Link href={`/signup?next=${encodeURIComponent(`/invite/${token}`)}`}>Create an account</Link></Button>
+                {!user ? <Button asChild variant="outline" className="w-full"><Link href={`/login?next=${encodeURIComponent(`/invite/${token}`)}`}>I already have an account</Link></Button> : null}
+              </div>
             ) : null}
           </div>
         )}
