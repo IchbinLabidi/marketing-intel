@@ -80,7 +80,7 @@ export const youtube: SocialProviderClient = {
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     url.search = form({
       client_id: c.clientId, redirect_uri: redirectUri("youtube"), response_type: "code", scope: c.scopes.join(" "),
-      access_type: "offline", prompt: "consent", include_granted_scopes: "true", state, code_challenge: codeChallenge, code_challenge_method: "S256",
+      access_type: "offline", prompt: "select_account consent", include_granted_scopes: "true", state, code_challenge: codeChallenge, code_challenge_method: "S256",
     });
     return url.toString();
   },

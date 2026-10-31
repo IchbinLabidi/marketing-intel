@@ -20,7 +20,8 @@ export const PROVIDER_ENV: Record<SocialProvider, { id: string; secret: string }
 /** Minimum read-only scopes for each provider. */
 export const SCOPES: Record<SocialProvider, string[]> = {
   // Channel, videos and public statistics; YouTube Analytics for watch time, shares and subscribers gained.
-  youtube: ["https://www.googleapis.com/auth/youtube.readonly", "https://www.googleapis.com/auth/yt-analytics.readonly"],
+  // + youtube.upload: uploading videos from the Publish window
+  youtube: ["https://www.googleapis.com/auth/youtube.readonly", "https://www.googleapis.com/auth/yt-analytics.readonly", "https://www.googleapis.com/auth/youtube.upload"],
   // Community Management API: list administered pages, read their posts and page/post statistics.
   linkedin: ["r_organization_admin", "r_organization_social"],
   // Login Kit + Display API: profile, follower/like counts, public videos with their counters.

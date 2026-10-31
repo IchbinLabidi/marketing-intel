@@ -14,6 +14,7 @@ import { describeSocialError } from "@/server/social/sync";
 import { MAX_FILE_BYTES } from "@/lib/publishing/rules";
 import { isJpeg, toInstagramJpeg } from "@/server/publishing/convert";
 import { checkTikTok, publishTikTokVideo } from "@/server/publishing/tiktok";
+import { publishYouTubeVideo, YOUTUBE_UPLOAD_SCOPE, youtubeTitle } from "@/server/publishing/youtube";
 import { getAccess } from "@/server/services/social";
 import type { SocialConnection } from "@/server/services/social";
 import { getPost, updatePost } from "@/server/services/calendar";
@@ -134,7 +135,7 @@ export async function publishPostAction(
 ): Promise<ActionResult<{ publications: Publication[] }>> {
   const { user, allowed } = await guard(projectId);
   if (!allowed) return { ok: false, error: "Your role can't publish from the calendar." };
-  const targets = [...new Set(input.targets)].filter((t): t is PublishTarget => t === "facebook" || t === "instagram" || t === "tiktok");
+  const targets = [...new Set(input.targets)].filter((t): t is PublishTarget => t === "facebook" || t === "instagram" || t === "tiktok" || t === "youtube");
   if (!targets.length) return { ok: false, error: "Choose where to publish." };
   const item = await getPost(projectId, itemId);
   if (!item) return { ok: false, error: "Post not found." };
@@ -143,6 +144,7 @@ export async function publishPostAction(
   if (scheduleAt) {
     if (targets.includes("instagram")) return { ok: false, error: "Instagram can't be scheduled through its API. Publish to Instagram now, or schedule Facebook only." };
     if (targets.includes("tiktok")) return { ok: false, error: "TikTok can't be scheduled through its API. Publish to TikTok now, or schedule Facebook only." };
+    if (targets.includes("youtube")) return { ok: false, error: "YouTube uploads from Signal are published now. Publish to YouTube now, or schedule Facebook only." };
     const err = facebookScheduleError(scheduleAt);
     if (err) return { ok: false, error: err };
   }
@@ -167,6 +169,14 @@ export async function publishPostAction(
     if (!tt.granted_scopes.includes("video.publish")) return { ok: false, error: "TikTok hasn't granted posting yet. Reconnect TikTok on the Integrations page and accept posting videos." };
     try { tiktok = { conn: tt, token: (await getAccess(db, tt)).token! }; } catch (e) { return { ok: false, error: describeSocialError(e) }; }
   }
+  // YouTube: the project's channel authorized with upload permission
+  let youtube: { conn: SocialConnection; token: string } | null = null;
+  if (targets.includes("youtube")) {
+    const yt = await youtubeConnection(projectId);
+    if (!yt) return { ok: false, error: "Connect YouTube with Google (not public data only) on the Integrations page first." };
+    if (!yt.granted_scopes.includes(YOUTUBE_UPLOAD_SCOPE)) return { ok: false, error: "YouTube hasn't granted uploading yet. Click Connect YouTube on the Integrations page again and accept uploading videos." };
+    try { youtube = { conn: yt, token: (await getAccess(db, yt)).token! }; } catch (e) { return { ok: false, error: describeSocialError(e) }; }
+  }
   // Media in the order the person selected it (the first one leads the carousel)
   const ids = [...new Set(input.mediaAssetIds ?? (input.mediaAssetId ? [input.mediaAssetId] : []))];
   if (ids.length > MAX_GROUP) return { ok: false, error: `Choose at most ${MAX_GROUP} photos for one post.` };
@@ -187,8 +197,8 @@ export async function publishPostAction(
 
   const results: Publication[] = [];
   for (const target of targets) {
-    const accountRef = target === "tiktok" ? tiktok!.conn.external_account_id : target === "facebook" ? conn.page_id! : conn.ig_user_id!;
-    const accountName = target === "tiktok" ? tiktok!.conn.account_handle ?? tiktok!.conn.account_name : target === "facebook" ? conn.page_name : conn.ig_username ? `@${conn.ig_username}` : null;
+    const accountRef = target === "youtube" ? youtube!.conn.external_account_id : target === "tiktok" ? tiktok!.conn.external_account_id : target === "facebook" ? conn.page_id! : conn.ig_user_id!;
+    const accountName = target === "youtube" ? youtube!.conn.account_name ?? youtube!.conn.account_handle : target === "tiktok" ? tiktok!.conn.account_handle ?? tiktok!.conn.account_name : target === "facebook" ? conn.page_name : conn.ig_username ? `@${conn.ig_username}` : null;
     // Claim the (post, network, account) slot. A row that is published, scheduled or in progress blocks a second send.
     await db.from("content_publications").upsert(
       { project_id: projectId, content_item_id: itemId, provider: target, account_ref: accountRef, account_name: accountName, status: "queued", created_by: user.id },
@@ -213,7 +223,10 @@ export async function publishPostAction(
       }
       const media = prepared[0].media;
       let r: PublishResult;
-      if (target === "tiktok") {
+      if (target === "youtube") {
+        if (media.kind !== "video" || !("bytes" in media)) throw new Error("YouTube needs a video file (from Drive or your computer).");
+        r = await publishYouTubeVideo({ token: youtube!.token, title: youtubeTitle(item.title, caption), description: caption, video: media.bytes });
+      } else if (target === "tiktok") {
         if (media.kind !== "video" || !("bytes" in media)) throw new Error("TikTok needs a video file (from Drive or your computer).");
         r = await publishTikTokVideo({ token: tiktok!.token, caption, video: media.bytes, username: tiktok!.conn.account_handle, waitMs: 60_000 });
       } else if (target === "facebook") {
@@ -310,6 +323,14 @@ async function syncItemStatus(projectId: string, itemId: string, pubs: Publicati
   }
 }
 
+/** The project's YouTube channel authorized with Google (public-data channels can't upload). */
+async function youtubeConnection(projectId: string): Promise<SocialConnection | null> {
+  const db = await createClient();
+  const { data } = await db.from("social_connections").select("*").eq("project_id", projectId).eq("provider", "youtube").eq("auth_type", "oauth").eq("status", "connected").order("created_at", { ascending: false });
+  const rows = (data ?? []) as SocialConnection[];
+  return rows.find((r) => r.granted_scopes.includes(YOUTUBE_UPLOAD_SCOPE)) ?? rows[0] ?? null;
+}
+
 /** The project's connected TikTok account (the first active one). */
 async function tiktokConnection(projectId: string): Promise<SocialConnection | null> {
   const db = await createClient();
@@ -317,7 +338,7 @@ async function tiktokConnection(projectId: string): Promise<SocialConnection | n
   return (data as SocialConnection | null) ?? null;
 }
 
-const LABEL: Record<string, string> = { facebook: "Facebook", instagram: "Instagram", tiktok: "TikTok" };
+const LABEL: Record<string, string> = { facebook: "Facebook", instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube" };
 function summary(pubs: Publication[]) {
   const by = (s: string) => pubs.filter((p) => p.status === s).map((p) => LABEL[p.provider] ?? p.provider);
   return [
@@ -334,6 +355,8 @@ export type PublishContext = {
   instagram: { name: string } | null;
   /** connected TikTok account; canPost false until posting (video.publish) is granted */
   tiktok: { name: string; canPost: boolean } | null;
+  /** YouTube channel connected with Google; canPost false until uploading is granted */
+  youtube: { name: string; canPost: boolean } | null;
   missingScopes: string[];
   publications: Publication[];
 };
@@ -356,6 +379,7 @@ export async function publishContextAction(projectId: string, itemId: string): P
   const active = conn && conn.status === "active" && conn.page_id;
   const pubs = await listPublicationsAction(projectId, itemId);
   const tt = await tiktokConnection(projectId);
+  const yt = await youtubeConnection(projectId);
   return {
     ok: true,
     data: {
@@ -363,6 +387,7 @@ export async function publishContextAction(projectId: string, itemId: string): P
       facebook: active ? { name: conn.page_name ?? "Facebook Page" } : null,
       instagram: active && conn.ig_user_id ? { name: conn.ig_username ? `@${conn.ig_username}` : "Instagram" } : null,
       tiktok: tt ? { name: tt.account_handle ?? tt.account_name ?? "TikTok", canPost: tt.granted_scopes.includes("video.publish") } : null,
+      youtube: yt ? { name: yt.account_name ?? yt.account_handle ?? "YouTube", canPost: yt.granted_scopes.includes(YOUTUBE_UPLOAD_SCOPE) } : null,
       missingScopes: active ? PUBLISH_SCOPES.filter((s) => !conn.granted_scopes.includes(s)) : [],
       publications: pubs.ok ? pubs.data ?? [] : [],
     },

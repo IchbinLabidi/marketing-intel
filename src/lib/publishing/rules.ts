@@ -1,6 +1,6 @@
 // Publishing rules per network (pure, tested). Limits are the documented ones for the APIs used.
 
-export type PublishTarget = "facebook" | "instagram" | "tiktok";
+export type PublishTarget = "facebook" | "instagram" | "tiktok" | "youtube";
 
 export const LIMITS = {
   facebook: { caption: 63_206, image: ["image/jpeg", "image/png", "image/gif", "image/webp"], video: ["video/mp4", "video/quicktime"] },
@@ -8,6 +8,8 @@ export const LIMITS = {
   // before sending); Reels as MP4/MOV; caption ≤ 2,200 characters, ≤ 30 hashtags
   // TikTok Content Posting API (Direct Post): one video per post, MP4/MOV/WebM, caption (title) ≤ 2,200 characters
   tiktok: { caption: 2_200, video: ["video/mp4", "video/quicktime", "video/webm"] },
+  // YouTube Data API (videos.insert): one video, description ≤ 5,000 characters (the title comes from the post title)
+  youtube: { caption: 5_000, video: ["video/mp4", "video/quicktime", "video/webm", "video/x-msvideo", "video/mpeg"] },
   instagram: { caption: 2_200, hashtags: 30, image: ["image/jpeg", "image/png", "image/webp", "image/gif"], video: ["video/mp4", "video/quicktime"] },
 } as const;
 
@@ -30,6 +32,12 @@ export function composeCaption(post: { caption: string | null; cta?: string | nu
 /** Returns a readable problem, or null when the post can be sent to that network. */
 export function validateForTarget(target: PublishTarget, p: { caption: string; mime: string | null | undefined; hasMedia: boolean }): string | null {
   if (!p.caption.trim() && !p.hasMedia) return "The post has no caption and no media.";
+  if (target === "youtube") {
+    if (!p.hasMedia || mediaKindOf(p.mime) !== "video") return "YouTube publishing from Signal needs a video (MP4 or MOV).";
+    if (!(LIMITS.youtube.video as readonly string[]).includes(p.mime!)) return "YouTube accepts MP4, MOV, WebM, AVI or MPEG videos here.";
+    if (p.caption.length > LIMITS.youtube.caption) return `YouTube descriptions are limited to ${LIMITS.youtube.caption.toLocaleString("en")} characters.`;
+    return null;
+  }
   if (target === "tiktok") {
     if (!p.hasMedia || mediaKindOf(p.mime) !== "video") return "TikTok publishing from Signal needs a video (MP4 or MOV).";
     if (!(LIMITS.tiktok.video as readonly string[]).includes(p.mime!)) return "TikTok accepts MP4, MOV or WebM videos.";
@@ -60,6 +68,7 @@ export const MAX_GROUP = 10; // Instagram carousels and Facebook multi-photo pos
 export function validateGroup(target: PublishTarget, mimes: (string | null | undefined)[]): string | null {
   if (mimes.length < 2) return null;
   if (target === "tiktok") return "TikTok posts from Signal are a single video. Select only one file for TikTok.";
+  if (target === "youtube") return "A YouTube upload is a single video. Select only one file for YouTube.";
   if (mimes.length > MAX_GROUP) return `Choose at most ${MAX_GROUP} photos for one post.`;
   if (mimes.some((m) => mediaKindOf(m) !== "image")) return "Several files in one post must all be photos. Publish a video on its own.";
   if (target === "instagram" && mimes.some((m) => !(LIMITS.instagram.image as readonly string[]).includes(m!))) return "Instagram accepts JPEG, PNG, WebP or GIF photos (sent as JPEG).";
