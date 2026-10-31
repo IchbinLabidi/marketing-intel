@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { downloadDriveFile, driveFileMeta } from "@/server/drive/google";
+import { driveFileMeta } from "@/server/drive/google";
 import { driveAccessToken, getDriveConnection } from "@/server/drive/service";
-import { MAX_FILE_BYTES } from "@/lib/publishing/rules";
 import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
 
@@ -44,9 +43,18 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/media/[a
           const res = await fetch(meta.thumbnailLink.replace(/=s\d+$/, "=s800"), { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(20_000) });
           if (res.ok) return new NextResponse(res.body, { headers: { "Content-Type": res.headers.get("content-type") ?? "image/jpeg", "Cache-Control": "private, max-age=3600" } });
         }
+        // no thumbnail yet (e.g. a video Drive is still processing): never download a whole video just for a tile
+        if (!meta.mimeType.startsWith("image/")) return new NextResponse("No thumbnail", { status: 404 });
       }
-      const file = await downloadDriveFile(token, body.source_file_id, MAX_FILE_BYTES);
-      return new NextResponse(file, { headers: { "Content-Type": file.type || body.mime || "application/octet-stream", "Cache-Control": "private, max-age=3600" } });
+      // the file itself is streamed from Drive (videos can be large); Range requests let the player seek
+      const range = request.headers.get("range");
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(body.source_file_id)}?alt=media&supportsAllDrives=true`, {
+        headers: { Authorization: `Bearer ${token}`, ...(range ? { Range: range } : {}) }, cache: "no-store",
+      });
+      if (!res.ok && res.status !== 206) return new NextResponse(res.status === 404 ? "This file isn't reachable with the project's current Drive account (deleted, or picked from another account)" : "Drive refused the file", { status: res.status === 404 ? 404 : 502 });
+      const headers = new Headers({ "Content-Type": res.headers.get("content-type") ?? body.mime ?? "application/octet-stream", "Cache-Control": "private, max-age=3600", "Accept-Ranges": "bytes" });
+      for (const h of ["content-length", "content-range"]) { const v = res.headers.get(h); if (v) headers.set(h, v); }
+      return new NextResponse(res.body, { status: res.status, headers });
     } catch {
       return new NextResponse("This Drive file can't be read (deleted, or Drive access expired)", { status: 502 });
     }

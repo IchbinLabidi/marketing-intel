@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ImageOff, Loader2, Maximize2, Trash2 } from "lucide-react";
+import { Film, ImageOff, Loader2, Maximize2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -17,6 +17,22 @@ export function MediaPreview({ asset, full, className }: { asset: TileAsset; ful
   const src = full ? asset.fullUrl ?? asset.previewUrl : asset.previewUrl;
   const kind = mediaKindOf(asset.mime);
   if (!src || !kind) return <div className={cn("flex items-center justify-center p-2 text-center text-xs text-muted-foreground", className)}>{asset.name}</div>;
+  // a video tile shows its thumbnail image (Drive's, when it exists) or a clear video placeholder, never an error
+  if (kind === "video" && !full) {
+    return (
+      <div className={cn("relative flex items-center justify-center bg-muted", className)}>
+        {state === "loading" ? <Loader2 className="absolute size-5 animate-spin text-muted-foreground" aria-label="Loading preview" /> : null}
+        {state === "error" ? <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-center text-[11px] text-muted-foreground"><Film className="size-6" /> Video</div> : null}
+        {asset.source === "google_drive" ? (
+          // eslint-disable-next-line @next/next/no-img-element -- private, authenticated media route (not optimizable)
+          <img src={src} alt={asset.name} loading="lazy" onLoad={() => setState("ready")} onError={() => setState("error")} className={cn("size-full object-cover", state !== "ready" && "opacity-0")} />
+        ) : (
+          <video src={asset.fullUrl ?? src} muted preload="metadata" onLoadedData={() => setState("ready")} onError={() => setState("error")} className={cn("size-full object-cover", state !== "ready" && "opacity-0")} />
+        )}
+        {state !== "error" ? <Film className="pointer-events-none absolute bottom-6 left-1.5 size-4 text-white drop-shadow" /> : null}
+      </div>
+    );
+  }
   return (
     <div className={cn("relative flex items-center justify-center", className)}>
       {state === "loading" ? <Loader2 className="absolute size-5 animate-spin text-muted-foreground" aria-label="Loading preview" /> : null}
