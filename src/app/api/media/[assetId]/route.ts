@@ -10,7 +10,7 @@ type Body = { path?: string; url?: string; mime?: string; source_type?: string; 
 /**
  * A stable address for a post's media, used by previews so they keep working after a refresh (signed links and
  * Drive thumbnails expire). Access goes through the same row-level security as the post itself.
- * - files kept in Signal's storage: redirect to a fresh signed link (10 minutes)
+ * - files kept in Orix Signals's storage: redirect to a fresh signed link (10 minutes)
  * - Google Drive files: read through the Drive API with the project's authorization (?size=thumb uses Drive's thumbnail)
  * - public links: redirect to the link
  * Nothing is ever made public.

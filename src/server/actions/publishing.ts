@@ -91,7 +91,7 @@ async function mediaFor(db: Awaited<ReturnType<typeof createClient>>, projectId:
   }
   if (asset.body.url) {
     // already a public https link chosen by the team: sent as is, so Instagram needs it to be a JPEG already
-    if (target === "instagram" && kind === "image" && !isJpeg(mime)) throw new Error("Instagram only accepts JPEG photos by link. Attach the file itself (Drive or computer) so Signal can convert it.");
+    if (target === "instagram" && kind === "image" && !isJpeg(mime)) throw new Error("Instagram only accepts JPEG photos by link. Attach the file itself (Drive or computer) so Orix Signals can convert it.");
     return { media: { kind, url: asset.body.url, mime }, tempPath: null };
   }
   if (!asset.body.path) throw new Error("The attachment has no stored file.");
@@ -144,7 +144,7 @@ export async function publishPostAction(
   if (scheduleAt) {
     if (targets.includes("instagram")) return { ok: false, error: "Instagram can't be scheduled through its API. Publish to Instagram now, or schedule Facebook only." };
     if (targets.includes("tiktok")) return { ok: false, error: "TikTok can't be scheduled through its API. Publish to TikTok now, or schedule Facebook only." };
-    if (targets.includes("youtube")) return { ok: false, error: "YouTube uploads from Signal are published now. Publish to YouTube now, or schedule Facebook only." };
+    if (targets.includes("youtube")) return { ok: false, error: "YouTube uploads from Orix Signals are published now. Publish to YouTube now, or schedule Facebook only." };
     const err = facebookScheduleError(scheduleAt);
     if (err) return { ok: false, error: err };
   }

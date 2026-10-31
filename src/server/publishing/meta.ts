@@ -108,7 +108,7 @@ export async function publishInstagramCarousel(opts: { igUserId: string; pageTok
   const { igUserId, pageToken, caption, items } = opts;
   const children: string[] = [];
   for (const m of items) {
-    if (m.kind !== "image") throw new Error("Instagram carousels from Signal can only contain photos.");
+    if (m.kind !== "image") throw new Error("Instagram carousels from Orix Signals can only contain photos.");
     children.push((await graphPost<{ id: string }>(`${igUserId}/media`, { image_url: m.url, is_carousel_item: "true" }, pageToken)).id);
   }
   const parent = (await graphPost<{ id: string }>(`${igUserId}/media`, { media_type: "CAROUSEL", children: children.join(","), caption }, pageToken)).id;

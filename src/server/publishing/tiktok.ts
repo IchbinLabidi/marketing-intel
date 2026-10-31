@@ -24,7 +24,7 @@ async function call<T>(path: string, token: string, body: unknown): Promise<T> {
     const kind: SocialApiError["kind"] = res.status === 401 || code === "access_token_invalid" ? "auth" : code === "scope_not_authorized" ? "permission"
       : res.status === 429 || code === "rate_limit_exceeded" || code === "spam_risk_too_many_posts" ? "rate_limit"
         : res.status >= 500 ? "server" : "other";
-    throw new SocialApiError(code === "scope_not_authorized" ? "TikTok hasn't granted posting (video.publish). Reconnect TikTok and accept posting." : code === "unaudited_client_can_only_post_to_private_accounts" ? "Until TikTok approves Signal, TikTok only accepts posts to a private account. In the TikTok app, turn on Settings and privacy → Privacy → Private account, publish from Signal, then turn it off again." : msg, res.status, "TikTok", kind, code);
+    throw new SocialApiError(code === "scope_not_authorized" ? "TikTok hasn't granted posting (video.publish). Reconnect TikTok and accept posting." : code === "unaudited_client_can_only_post_to_private_accounts" ? "Until TikTok approves Orix Signals, TikTok only accepts posts to a private account. In the TikTok app, turn on Settings and privacy → Privacy → Private account, publish from Orix Signals, then turn it off again." : msg, res.status, "TikTok", kind, code);
   }
   return json;
 }

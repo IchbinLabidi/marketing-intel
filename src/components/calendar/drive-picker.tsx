@@ -105,7 +105,7 @@ export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { proj
   if (!state.picker) {
     return (
       <div className="space-y-2">
-        <p className="text-muted-foreground">Connect this project to Google Drive once. Signal only gets access to the files you pick, never your whole Drive, and nothing is made public.</p>
+        <p className="text-muted-foreground">Connect this project to Google Drive once. Orix Signals only gets access to the files you pick, never your whole Drive, and nothing is made public.</p>
         <Button asChild size="sm"><a href={`/api/drive/connect?project=${projectId}&back=calendar`}><HardDrive /> Connect Google Drive</a></Button>
       </div>
     );

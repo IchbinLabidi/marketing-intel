@@ -241,9 +241,9 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
                 </label>
                 {when === "schedule" ? <><Input type="date" className="h-8 w-40" value={date} onChange={(e) => setDate(e.target.value)} /><Input type="time" className="h-8 w-28" value={time} onChange={(e) => setTime(e.target.value)} /><span className="text-xs text-muted-foreground">{tz}</span></> : null}
               </div>
-              <p className="text-xs text-muted-foreground">Facebook keeps the scheduled post and publishes it itself (10 minutes to 30 days ahead). Instagram, TikTok and YouTube are published now from Signal: publish them at the right time.</p>
-              {targets.includes("youtube") ? <p className="text-xs text-muted-foreground">YouTube: one video, titled with the post title; the caption, CTA and hashtags become the description. Vertical videos under 3 minutes appear as Shorts. Until Google approves Signal&apos;s YouTube access, uploads stay private (you can make them public in YouTube Studio).</p> : null}
-              {targets.includes("tiktok") ? <p className="text-xs text-muted-foreground">TikTok: one video (MP4 or MOV, up to 50 MB). Until TikTok approves Signal, videos are posted as private (only you can see them); you can make them public in the TikTok app.</p> : null}
+              <p className="text-xs text-muted-foreground">Facebook keeps the scheduled post and publishes it itself (10 minutes to 30 days ahead). Instagram, TikTok and YouTube are published now from Orix Signals: publish them at the right time.</p>
+              {targets.includes("youtube") ? <p className="text-xs text-muted-foreground">YouTube: one video, titled with the post title; the caption, CTA and hashtags become the description. Vertical videos under 3 minutes appear as Shorts. Until Google approves Orix Signals&apos;s YouTube access, uploads stay private (you can make them public in YouTube Studio).</p> : null}
+              {targets.includes("tiktok") ? <p className="text-xs text-muted-foreground">TikTok: one video (MP4 or MOV, up to 50 MB). Until TikTok approves Orix Signals, videos are posted as private (only you can see them); you can make them public in the TikTok app.</p> : null}
             </section>
 
             {/* Status */}
