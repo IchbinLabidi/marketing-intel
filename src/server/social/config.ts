@@ -24,7 +24,8 @@ export const SCOPES: Record<SocialProvider, string[]> = {
   // Community Management API: list administered pages, read their posts and page/post statistics.
   linkedin: ["r_organization_admin", "r_organization_social"],
   // Login Kit + Display API: profile, follower/like counts, public videos with their counters.
-  tiktok: ["user.info.basic", "user.info.profile", "user.info.stats", "video.list"],
+  // + video.publish: Direct Post from the Publish window (Content Posting API)
+  tiktok: ["user.info.basic", "user.info.profile", "user.info.stats", "video.list", "video.publish"],
 };
 
 export function oauthConfig(provider: SocialProvider): OAuthConfig {

@@ -13,6 +13,9 @@ import { SocialApiError } from "@/server/social/http";
 import { describeSocialError } from "@/server/social/sync";
 import { MAX_FILE_BYTES } from "@/lib/publishing/rules";
 import { isJpeg, toInstagramJpeg } from "@/server/publishing/convert";
+import { checkTikTok, publishTikTokVideo } from "@/server/publishing/tiktok";
+import { getAccess } from "@/server/services/social";
+import type { SocialConnection } from "@/server/services/social";
 import { getPost, updatePost } from "@/server/services/calendar";
 import { getMetaConnection, readMetaTokens } from "@/server/services/meta";
 import { getProjectContext } from "@/server/services/projects";
@@ -79,7 +82,7 @@ async function mediaFor(db: Awaited<ReturnType<typeof createClient>>, projectId:
     if (!conn || !asset.body.source_file_id) throw new Error("Google Drive isn't connected for this project. Reconnect it to publish this file.");
     const bytes = await downloadDriveFile(await driveAccessToken(db, conn), asset.body.source_file_id, MAX_FILE_BYTES);
     const filename = asset.body.name ?? "media";
-    if (target === "facebook") return { media: { kind, bytes, filename, mime }, tempPath: null };
+    if (target !== "instagram") return { media: { kind, bytes, filename, mime }, tempPath: null };
     if (!allowTemporaryLink) throw new Error("Instagram downloads media from a link. Allow the temporary private link (valid 1 hour) to publish this file.");
     const ig = await forInstagram(bytes, filename, mime, kind);
     const link = await temporaryLink(db, projectId, itemId, ig.bytes, ig.filename, ig.mime);
@@ -91,8 +94,8 @@ async function mediaFor(db: Awaited<ReturnType<typeof createClient>>, projectId:
     return { media: { kind, url: asset.body.url, mime }, tempPath: null };
   }
   if (!asset.body.path) throw new Error("The attachment has no stored file.");
-  if (target === "facebook") {
-    // Facebook receives the bytes directly: no link to the private file is ever created
+  if (target !== "instagram") {
+    // Facebook and TikTok receive the bytes directly: no link to the private file is ever created
     const { data, error } = await db.storage.from(BUCKET).download(asset.body.path);
     if (error || !data) throw new Error("The stored file could not be read. Re-attach it.");
     return { media: { kind, bytes: data, filename: asset.body.name ?? "media", mime }, tempPath: null };
@@ -131,7 +134,7 @@ export async function publishPostAction(
 ): Promise<ActionResult<{ publications: Publication[] }>> {
   const { user, allowed } = await guard(projectId);
   if (!allowed) return { ok: false, error: "Your role can't publish from the calendar." };
-  const targets = [...new Set(input.targets)].filter((t): t is PublishTarget => t === "facebook" || t === "instagram");
+  const targets = [...new Set(input.targets)].filter((t): t is PublishTarget => t === "facebook" || t === "instagram" || t === "tiktok");
   if (!targets.length) return { ok: false, error: "Choose where to publish." };
   const item = await getPost(projectId, itemId);
   if (!item) return { ok: false, error: "Post not found." };
@@ -139,19 +142,31 @@ export async function publishPostAction(
   const scheduleAt = input.scheduleAt ? new Date(input.scheduleAt) : null;
   if (scheduleAt) {
     if (targets.includes("instagram")) return { ok: false, error: "Instagram can't be scheduled through its API. Publish to Instagram now, or schedule Facebook only." };
+    if (targets.includes("tiktok")) return { ok: false, error: "TikTok can't be scheduled through its API. Publish to TikTok now, or schedule Facebook only." };
     const err = facebookScheduleError(scheduleAt);
     if (err) return { ok: false, error: err };
   }
 
-  const conn = await getMetaConnection(projectId);
-  if (!conn || conn.status !== "active" || !conn.page_id) return { ok: false, error: "Connect Meta (Facebook Page) on the Integrations page first." };
-  const missing = PUBLISH_SCOPES.filter((s) => (s === "instagram_content_publish" ? targets.includes("instagram") : targets.includes("facebook")) && !conn.granted_scopes.includes(s));
+  // Meta (Facebook / Instagram) is only required when one of its networks is chosen
+  const needsMeta = targets.includes("facebook") || targets.includes("instagram");
+  const metaConn = needsMeta ? await getMetaConnection(projectId) : null;
+  if (needsMeta && (!metaConn || metaConn.status !== "active" || !metaConn.page_id)) return { ok: false, error: "Connect Meta (Facebook Page) on the Integrations page first." };
+  const conn = metaConn!;
+  const missing = needsMeta ? PUBLISH_SCOPES.filter((s) => (s === "instagram_content_publish" ? targets.includes("instagram") : targets.includes("facebook")) && !conn.granted_scopes.includes(s)) : [];
   if (missing.length) return { ok: false, error: `Meta hasn't granted publishing yet (${missing.join(", ")}). Reconnect Meta on the Integrations page and accept the publishing permissions.` };
   if (targets.includes("instagram") && !conn.ig_user_id) return { ok: false, error: "No Instagram professional account is linked to the connected Page." };
-  const { page: pageToken } = await readMetaTokens(conn.id);
-  if (!pageToken) return { ok: false, error: "The Page access token is missing. Reconnect Meta." };
+  const pageToken = needsMeta ? (await readMetaTokens(conn.id)).page : null;
+  if (needsMeta && !pageToken) return { ok: false, error: "The Page access token is missing. Reconnect Meta." };
 
   const db = await createClient();
+  // TikTok: the project's connected account, with the posting permission
+  let tiktok: { conn: SocialConnection; token: string } | null = null;
+  if (targets.includes("tiktok")) {
+    const tt = await tiktokConnection(projectId);
+    if (!tt) return { ok: false, error: "Connect TikTok on the Integrations page first." };
+    if (!tt.granted_scopes.includes("video.publish")) return { ok: false, error: "TikTok hasn't granted posting yet. Reconnect TikTok on the Integrations page and accept posting videos." };
+    try { tiktok = { conn: tt, token: (await getAccess(db, tt)).token! }; } catch (e) { return { ok: false, error: describeSocialError(e) }; }
+  }
   // Media in the order the person selected it (the first one leads the carousel)
   const ids = [...new Set(input.mediaAssetIds ?? (input.mediaAssetId ? [input.mediaAssetId] : []))];
   if (ids.length > MAX_GROUP) return { ok: false, error: `Choose at most ${MAX_GROUP} photos for one post.` };
@@ -172,8 +187,8 @@ export async function publishPostAction(
 
   const results: Publication[] = [];
   for (const target of targets) {
-    const accountRef = target === "facebook" ? conn.page_id : conn.ig_user_id!;
-    const accountName = target === "facebook" ? conn.page_name : conn.ig_username ? `@${conn.ig_username}` : null;
+    const accountRef = target === "tiktok" ? tiktok!.conn.external_account_id : target === "facebook" ? conn.page_id! : conn.ig_user_id!;
+    const accountName = target === "tiktok" ? tiktok!.conn.account_handle ?? tiktok!.conn.account_name : target === "facebook" ? conn.page_name : conn.ig_username ? `@${conn.ig_username}` : null;
     // Claim the (post, network, account) slot. A row that is published, scheduled or in progress blocks a second send.
     await db.from("content_publications").upsert(
       { project_id: projectId, content_item_id: itemId, provider: target, account_ref: accountRef, account_name: accountName, status: "queued", created_by: user.id },
@@ -198,17 +213,20 @@ export async function publishPostAction(
       }
       const media = prepared[0].media;
       let r: PublishResult;
-      if (target === "facebook") {
+      if (target === "tiktok") {
+        if (media.kind !== "video" || !("bytes" in media)) throw new Error("TikTok needs a video file (from Drive or your computer).");
+        r = await publishTikTokVideo({ token: tiktok!.token, caption, video: media.bytes, username: tiktok!.conn.account_handle, waitMs: 60_000 });
+      } else if (target === "facebook") {
         r = prepared.length > 1
-          ? await publishFacebookPhotos({ pageId: conn.page_id, pageToken, message: caption, photos: prepared.map((p) => p.media), scheduleAt })
-          : await publishFacebook({ pageId: conn.page_id, pageToken, message: caption, media, scheduleAt });
+          ? await publishFacebookPhotos({ pageId: conn.page_id!, pageToken: pageToken!, message: caption, photos: prepared.map((p) => p.media), scheduleAt })
+          : await publishFacebook({ pageId: conn.page_id!, pageToken: pageToken!, message: caption, media, scheduleAt });
       } else {
         const items = prepared.map((p) => p.media);
         if (items.some((m) => m.kind === "none" || !("url" in m))) throw new Error("Instagram needs an image or a video.");
         const urls = items as Extract<MediaInput, { url: string }>[];
         r = urls.length > 1
-          ? await publishInstagramCarousel({ igUserId: conn.ig_user_id!, pageToken, caption, items: urls, waitMs: 90_000 })
-          : await publishInstagram({ igUserId: conn.ig_user_id!, pageToken, caption, media: urls[0], waitMs: 90_000 });
+          ? await publishInstagramCarousel({ igUserId: conn.ig_user_id!, pageToken: pageToken!, caption, items: urls, waitMs: 90_000 })
+          : await publishInstagram({ igUserId: conn.ig_user_id!, pageToken: pageToken!, caption, media: urls[0], waitMs: 90_000 });
       }
       const status = r.processing ? "processing" : r.scheduledFor ? "scheduled" : "published";
       const { data: row } = await db.from("content_publications").update({
@@ -246,6 +264,21 @@ export async function checkPublicationAction(projectId: string, publicationId: s
   const { data: pub } = await db.from("content_publications").select("*").eq("project_id", projectId).eq("id", publicationId).maybeSingle();
   if (!pub) return { ok: false, error: "Publication not found." };
   if (pub.status !== "processing" || !pub.container_id) return { ok: true, data: { publication: pub as Publication } };
+  if (pub.provider === "tiktok") {
+    const tt = await tiktokConnection(projectId);
+    if (!tt) return { ok: false, error: "Reconnect TikTok to finish this publication." };
+    try {
+      const r = await checkTikTok({ token: (await getAccess(db, tt)).token!, publishId: pub.container_id, username: tt.account_handle, waitMs: 20_000 });
+      const { data: row } = await db.from("content_publications").update(r.processing ? { updated_at: new Date().toISOString() } : { status: "published", platform_post_id: r.postId, platform_url: r.url }).eq("id", pub.id).select("*").single();
+      await syncItemStatus(projectId, pub.content_item_id, [row as Publication]);
+      refresh(projectId);
+      return { ok: true, data: { publication: row as Publication }, message: r.processing ? "TikTok is still processing the video. Check again in a minute." : "Published on TikTok" };
+    } catch (e) {
+      const { data: row } = await db.from("content_publications").update({ status: "failed", error: describeSocialError(e).slice(0, 1000), error_kind: "permanent" }).eq("id", pub.id).select("*").single();
+      refresh(projectId);
+      return { ok: false, error: describeSocialError(e), data: { publication: row as Publication } } as ActionResult<{ publication: Publication }>;
+    }
+  }
   const conn = await getMetaConnection(projectId);
   const { page } = conn ? await readMetaTokens(conn.id) : { page: null };
   if (!conn || !page) return { ok: false, error: "Reconnect Meta to finish this publication." };
@@ -277,8 +310,16 @@ async function syncItemStatus(projectId: string, itemId: string, pubs: Publicati
   }
 }
 
+/** The project's connected TikTok account (the first active one). */
+async function tiktokConnection(projectId: string): Promise<SocialConnection | null> {
+  const db = await createClient();
+  const { data } = await db.from("social_connections").select("*").eq("project_id", projectId).eq("provider", "tiktok").eq("status", "connected").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  return (data as SocialConnection | null) ?? null;
+}
+
+const LABEL: Record<string, string> = { facebook: "Facebook", instagram: "Instagram", tiktok: "TikTok" };
 function summary(pubs: Publication[]) {
-  const by = (s: string) => pubs.filter((p) => p.status === s).map((p) => (p.provider === "facebook" ? "Facebook" : "Instagram"));
+  const by = (s: string) => pubs.filter((p) => p.status === s).map((p) => LABEL[p.provider] ?? p.provider);
   return [
     by("published").length ? `Published on ${by("published").join(" and ")}` : null,
     by("scheduled").length ? `Scheduled on ${by("scheduled").join(" and ")}` : null,
@@ -291,6 +332,8 @@ export type PublishContext = {
   assets: { id: string; name: string; mime: string | null; source: "stored" | "link" | "google_drive"; previewUrl: string | null; fullUrl: string | null }[];
   facebook: { name: string } | null;
   instagram: { name: string } | null;
+  /** connected TikTok account; canPost false until posting (video.publish) is granted */
+  tiktok: { name: string; canPost: boolean } | null;
   missingScopes: string[];
   publications: Publication[];
 };
@@ -312,12 +355,14 @@ export async function publishContextAction(projectId: string, itemId: string): P
   const conn = await getMetaConnection(projectId);
   const active = conn && conn.status === "active" && conn.page_id;
   const pubs = await listPublicationsAction(projectId, itemId);
+  const tt = await tiktokConnection(projectId);
   return {
     ok: true,
     data: {
       assets,
       facebook: active ? { name: conn.page_name ?? "Facebook Page" } : null,
       instagram: active && conn.ig_user_id ? { name: conn.ig_username ? `@${conn.ig_username}` : "Instagram" } : null,
+      tiktok: tt ? { name: tt.account_handle ?? tt.account_name ?? "TikTok", canPost: tt.granted_scopes.includes("video.publish") } : null,
       missingScopes: active ? PUBLISH_SCOPES.filter((s) => !conn.granted_scopes.includes(s)) : [],
       publications: pubs.ok ? pubs.data ?? [] : [],
     },

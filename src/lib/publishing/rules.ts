@@ -1,11 +1,13 @@
 // Publishing rules per network (pure, tested). Limits are the documented ones for the APIs used.
 
-export type PublishTarget = "facebook" | "instagram";
+export type PublishTarget = "facebook" | "instagram" | "tiktok";
 
 export const LIMITS = {
   facebook: { caption: 63_206, image: ["image/jpeg", "image/png", "image/gif", "image/webp"], video: ["video/mp4", "video/quicktime"] },
   // Instagram Content Publishing API: JPEG images only (stored and Drive photos in other formats are converted to JPEG
   // before sending); Reels as MP4/MOV; caption ≤ 2,200 characters, ≤ 30 hashtags
+  // TikTok Content Posting API (Direct Post): one video per post, MP4/MOV/WebM, caption (title) ≤ 2,200 characters
+  tiktok: { caption: 2_200, video: ["video/mp4", "video/quicktime", "video/webm"] },
   instagram: { caption: 2_200, hashtags: 30, image: ["image/jpeg", "image/png", "image/webp", "image/gif"], video: ["video/mp4", "video/quicktime"] },
 } as const;
 
@@ -28,6 +30,12 @@ export function composeCaption(post: { caption: string | null; cta?: string | nu
 /** Returns a readable problem, or null when the post can be sent to that network. */
 export function validateForTarget(target: PublishTarget, p: { caption: string; mime: string | null | undefined; hasMedia: boolean }): string | null {
   if (!p.caption.trim() && !p.hasMedia) return "The post has no caption and no media.";
+  if (target === "tiktok") {
+    if (!p.hasMedia || mediaKindOf(p.mime) !== "video") return "TikTok publishing from Signal needs a video (MP4 or MOV).";
+    if (!(LIMITS.tiktok.video as readonly string[]).includes(p.mime!)) return "TikTok accepts MP4, MOV or WebM videos.";
+    if (p.caption.length > LIMITS.tiktok.caption) return `TikTok captions are limited to ${LIMITS.tiktok.caption.toLocaleString("en")} characters.`;
+    return null;
+  }
   if (target === "instagram") {
     if (!p.hasMedia) return "Instagram needs an image or a video.";
     if (p.caption.length > LIMITS.instagram.caption) return `Instagram captions are limited to ${LIMITS.instagram.caption.toLocaleString("en")} characters (this one has ${p.caption.length.toLocaleString("en")}).`;
@@ -51,6 +59,7 @@ export const MAX_GROUP = 10; // Instagram carousels and Facebook multi-photo pos
 /** Several files in one post: only photos, at most 10 (Instagram carousel limit). Null when fine. */
 export function validateGroup(target: PublishTarget, mimes: (string | null | undefined)[]): string | null {
   if (mimes.length < 2) return null;
+  if (target === "tiktok") return "TikTok posts from Signal are a single video. Select only one file for TikTok.";
   if (mimes.length > MAX_GROUP) return `Choose at most ${MAX_GROUP} photos for one post.`;
   if (mimes.some((m) => mediaKindOf(m) !== "image")) return "Several files in one post must all be photos. Publish a video on its own.";
   if (target === "instagram" && mimes.some((m) => !(LIMITS.instagram.image as readonly string[]).includes(m!))) return "Instagram accepts JPEG, PNG, WebP or GIF photos (sent as JPEG).";
