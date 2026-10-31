@@ -128,3 +128,21 @@ describe("Meta adapter", () => {
     expect(classifyMetaError(new MetaApiError("bad image", 100, undefined, 400)).kind).toBe("validation");
   });
 });
+
+describe("TikTok publishing rules", () => {
+  it("needs exactly one video", () => {
+    expect(validateForTarget("tiktok", { caption: "hi", mime: "image/jpeg", hasMedia: true })).toMatch(/needs a video/);
+    expect(validateForTarget("tiktok", { caption: "hi", mime: null, hasMedia: false })).toMatch(/needs a video/);
+    expect(validateForTarget("tiktok", { caption: "hi", mime: "video/mp4", hasMedia: true })).toBeNull();
+    expect(validateGroup("tiktok", ["video/mp4", "video/mp4"])).toMatch(/single video/);
+  });
+  it("limits the caption to 2,200 characters", () => {
+    expect(validateForTarget("tiktok", { caption: "a".repeat(2201), mime: "video/mp4", hasMedia: true })).toMatch(/2,200/);
+  });
+  it("uses the most public privacy the creator allows", async () => {
+    const { chooseTikTokPrivacy } = await import("@/server/publishing/tiktok");
+    expect(chooseTikTokPrivacy(["SELF_ONLY"])).toBe("SELF_ONLY");
+    expect(chooseTikTokPrivacy(["SELF_ONLY", "PUBLIC_TO_EVERYONE", "FOLLOWER_OF_CREATOR"])).toBe("PUBLIC_TO_EVERYONE");
+    expect(chooseTikTokPrivacy([])).toBe("SELF_ONLY");
+  });
+});
