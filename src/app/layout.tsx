@@ -10,7 +10,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: { default: "Signal — Marketing Intelligence", template: "%s · Signal" },
+  title: { default: "Orix Signals — Marketing Intelligence", template: "%s · Orix Signals" },
   description:
     "Turn your marketing strategy, content history and competitor insights into a performance-driven editorial calendar.",
 };

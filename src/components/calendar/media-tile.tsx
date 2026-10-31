@@ -95,9 +95,9 @@ export function DeleteMediaDialog({ projectId, itemId, asset, onClose, onDeleted
           <DialogTitle>Delete “{asset.name}”?</DialogTitle>
           <DialogDescription>
             {drive
-              ? "It's removed from this post. Signal never stored a copy, and the original stays in your Google Drive."
+              ? "It's removed from this post. Orix Signals never stored a copy, and the original stays in your Google Drive."
               : asset.source === "stored"
-                ? "The file is deleted permanently from Signal's storage, freeing its space. This can't be undone."
+                ? "The file is deleted permanently from Orix Signals's storage, freeing its space. This can't be undone."
                 : "The link is removed from this post."}
           </DialogDescription>
         </DialogHeader>
