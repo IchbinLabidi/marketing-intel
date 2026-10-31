@@ -47,7 +47,7 @@ export async function signUpAction(_: ActionResult | null, formData: FormData): 
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
-      emailRedirectTo: `${origin}/auth/callback`,
+      emailRedirectTo: `${origin}/auth/callback${parsed.data.next ? `?next=${encodeURIComponent(safeNext(parsed.data.next))}` : ""}`,
       data: { full_name: parsed.data.full_name, workspace_name: parsed.data.workspace_name || "" },
     },
   });
@@ -55,7 +55,8 @@ export async function signUpAction(_: ActionResult | null, formData: FormData): 
   if (!data.session) {
     return { ok: true, message: "Check your inbox to confirm your email, then sign in." };
   }
-  redirect("/dashboard");
+  // from an invitation: back to it, so the person joins the team instead of staying in their own new workspace
+  redirect(safeNext(parsed.data.next));
 }
 
 export async function signOutAction() {

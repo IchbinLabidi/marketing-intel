@@ -6,7 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Field, SubmitButton, fieldError, useFormAction } from "@/components/app/form";
 import { signUpAction } from "@/server/actions/auth";
 
-export function SignupForm() {
+/** `next` (e.g. an invitation link) is where the new account goes after signing up. */
+export function SignupForm({ next }: { next?: string }) {
+  const joining = Boolean(next?.startsWith("/invite/"));
   const { state, pending, formProps } = useFormAction(signUpAction);
   if (state?.ok && state.message) {
     return <Alert variant="success" title="Check your inbox">
@@ -15,12 +17,15 @@ export function SignupForm() {
   }
   return (
     <form {...formProps} className="grid gap-4">
+      <input type="hidden" name="next" value={next ?? ""} />
       <Field label="Full name" htmlFor="full_name" error={fieldError(state, "full_name")}>
         <Input id="full_name" name="full_name" autoComplete="name" required />
       </Field>
-      <Field label="Company or agency" htmlFor="workspace_name" optional hint="Becomes your workspace name. You can change it later.">
-        <Input id="workspace_name" name="workspace_name" autoComplete="organization" />
-      </Field>
+      {joining ? null : (
+        <Field label="Company or agency" htmlFor="workspace_name" optional hint="Becomes your workspace name. You can change it later.">
+          <Input id="workspace_name" name="workspace_name" autoComplete="organization" />
+        </Field>
+      )}
       <Field label="Work email" htmlFor="email" error={fieldError(state, "email")}>
         <Input id="email" name="email" type="email" autoComplete="email" required />
       </Field>

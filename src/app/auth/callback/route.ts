@@ -5,10 +5,13 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get("code");
+  // back to where sign-up started (e.g. an invitation); only same-site paths
+  const next = searchParams.get("next");
+  const dest = next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
   if (code) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(`${origin}/dashboard`);
+    if (!error) return NextResponse.redirect(`${origin}${dest}`);
     return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`);
   }
   return NextResponse.redirect(`${origin}/login?error=Missing+confirmation+code`);
