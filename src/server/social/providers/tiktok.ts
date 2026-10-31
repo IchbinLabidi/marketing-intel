@@ -35,7 +35,9 @@ export const tiktok: SocialProviderClient = {
   authUrl(state) {
     const c = oauthConfig("tiktok");
     const url = new URL("https://www.tiktok.com/v2/auth/authorize/");
-    url.search = form({ client_key: c.clientId, scope: c.scopes.join(","), response_type: "code", redirect_uri: redirectUri("tiktok"), state });
+    url.search = form({ client_key: c.clientId, scope: c.scopes.join(","), response_type: "code", redirect_uri: redirectUri("tiktok"), state,
+      // always show TikTok login and account choice, so each project can connect its own account (not the one already signed in)
+      disable_auto_auth: "1" });
     return url.toString();
   },
   exchange(code) {
