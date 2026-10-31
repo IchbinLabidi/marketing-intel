@@ -16,7 +16,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
       <LoginForm next={typeof next === "string" ? next : undefined} />
       <p className="border-t pt-5 text-[13px] text-muted-foreground">
         No account?{" "}
-        <Link href="/signup" className="font-medium text-foreground underline-offset-4 hover:underline">
+        <Link href={typeof next === "string" && next.startsWith("/") && !next.startsWith("//") ? `/signup?next=${encodeURIComponent(next)}` : "/signup"} className="font-medium text-foreground underline-offset-4 hover:underline">
           Create one
         </Link>
       </p>
