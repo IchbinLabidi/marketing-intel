@@ -24,7 +24,7 @@ async function call<T>(path: string, token: string, body: unknown): Promise<T> {
     const kind: SocialApiError["kind"] = res.status === 401 || code === "access_token_invalid" ? "auth" : code === "scope_not_authorized" ? "permission"
       : res.status === 429 || code === "rate_limit_exceeded" || code === "spam_risk_too_many_posts" ? "rate_limit"
         : res.status >= 500 ? "server" : "other";
-    throw new SocialApiError(code === "scope_not_authorized" ? "TikTok hasn't granted posting (video.publish). Reconnect TikTok and accept posting." : code === "unaudited_client_can_only_post_to_private_accounts" ? "Until TikTok approves the app, it can only post to a private TikTok account (or as private videos)." : msg, res.status, "TikTok", kind );
+    throw new SocialApiError(code === "scope_not_authorized" ? "TikTok hasn't granted posting (video.publish). Reconnect TikTok and accept posting." : code === "unaudited_client_can_only_post_to_private_accounts" ? "Until TikTok approves Signal, TikTok only accepts posts to a private account. In the TikTok app, turn on Settings and privacy → Privacy → Private account, publish from Signal, then turn it off again." : msg, res.status, "TikTok", kind, code);
   }
   return json;
 }
@@ -51,11 +51,20 @@ export async function publishTikTokVideo(opts: { token: string; caption: string;
   const { token, caption, video } = opts;
   if (video.size > MAX_SINGLE_CHUNK) throw new SocialApiError("The video is larger than 64 MB.", 400, "TikTok", "other");
   const info = await tiktokCreatorInfo(token);
-  const privacy = chooseTikTokPrivacy(info.privacy_level_options ?? []);
-  const init = await call<{ data: { publish_id: string; upload_url: string } }>("/post/publish/video/init/", token, {
-    post_info: { title: caption.slice(0, 2200), privacy_level: privacy, disable_duet: false, disable_comment: false, disable_stitch: false },
+  let privacy = chooseTikTokPrivacy(info.privacy_level_options ?? []);
+  const start = (level: string) => call<{ data: { publish_id: string; upload_url: string } }>("/post/publish/video/init/", token, {
+    post_info: { title: caption.slice(0, 2200), privacy_level: level, disable_duet: false, disable_comment: false, disable_stitch: false },
     source_info: { source: "FILE_UPLOAD", video_size: video.size, chunk_size: video.size, total_chunk_count: 1 },
   });
+  let init: Awaited<ReturnType<typeof start>>;
+  try {
+    init = await start(privacy);
+  } catch (e) {
+    // an app TikTok hasn't audited yet may only post private ("only me") videos: retry once that way
+    if (!(e instanceof SocialApiError) || e.code !== "unaudited_client_can_only_post_to_private_accounts" || privacy === "SELF_ONLY") throw e;
+    privacy = "SELF_ONLY";
+    init = await start(privacy);
+  }
   const put = await fetch(init.data.upload_url, {
     method: "PUT", body: video, cache: "no-store", signal: AbortSignal.timeout(120_000),
     headers: { "Content-Type": video.type || "video/mp4", "Content-Length": String(video.size), "Content-Range": `bytes 0-${video.size - 1}/${video.size}` },

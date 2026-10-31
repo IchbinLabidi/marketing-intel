@@ -2,7 +2,7 @@ import "server-only";
 
 /** An API error with what the sync needs to decide: retry, ask to reconnect, or report a missing permission. */
 export class SocialApiError extends Error {
-  constructor(message: string, readonly status: number, readonly provider: string, readonly kind: "auth" | "permission" | "rate_limit" | "not_found" | "server" | "network" | "other") {
+  constructor(message: string, readonly status: number, readonly provider: string, readonly kind: "auth" | "permission" | "rate_limit" | "not_found" | "server" | "network" | "other", readonly code?: string) {
     super(message);
   }
   get isAuth() { return this.kind === "auth"; }
