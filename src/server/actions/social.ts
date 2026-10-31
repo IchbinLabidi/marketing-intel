@@ -68,9 +68,12 @@ export async function disconnectSocialAction(projectId: string, connectionId: st
     const db = await createClient();
     if (conn.auth_type === "oauth") {
       const tokens = await readSocialTokens(db, conn.id).catch(() => ({ access: null, refresh: null }));
-      // Several accounts can share one authorization (e.g. LinkedIn pages); only revoke when this was the last one.
+      // Several accounts can share one authorization (e.g. LinkedIn pages), and the same account can be connected in
+      // another project: revoking at the provider would cut those too, so only revoke when nothing else uses it.
       const { count } = await db.from("social_connections").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("provider", conn.provider).eq("auth_type", "oauth").neq("status", "disconnected").neq("id", conn.id);
-      if (!count && (tokens.refresh || tokens.access)) await PROVIDERS[conn.provider].revoke(tokens.refresh ?? tokens.access!);
+      const { count: elsewhere } = await db.from("social_connections").select("id", { count: "exact", head: true }).eq("provider", conn.provider).eq("external_account_id", conn.external_account_id).eq("auth_type", "oauth").neq("status", "disconnected").neq("id", conn.id);
+      // a Google grant is shared with Google Drive (same Google app), so YouTube tokens are only deleted here, never revoked
+      if (!count && !elsewhere && conn.provider !== "youtube" && (tokens.refresh || tokens.access)) await PROVIDERS[conn.provider].revoke(tokens.refresh ?? tokens.access!);
       await clearSocialTokens(db, conn.id);
     }
     const { error } = await db.from("social_connections").update({ status: "disconnected", last_error: null, token_expires_at: null }).eq("id", conn.id);
