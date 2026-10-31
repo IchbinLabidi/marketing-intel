@@ -495,7 +495,7 @@ export function CalendarApp({
           <Select label="Campaign" value={filters.campaign} onChange={(v) => go({ campaign: v })} options={campaigns.map((c) => ({ value: c.id, label: c.name }))} />
           <Select label="Plan" value={filters.plan} onChange={(v) => go({ plan: v })} options={plans.map((c) => ({ value: c.id, label: c.name }))} />
           <FilterGroup label="Platform" className="sm:col-span-2">
-            {CALENDAR_PLATFORMS.map((p) => <Chip key={p} on={filters.platform.includes(p)} onClick={() => go({ platform: toggle(filters.platform, p) })}>{PLATFORM_LABELS[p]}</Chip>)}
+            {([...CALENDAR_PLATFORMS, "linkedin", "tiktok", "youtube"] as Platform[]).map((p) => <Chip key={p} on={filters.platform.includes(p)} onClick={() => go({ platform: toggle(filters.platform, p) })}>{PLATFORM_LABELS[p]}</Chip>)}
           </FilterGroup>
           <FilterGroup label="Status" className="sm:col-span-2">
             {WORKFLOW_STATES.map((s) => <Chip key={s} on={filters.state.includes(s)} onClick={() => go({ state: toggle(filters.state, s) })}>{WORKFLOW_LABELS[s]}</Chip>)}
