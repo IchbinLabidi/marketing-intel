@@ -4,7 +4,7 @@ import { isSupabaseConfigured, supabaseKey, supabaseUrl } from "@/lib/env";
 
 // Meta's server-to-server callbacks and the scheduler have no user session; they authenticate with a
 // signed_request (HMAC with the app secret) or CRON_SECRET instead.
-const PUBLIC_PATHS = ["/login", "/signup", "/auth", "/setup", "/api/meta/deauthorize", "/api/meta/data-deletion", "/api/cron", "/meta/data-deletion", "/privacy", "/terms"];
+const PUBLIC_PATHS = ["/login", "/signup", "/auth", "/setup", "/api/meta/deauthorize", "/api/meta/data-deletion", "/api/cron", "/meta/data-deletion", "/privacy", "/terms", "/invite"];
 export const ACTIVE_PROJECT_COOKIE = "mi_project";
 
 export async function updateSession(request: NextRequest) {
