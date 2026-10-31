@@ -146,3 +146,15 @@ describe("TikTok publishing rules", () => {
     expect(chooseTikTokPrivacy([])).toBe("SELF_ONLY");
   });
 });
+
+describe("YouTube publishing rules", () => {
+  it("needs one video and keeps titles within 100 characters", async () => {
+    expect(validateForTarget("youtube", { caption: "hi", mime: "image/png", hasMedia: true })).toMatch(/needs a video/);
+    expect(validateForTarget("youtube", { caption: "hi", mime: "video/mp4", hasMedia: true })).toBeNull();
+    expect(validateGroup("youtube", ["video/mp4", "video/mp4"])).toMatch(/single video/);
+    const { youtubeTitle } = await import("@/server/publishing/youtube");
+    expect(youtubeTitle("A <b>title</b>", "")).toBe("A btitle/b");
+    expect(youtubeTitle(null, "\nFirst line\nsecond")).toBe("First line");
+    expect(youtubeTitle("x".repeat(150), "").length).toBe(100);
+  });
+});

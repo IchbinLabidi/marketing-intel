@@ -29,13 +29,13 @@ const fmtSize = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1
  * A file from the computer is only previewed until the person explicitly keeps it for publishing (upload to the
  * project's private storage); nothing is uploaded just by selecting it.
  */
-const LABEL: Record<PublishTarget, string> = { facebook: "Facebook", instagram: "Instagram", tiktok: "TikTok" };
+const LABEL: Record<PublishTarget, string> = { facebook: "Facebook", instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube" };
 export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { projectId: string; post: ContentItem; tz: string; onClose: () => void; onPublished: () => void }) {
   const [ctx, setCtx] = React.useState<PublishContext | null>(null);
   const [tab, setTab] = React.useState<"post" | "computer" | "drive">("post");
   const [assetIds, setAssetIds] = React.useState<string[] | null>(null); // selection order = carousel order
   const [local, setLocal] = React.useState<{ file: File; url: string; error: string | null } | null>(null);
-  const [targets, setTargets] = React.useState<PublishTarget[]>(post.platform === "instagram" ? ["instagram"] : post.platform === "tiktok" ? ["tiktok"] : ["facebook"]);
+  const [targets, setTargets] = React.useState<PublishTarget[]>(post.platform === "instagram" ? ["instagram"] : post.platform === "tiktok" ? ["tiktok"] : post.platform === "youtube" ? ["youtube"] : ["facebook"]);
   const [when, setWhen] = React.useState<"now" | "schedule">("now");
   const initial = post.scheduled_at ? utcToZoned(post.scheduled_at, tz) : null;
   const [date, setDate] = React.useState(initial?.date ?? post.scheduled_date ?? "");
@@ -114,7 +114,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
 
   const needsConsent = targets.includes("instagram") && selected.some((a) => a.source === "stored" || a.source === "google_drive");
   const approved = ["approved", "scheduled"].includes(post.status);
-  const canSchedule = !targets.includes("instagram") && !targets.includes("tiktok");
+  const canSchedule = targets.every((t) => t === "facebook");
   const toggle = (t: PublishTarget) => {
     if (t !== "facebook" && !targets.includes(t)) setWhen("now"); // Instagram and TikTok can only be published now
     setTargets((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]));
@@ -131,7 +131,8 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
         {!ctx ? <div className="h-40 animate-pulse rounded-lg bg-muted" /> : (
           <div className="space-y-4 text-[13px]">
             {!approved ? <Alert variant="warning">Only approved posts can be published. Approve it in Content Production first.</Alert> : null}
-            {!ctx.facebook && !ctx.tiktok ? <Alert variant="warning">Connect Meta or TikTok on the Integrations page to publish.</Alert> : null}
+            {!ctx.facebook && !ctx.tiktok && !ctx.youtube ? <Alert variant="warning">Connect Meta, TikTok or YouTube on the Integrations page to publish.</Alert> : null}
+            {ctx.youtube && !ctx.youtube.canPost ? <Alert variant="warning">YouTube is connected for statistics only. <a className="font-medium text-primary hover:underline" href={`/api/integrations/youtube/connect?project=${projectId}`}>Reconnect YouTube</a> and accept uploading videos to publish there.</Alert> : null}
             {ctx.tiktok && !ctx.tiktok.canPost ? <Alert variant="warning">TikTok is connected for statistics only. <a className="font-medium text-primary hover:underline" href={`/api/integrations/tiktok/connect?project=${projectId}`}>Reconnect TikTok</a> and accept posting videos to publish there.</Alert> : null}
             {ctx.facebook && ctx.missingScopes.length ? (
               <Alert variant="warning" title="Publishing permission needed">
@@ -215,7 +216,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
             {/* Accounts */}
             <section className="space-y-2">
               <p className="font-medium">Publish to</p>
-              {([["facebook", ctx.facebook], ["instagram", ctx.instagram], ["tiktok", ctx.tiktok?.canPost ? ctx.tiktok : null]] as const).map(([t, acc]) => (
+              {([["facebook", ctx.facebook], ["instagram", ctx.instagram], ["tiktok", ctx.tiktok?.canPost ? ctx.tiktok : null], ["youtube", ctx.youtube?.canPost ? ctx.youtube : null]] as const).map(([t, acc]) => (
                 <label key={t} className={cn("flex items-center gap-2", !acc && "opacity-50")}>
                   <input type="checkbox" checked={targets.includes(t)} disabled={!acc || Boolean(done(t))} onChange={() => toggle(t)} />
                   {LABEL[t]} {acc ? <span className="text-muted-foreground">· {acc.name}</span> : <span className="text-muted-foreground">· not connected</span>}
@@ -240,7 +241,8 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
                 </label>
                 {when === "schedule" ? <><Input type="date" className="h-8 w-40" value={date} onChange={(e) => setDate(e.target.value)} /><Input type="time" className="h-8 w-28" value={time} onChange={(e) => setTime(e.target.value)} /><span className="text-xs text-muted-foreground">{tz}</span></> : null}
               </div>
-              <p className="text-xs text-muted-foreground">Facebook keeps the scheduled post and publishes it itself (10 minutes to 30 days ahead). Instagram and TikTok can&apos;t be scheduled through their APIs: publish them at the right time.</p>
+              <p className="text-xs text-muted-foreground">Facebook keeps the scheduled post and publishes it itself (10 minutes to 30 days ahead). Instagram, TikTok and YouTube are published now from Signal: publish them at the right time.</p>
+              {targets.includes("youtube") ? <p className="text-xs text-muted-foreground">YouTube: one video, titled with the post title; the caption, CTA and hashtags become the description. Vertical videos under 3 minutes appear as Shorts. Until Google approves Signal&apos;s YouTube access, uploads stay private (you can make them public in YouTube Studio).</p> : null}
               {targets.includes("tiktok") ? <p className="text-xs text-muted-foreground">TikTok: one video (MP4 or MOV, up to 50 MB). Until TikTok approves Signal, videos are posted as private (only you can see them); you can make them public in the TikTok app.</p> : null}
             </section>
 
@@ -266,7 +268,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
         )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={busy !== null}>Close</Button>
-          <Button disabled={!ctx || busy !== null || !approved || !targets.length || targets.some((t) => (t === "tiktok" ? !ctx.tiktok?.canPost : !ctx.facebook)) || (needsConsent && !consent) || targets.every((t) => done(t))} onClick={publish}>
+          <Button disabled={!ctx || busy !== null || !approved || !targets.length || targets.some((t) => (t === "tiktok" ? !ctx.tiktok?.canPost : t === "youtube" ? !ctx.youtube?.canPost : !ctx.facebook)) || (needsConsent && !consent) || targets.every((t) => done(t))} onClick={publish}>
             {busy === "publish" ? <Loader2 className="animate-spin" /> : <Send />} {when === "schedule" ? "Schedule" : "Publish now"}
           </Button>
         </DialogFooter>
