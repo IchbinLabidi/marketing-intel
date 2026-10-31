@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { driveAccount, DRIVE_SCOPES, exchangeDriveCode } from "@/server/drive/google";
 import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
-import { storeSocialTokens } from "@/server/services/social";
+import { clearSocialTokens, storeSocialTokens } from "@/server/services/social";
 import { describeSocialError } from "@/server/social/sync";
 import { hasPermission } from "@/server/services/team";
 
@@ -42,6 +42,12 @@ export async function GET(request: NextRequest) {
     }, { onConflict: "project_id,provider,external_account_id" }).select("id").single();
     if (error) throw error;
     await storeSocialTokens(db, data.id, tokens);
+    // one Google account per project: connecting another account replaces the previous one
+    const { data: others } = await db.from("social_connections").select("id").eq("project_id", saved.projectId).eq("provider", "google_drive").neq("id", data.id).neq("status", "disconnected");
+    for (const o of others ?? []) {
+      await clearSocialTokens(db, o.id).catch(() => undefined);
+      await db.from("social_connections").update({ status: "disconnected" }).eq("id", o.id);
+    }
     return done({ connected: "1" });
   } catch (e) {
     return done({ error: "provider", detail: describeSocialError(e).slice(0, 200) });

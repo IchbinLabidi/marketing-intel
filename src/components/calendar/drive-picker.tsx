@@ -113,7 +113,10 @@ export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { proj
   return (
     <div className="space-y-2">
       <p className="text-muted-foreground">Connected as {state.email ?? "your Google account"}. The file stays in Drive: only its reference is saved, and it&apos;s read from Drive when the post is published.</p>
-      <Button size="sm" onClick={open} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <HardDrive />} Choose from Google Drive</Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={open} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <HardDrive />} Choose from Google Drive</Button>
+        <Button asChild size="sm" variant="ghost"><a href={`/api/drive/connect?project=${projectId}&back=calendar`} title="Files already attached from the current account will need to be picked again">Use another Google account</a></Button>
+      </div>
     </div>
   );
 }

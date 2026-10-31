@@ -28,7 +28,7 @@ export function driveAuthUrl(state: string, codeChallenge: string) {
   const c = driveConfig();
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   url.search = form({
-    client_id: c.clientId, redirect_uri: c.redirectUri, response_type: "code", scope: DRIVE_SCOPES.join(" "), access_type: "offline", prompt: "consent",
+    client_id: c.clientId, redirect_uri: c.redirectUri, response_type: "code", scope: DRIVE_SCOPES.join(" "), access_type: "offline", prompt: "consent select_account",
     include_granted_scopes: "true", state, code_challenge: codeChallenge, code_challenge_method: "S256",
   });
   return url.toString();
