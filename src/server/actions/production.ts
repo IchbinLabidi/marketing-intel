@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { canAdmin, canEdit } from "@/lib/domain/constants";
 import { canWriteItem, type ContentTemplate, type ProductionItem, type ProductionStage } from "@/lib/production/model";
-import { productionAISchema, productionSchema, stageSchema, workflowSchema } from "@/lib/validation/production";
+import { captionAISchema, productionAISchema, productionSchema, stageSchema, workflowSchema } from "@/lib/validation/production";
 import { type ActionResult, zodErrorToResult } from "@/lib/validation/common";
 import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
@@ -22,6 +22,7 @@ import { isIsoDate, isTime, utcToZoned, zonedToUtc } from "@/lib/calendar/time";
 import { runStructured } from "@/server/ai/run";
 import { deleteMediaAction } from "@/server/actions/media";
 import { PRODUCTION_SYSTEM, productionDraftSchema, productionPrompt, type ProductionDraft } from "@/server/ai/production";
+import { CAPTION_SYSTEM, captionDraftSchema, captionPrompt, sanitizeDraft, type CaptionDraft } from "@/server/ai/captions";
 
 const refresh = (id: string) => revalidatePath(`/p/${id}`, "layout");
 export async function scheduleProductionAction(projectId: string, id: string, revision: number, date: string, time: string): Promise<ActionResult<ProductionItem>> {
@@ -141,6 +142,30 @@ export async function generateProductionAction(projectId: string, input: unknown
     const data = await runStructured({ feature: `production.${parsed.data.operation}`, projectId, workspaceId: project.workspace_id, userId: user.id,
       system: PRODUCTION_SYSTEM, schema: productionDraftSchema, effort: "low",
       prompt: productionPrompt(parsed.data, buildProjectContext({ project, brand, channels, strategy: bundle }), performanceDigest(performance, () => undefined), recent.map((r) => r.title).join("\n")) });
+    return { ok: true, data };
+  } catch (e) { return { ok: false, error: describeAIError(e) }; }
+}
+/**
+ * Platform captions for the current item: one platform, all requested platforms, or a rewrite of one platform's copy.
+ * Uses the item's own project (brand, strategy, pillars, history) and returns a proposal; nothing is saved here.
+ */
+export async function generateCaptionsAction(projectId: string, input: unknown): Promise<ActionResult<CaptionDraft>> {
+  const parsed = captionAISchema.safeParse(input);
+  if (!parsed.success) return zodErrorToResult(parsed.error);
+  const { operation, content } = parsed.data;
+  const platforms = [...new Set(parsed.data.platforms)];
+  if (operation !== "generate_all" && platforms.length !== 1) return { ok: false, error: "Choose one platform for this action." };
+  try {
+    const { project, user } = await access(projectId);
+    const { bundle, brand, channels, performance } = await loadHistoryAnalysis(projectId);
+    const recent = await recentPostTitles(projectId);
+    const pillar = bundle.pillars.find((p) => p.id === content.pillar_id)?.name ?? null;
+    const context = buildProjectContext({ project, brand, channels, strategy: bundle });
+    const raw = await runStructured({ feature: `production.captions_${operation}`, projectId, workspaceId: project.workspace_id, userId: user.id,
+      system: CAPTION_SYSTEM, schema: captionDraftSchema, effort: "low",
+      prompt: captionPrompt(parsed.data, platforms, context, { pillar, performance: performanceDigest(performance, () => undefined), recent: recent.map((r) => r.title).join("\n") }) });
+    const data = sanitizeDraft(raw, { operation, platforms, current: content.platform_captions ?? {}, known: `${context}\n${JSON.stringify(content)}`, script: `${content.main_content}\n${content.creative_brief}` });
+    if (!data.variants.length) return { ok: false, error: "The AI didn't return copy for this platform. Try again." };
     return { ok: true, data };
   } catch (e) { return { ok: false, error: describeAIError(e) }; }
 }

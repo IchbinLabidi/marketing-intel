@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { canEdit } from "@/lib/domain/constants";
+import { publicationCopy } from "@/lib/production/platform-copy";
 import { composeCaption, MAX_GROUP, mediaKindOf, validateForTarget, validateGroup, type PublishTarget } from "@/lib/publishing/rules";
 import type { ActionResult } from "@/lib/validation/common";
 import { classifyMetaError, facebookScheduleError, publishFacebook, publishFacebookPhotos, publishInstagram, publishInstagramCarousel, PUBLISH_SCOPES, type MediaInput, type PublishResult } from "@/server/publishing/meta";
@@ -131,7 +132,7 @@ const guessMime = (url: string) => (/\.(mp4|mov)(\?|$)/i.test(url) ? "video/mp4"
 export async function publishPostAction(
   projectId: string,
   itemId: string,
-  input: { targets: PublishTarget[]; mediaAssetId?: string | null; mediaAssetIds?: string[]; scheduleAt: string | null; allowTemporaryLink: boolean },
+  input: { targets: PublishTarget[]; mediaAssetId?: string | null; mediaAssetIds?: string[]; scheduleAt: string | null; allowTemporaryLink: boolean; youtubeVariant?: "shorts" | "video" },
 ): Promise<ActionResult<{ publications: Publication[] }>> {
   const { user, allowed } = await guard(projectId);
   if (!allowed) return { ok: false, error: "Your role can't publish from the calendar." };
@@ -189,9 +190,10 @@ export async function publishPostAction(
   }
   const asset = assets[0] ?? null;
   const mimeOf = (a: Asset) => a.body.mime ?? (a.body.url ? guessMime(a.body.url) : null);
-  const caption = composeCaption(item);
+  // Each network sends its own approved copy from Content Studio; a network without one uses the general caption
+  const copyOf = (t: PublishTarget) => publicationCopy(item, t, composeCaption, input.youtubeVariant === "shorts" ? "shorts" : "video");
   for (const t of targets) {
-    const problem = validateGroup(t, assets.map(mimeOf)) ?? validateForTarget(t, { caption, mime: asset ? mimeOf(asset) : null, hasMedia: Boolean(asset) });
+    const problem = validateGroup(t, assets.map(mimeOf)) ?? validateForTarget(t, { caption: copyOf(t).text, mime: asset ? mimeOf(asset) : null, hasMedia: Boolean(asset) });
     if (problem) return { ok: false, error: problem };
   }
 
@@ -214,6 +216,7 @@ export async function publishPostAction(
       continue; // already published / scheduled / in progress
     }
     let tempPath: string | null = null;
+    const { text: caption, title: copyTitle } = copyOf(target);
     try {
       const prepared: { media: MediaInput; tempPath: string | null }[] = [];
       try {
@@ -225,7 +228,7 @@ export async function publishPostAction(
       let r: PublishResult;
       if (target === "youtube") {
         if (media.kind !== "video" || !("bytes" in media)) throw new Error("YouTube needs a video file (from Drive or your computer).");
-        r = await publishYouTubeVideo({ token: youtube!.token, title: youtubeTitle(item.title, caption), description: caption, video: media.bytes });
+        r = await publishYouTubeVideo({ token: youtube!.token, title: youtubeTitle(copyTitle ?? item.title, caption), description: caption, video: media.bytes });
       } else if (target === "tiktok") {
         if (media.kind !== "video" || !("bytes" in media)) throw new Error("TikTok needs a video file (from Drive or your computer).");
         r = await publishTikTokVideo({ token: tiktok!.token, caption, video: media.bytes, username: tiktok!.conn.account_handle, waitMs: 60_000 });

@@ -9,9 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
-import { validateLocalFile, type PublishTarget } from "@/lib/publishing/rules";
+import { composeCaption, validateLocalFile, type PublishTarget } from "@/lib/publishing/rules";
 import { utcToZoned, zonedToUtc } from "@/lib/calendar/time";
 import { cn } from "@/lib/utils";
+import { COPY_PLATFORM_LABELS, defaultYouTubeVariant, publicationCopy, readCaptions } from "@/lib/production/platform-copy";
 import { checkPublicationAction, publishContextAction, publishPostAction, type Publication, type PublishContext } from "@/server/actions/publishing";
 import { finishMediaUploadAction, mediaUploadTicketAction } from "@/server/actions/production";
 import type { ContentItem } from "@/types/domain";
@@ -37,6 +38,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
   const [local, setLocal] = React.useState<{ file: File; url: string; error: string | null } | null>(null);
   const [targets, setTargets] = React.useState<PublishTarget[]>(post.platform === "instagram" ? ["instagram"] : post.platform === "tiktok" ? ["tiktok"] : post.platform === "youtube" ? ["youtube"] : ["facebook"]);
   const [when, setWhen] = React.useState<"now" | "schedule">("now");
+  const [youtubeVariant, setYoutubeVariant] = React.useState<"shorts" | "video">(() => defaultYouTubeVariant(readCaptions(post.platform_captions), post.format));
   const initial = post.scheduled_at ? utcToZoned(post.scheduled_at, tz) : null;
   const [date, setDate] = React.useState(initial?.date ?? post.scheduled_date ?? "");
   const [time, setTime] = React.useState(initial?.time ?? "09:00");
@@ -96,7 +98,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
   const publish = async () => {
     setBusy("publish");
     const scheduleAt = when === "schedule" && date && time ? new Date(zonedToUtc(date, time, tz)).toISOString() : null;
-    const r = await publishPostAction(projectId, post.id, { targets, mediaAssetIds: selected.map((a) => a.id), scheduleAt, allowTemporaryLink: consent });
+    const r = await publishPostAction(projectId, post.id, { targets, mediaAssetIds: selected.map((a) => a.id), scheduleAt, allowTemporaryLink: consent, youtubeVariant });
     setBusy(null);
     if (!r.ok) { toast.error(r.error); await load(); return; }
     toast.success(r.message ?? "Done");
@@ -126,7 +128,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Send className="size-4" /> Publish “{post.title}”</DialogTitle>
-          <DialogDescription>Choose the media, the accounts and when. The caption, CTA and hashtags of the post are used as written.</DialogDescription>
+          <DialogDescription>Choose the media, the accounts and when. Each network uses its own caption from Content Studio, or the general caption when it has none.</DialogDescription>
         </DialogHeader>
         {!ctx ? <div className="h-40 animate-pulse rounded-lg bg-muted" /> : (
           <div className="space-y-4 text-[13px]">
@@ -231,6 +233,32 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
               ) : null}
             </section>
 
+            {/* Copy each network sends */}
+            {targets.length ? (
+              <section className="space-y-2">
+                <p className="font-medium">Caption used</p>
+                {targets.map((t) => {
+                  const copy = publicationCopy(post, t, composeCaption, youtubeVariant);
+                  return (
+                    <div key={t} className="rounded-lg border p-2 text-xs">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong>{LABEL[t]}</strong>
+                        <Badge variant={copy.source === "platform" ? "info" : "outline"}>{copy.source === "platform" ? `${COPY_PLATFORM_LABELS[copy.platform]} caption` : "General caption"}</Badge>
+                        {t === "youtube" ? (
+                          <span className="ms-auto flex gap-2">
+                            <label className="flex items-center gap-1"><input type="radio" checked={youtubeVariant === "shorts"} onChange={() => setYoutubeVariant("shorts")} /> Shorts copy</label>
+                            <label className="flex items-center gap-1"><input type="radio" checked={youtubeVariant === "video"} onChange={() => setYoutubeVariant("video")} /> Video copy</label>
+                          </span>
+                        ) : null}
+                      </div>
+                      {copy.title ? <p dir="auto" className="mt-1 font-medium">{copy.title}</p> : null}
+                      <p dir="auto" className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-muted-foreground">{copy.text || "(no caption)"}</p>
+                    </div>
+                  );
+                })}
+              </section>
+            ) : null}
+
             {/* When */}
             <section className="space-y-2">
               <p className="font-medium">When</p>
@@ -242,7 +270,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
                 {when === "schedule" ? <><Input type="date" className="h-8 w-40" value={date} onChange={(e) => setDate(e.target.value)} /><Input type="time" className="h-8 w-28" value={time} onChange={(e) => setTime(e.target.value)} /><span className="text-xs text-muted-foreground">{tz}</span></> : null}
               </div>
               <p className="text-xs text-muted-foreground">Facebook keeps the scheduled post and publishes it itself (10 minutes to 30 days ahead). Instagram, TikTok and YouTube are published now from Orix Signals: publish them at the right time.</p>
-              {targets.includes("youtube") ? <p className="text-xs text-muted-foreground">YouTube: one video, titled with the post title; the caption, CTA and hashtags become the description. Vertical videos under 3 minutes appear as Shorts. Until Google approves Orix Signals&apos;s YouTube access, uploads stay private (you can make them public in YouTube Studio).</p> : null}
+              {targets.includes("youtube") ? <p className="text-xs text-muted-foreground">YouTube: one video, titled with the YouTube title from Content Studio (or the post title); its description, CTA and hashtags become the description. Vertical videos under 3 minutes appear as Shorts. Until Google approves Orix Signals&apos;s YouTube access, uploads stay private (you can make them public in YouTube Studio).</p> : null}
               {targets.includes("tiktok") ? <p className="text-xs text-muted-foreground">TikTok: one video (MP4 or MOV, up to 50 MB). Until TikTok approves Orix Signals, videos are posted as private (only you can see them); you can make them public in the TikTok app.</p> : null}
             </section>
 
