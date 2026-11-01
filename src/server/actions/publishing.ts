@@ -312,6 +312,19 @@ export async function checkPublicationAction(projectId: string, publicationId: s
 }
 
 /** The calendar item follows its publications: published as soon as one network has it live. */
+/** The post was deleted on the network: mark that publication as not published (history kept) so it can be published
+ *  again. When no network still holds the post, it returns to Approved. Nothing is deleted on the network. */
+export async function unpublishPublicationAction(projectId: string, publicationId: string): Promise<ActionResult> {
+  const { allowed } = await guard(projectId);
+  if (!allowed) return { ok: false, error: "Your role can't publish from the calendar." };
+  const db = await createClient();
+  const { data, error } = await db.rpc("unpublish_publication", { p_project: projectId, p_publication: publicationId });
+  if (error) return { ok: false, error: error.message };
+  refresh(projectId);
+  const provider = (data as Publication | null)?.provider;
+  return { ok: true, message: `Marked as not published${provider ? ` on ${provider.charAt(0).toUpperCase()}${provider.slice(1)}` : ""}. You can publish it again.` };
+}
+
 async function syncItemStatus(projectId: string, itemId: string, pubs: Publication[]) {
   const live = pubs.find((p) => p.status === "published" && p.platform_url);
   if (live) {
