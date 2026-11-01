@@ -24,6 +24,7 @@ import { reschedulePostAction, type Conflict } from "@/server/actions/calendar";
 const refresh = (projectId: string) => revalidatePath(`/p/${projectId}`, "layout");
 const fail = (e: unknown, fallback: string): ActionResult<never> => ({ ok: false, error: e instanceof Error && e.message ? e.message : fallback });
 const BULK_MAX = 200;
+const UNPLAN_MAX = 2000;
 
 async function guard(projectId: string) {
   const user = await requireUser();
@@ -239,12 +240,20 @@ export async function unplanIdeasAction(projectId: string, ids: string[]): Promi
   const { allowed } = await guard(projectId);
   if (!allowed) return NO_EDIT;
   const db = await createClient();
-  const { error, count } = await db.from("content_items").update({ scheduled_date: null, scheduled_time: null, scheduled_at: null }, { count: "exact" })
-    .eq("project_id", projectId).in("id", ids.slice(0, BULK_MAX)).not("status", "in", "(published,scheduled)");
-  if (error) return fail(error, "Could not move back to the Backlog");
-  await db.from("content_items").update({ status: "idea" }).eq("project_id", projectId).in("id", ids.slice(0, BULK_MAX)).eq("status", "planned");
+  // any number of ideas and briefs, in batches; production stage, writing and approvals are kept
+  const list = [...new Set(ids)].slice(0, UNPLAN_MAX);
+  let moved = 0;
+  for (let k = 0; k < list.length; k += BULK_MAX) {
+    const batch = list.slice(k, k + BULK_MAX);
+    const { error, count } = await db.from("content_items").update({ scheduled_date: null, scheduled_time: null, scheduled_at: null }, { count: "exact" })
+      .eq("project_id", projectId).in("id", batch).not("status", "in", "(published,scheduled)");
+    if (error) return fail(error, "Could not move back to the Backlog");
+    await db.from("content_items").update({ status: "idea" }).eq("project_id", projectId).in("id", batch).eq("status", "planned");
+    moved += count ?? 0;
+  }
   refresh(projectId);
-  return { ok: true, message: `${count ?? 0} moved back to the Backlog (scheduled and published posts are left as they are)` };
+  const skipped = list.length - moved;
+  return { ok: true, message: `${moved} moved back to the Backlog${skipped ? ` · ${skipped} scheduled or published left as they are` : ""}` };
 }
 
 // --- Bulk actions ------------------------------------------------------------------------------------------
