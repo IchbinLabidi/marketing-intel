@@ -30,5 +30,5 @@ export function writingOf(item: Partial<Writing>): Writing {
 }
 export function isRTL(language: string) { return language === "ar" || language === "ar_tn"; }
 export function changedFields(before: Record<string, unknown>, after: Record<string, unknown>) {
-  return [...WRITING_FIELDS, "platform", "format", "language", "language_variants", "target_audience", "pillar_id", "funnel_stage", "assignee_id", "due_date", "production_stage", "scheduled_date", "scheduled_time", "media_url"].filter((key) => JSON.stringify(before[key] ?? null) !== JSON.stringify(after[key] ?? null));
+  return [...WRITING_FIELDS, "platform", "format", "language", "language_variants", "platform_captions", "target_audience", "pillar_id", "funnel_stage", "assignee_id", "due_date", "production_stage", "scheduled_date", "scheduled_time", "media_url"].filter((key) => JSON.stringify(before[key] ?? null) !== JSON.stringify(after[key] ?? null));
 }

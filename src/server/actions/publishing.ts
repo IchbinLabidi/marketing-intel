@@ -51,7 +51,7 @@ export async function listPublicationsAction(projectId: string, itemId: string):
 export async function publishPostAction(
   projectId: string,
   itemId: string,
-  input: { targets: PublishTarget[]; mediaAssetId?: string | null; mediaAssetIds?: string[]; scheduleAt: string | null; allowTemporaryLink: boolean },
+  input: { targets: PublishTarget[]; mediaAssetId?: string | null; mediaAssetIds?: string[]; scheduleAt: string | null; allowTemporaryLink: boolean; youtubeVariant?: "shorts" | "video" },
 ): Promise<ActionResult<{ publications: Publication[] }>> {
   const { user, allowed } = await guard(projectId);
   if (!allowed) return { ok: false, error: "Your role can't publish from the calendar." };
@@ -76,7 +76,8 @@ export async function publishPostAction(
   const loaded = await loadAssets(db, projectId, itemId, ids);
   if (!loaded.ok) return { ok: false, error: loaded.error };
   const assets: Asset[] = loaded.assets;
-  const problem = checkTargets(item, targets, assets);
+  const youtubeVariant = input.youtubeVariant === "shorts" || input.youtubeVariant === "video" ? input.youtubeVariant : undefined;
+  const problem = checkTargets(item, targets, assets, youtubeVariant);
   if (problem) return { ok: false, error: problem };
   // a queued Instagram post needs the temporary-link consent now: nobody is there to give it at publishing time
   if (scheduleAt && targets.includes("instagram") && !input.allowTemporaryLink && assets.some((a) => !a.body.url)) {
@@ -111,7 +112,7 @@ export async function publishPostAction(
       if (existing) results.push(existing as Publication);
       continue; // already published / scheduled / in progress
     }
-    results.push(await sendClaimed(env, prep.senders, { projectId, item, target, assets, claimed, scheduleAt: target === "facebook" ? scheduleAt : null, allowTemporaryLink: input.allowTemporaryLink }));
+    results.push(await sendClaimed(env, prep.senders, { projectId, item, target, assets, claimed, scheduleAt: target === "facebook" ? scheduleAt : null, allowTemporaryLink: input.allowTemporaryLink, youtubeVariant }));
   }
   await syncItemStatus(db, projectId, itemId, results);
   refresh(projectId);

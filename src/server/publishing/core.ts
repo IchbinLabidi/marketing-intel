@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { defaultYouTubeVariant, publicationCopy, readCaptions } from "@/lib/production/platform-copy";
 import { composeCaption, MAX_FILE_BYTES, MAX_GROUP, mediaKindOf, validateForTarget, validateGroup, type PublishTarget } from "@/lib/publishing/rules";
 import { classifyMetaError, publishFacebook, publishFacebookPhotos, publishInstagram, publishInstagramCarousel, PUBLISH_SCOPES, type MediaInput, type PublishResult } from "@/server/publishing/meta";
 import { MetaApiError } from "@/server/meta/graph";
@@ -212,11 +213,19 @@ export async function loadAssets(db: SupabaseClient, projectId: string, itemId: 
   return { ok: true, assets: ids.map((id) => found.find((a) => a.id === id)!) };
 }
 
+/**
+ * The copy one network sends: the platform's own caption from Content Studio, or the general caption when it has none.
+ * YouTube uses the Shorts or the long-form copy (by default the one that fits the item, as the publish dialog shows).
+ */
+export function copyFor(item: ContentItem, target: PublishTarget, youtubeVariant?: "shorts" | "video") {
+  return publicationCopy(item, target, composeCaption, youtubeVariant ?? defaultYouTubeVariant(readCaptions(item.platform_captions), item.format));
+}
+
 /** Checks the caption and media against each network's rules; the first problem, or null. */
-export function checkTargets(item: ContentItem, targets: PublishTarget[], assets: Asset[]): string | null {
+export function checkTargets(item: ContentItem, targets: PublishTarget[], assets: Asset[], youtubeVariant?: "shorts" | "video"): string | null {
   const mimeOf = (a: Asset) => a.body.mime ?? (a.body.url ? guessMime(a.body.url) : null);
-  const caption = composeCaption(item);
   for (const t of targets) {
+    const caption = copyFor(item, t, youtubeVariant).text;
     const problem = validateGroup(t, assets.map(mimeOf)) ?? validateForTarget(t, { caption, mime: assets[0] ? mimeOf(assets[0]) : null, hasMedia: Boolean(assets[0]) });
     if (problem) return problem;
   }
@@ -229,11 +238,11 @@ export function checkTargets(item: ContentItem, targets: PublishTarget[], assets
  */
 export async function sendClaimed(env: Env, s: Senders, args: {
   projectId: string; item: ContentItem; target: PublishTarget; assets: Asset[]; claimed: { id: string; attempts: number };
-  scheduleAt: Date | null; allowTemporaryLink: boolean;
+  scheduleAt: Date | null; allowTemporaryLink: boolean; youtubeVariant?: "shorts" | "video";
 }): Promise<Publication> {
   const { db } = env;
   const { projectId, item, target, assets, claimed } = args;
-  const caption = composeCaption(item);
+  const { text: caption, title: copyTitle } = copyFor(item, target, args.youtubeVariant);
   let tempPath: string | null = null;
   try {
     const prepared: Prepared[] = [];
@@ -246,7 +255,7 @@ export async function sendClaimed(env: Env, s: Senders, args: {
     let r: PublishResult;
     if (target === "youtube") {
       if (media.kind !== "video" || !("bytes" in media)) throw new Error("YouTube needs a video file (from Drive or your computer).");
-      r = await publishYouTubeVideo({ token: s.youtube!.token, title: youtubeTitle(item.title, caption), description: caption, video: media.bytes });
+      r = await publishYouTubeVideo({ token: s.youtube!.token, title: youtubeTitle(copyTitle ?? item.title, caption), description: caption, video: media.bytes });
     } else if (target === "tiktok" && media.kind === "image") {
       // photo post: TikTok pulls JPEG copies from signed links on the verified prefix (kept until TikTok is done)
       const urls: string[] = [];

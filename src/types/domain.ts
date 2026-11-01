@@ -327,6 +327,8 @@ export type ContentItem = MetricValues & {
   main_content?: string | null;
   language?: import("@/lib/domain/constants").Language | null;
   hashtags: string[];
+  /** per-platform captions and descriptions (migration 0026); read with readCaptions() */
+  platform_captions?: Record<string, unknown> | null;
   status: ContentStatus;
   scheduled_time: string | null;
   scheduled_at: string | null;
