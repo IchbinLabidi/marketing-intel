@@ -30,8 +30,8 @@ Honor the user's instruction as long as it doesn't break the brand identity or t
 Never claim to publish, schedule, approve or save anything. Your response is a proposal the user reviews.`;
 
 export const OPERATION_BRIEFS: Record<CaptionOperation, string> = {
-  generate_all: "Write fresh copy for every requested platform, each independently optimized.",
-  generate_current: "Write fresh copy for the requested platform.",
+  generate_all: "Write fresh copy for every requested platform, each independently optimized. Where a platform already has copy, write a new version with a different opening and wording; never return the existing text unchanged.",
+  generate_current: "Write fresh copy for the requested platform. If it already has copy, write a new version with a different opening and wording; never return the existing text unchanged.",
   improve: "Improve the existing copy of the requested platform: keep its intent and facts, make it clearer and stronger.",
   shorten: "Make the existing copy of the requested platform noticeably shorter while keeping the key message and CTA.",
   engaging: "Rewrite the existing copy of the requested platform to be more engaging (hook, rhythm, conversation starters) without clickbait.",
@@ -57,7 +57,7 @@ export function captionPrompt(input: CaptionAIInput, platforms: CopyPlatform[], 
     `Requested platforms (return exactly one variant per platform${input.operation === "alternatives" ? ", except three for alternatives" : ""}):\n${platforms.map((p) => `- ${p} (${COPY_PLATFORM_LABELS[p]}): fields ${PLATFORM_FIELDS[p].join(", ")}; settings: ${settingsLine(input.settings[p] ?? input.settings.default ?? AUTO_SETTINGS, c.language)}`).join("\n")}`,
     `User instruction: ${input.instruction || "None"}`,
     `Content item (the source of truth for what this content says):\n${JSON.stringify(item)}`,
-    `Existing platform copy (rewrite operations start from it):\n${JSON.stringify(existing)}`,
+    `Existing platform copy (rewrite operations start from it; generate operations must not repeat it):\n${JSON.stringify(existing)}`,
     `Brand and strategy of this project:\n${context}`,
     `Historical performance (only this evidence may support performance claims):\n${extras.performance}`,
     `Recent content titles (avoid duplication):\n${extras.recent}`].join("\n\n");
