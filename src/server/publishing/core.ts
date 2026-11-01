@@ -9,7 +9,8 @@ import { downloadDriveFile, refreshDriveToken } from "@/server/drive/google";
 import { SocialApiError } from "@/server/social/http";
 import { describeSocialError } from "@/server/social/sync";
 import { isJpeg, toInstagramJpeg } from "@/server/publishing/convert";
-import { publishTikTokVideo } from "@/server/publishing/tiktok";
+import { publishTikTokPhotos, publishTikTokVideo } from "@/server/publishing/tiktok";
+import { tiktokMediaUrl } from "@/server/publishing/tiktok-media";
 import { publishYouTubeVideo, YOUTUBE_UPLOAD_SCOPE, youtubeTitle } from "@/server/publishing/youtube";
 import { getAccess, readSocialTokens, storeSocialTokens, type SocialConnection } from "@/server/services/social";
 import type { ContentItem, MetaConnection } from "@/types/domain";
@@ -41,6 +42,15 @@ async function temporaryLink(db: SupabaseClient, projectId: string, itemId: stri
   const { data } = await db.storage.from(BUCKET).createSignedUrl(tempPath, SIGNED_LINK_SECONDS);
   if (!data?.signedUrl) { await db.storage.from(BUCKET).remove([tempPath]); throw new Error("Could not prepare the file for Instagram."); }
   return { url: data.signedUrl, tempPath };
+}
+
+/** A temporary private JPEG copy that TikTok downloads through a signed link on the app's verified prefix. */
+async function tiktokPhotoLink(db: SupabaseClient, projectId: string, itemId: string, photo: Blob, filename: string) {
+  const jpeg = await toInstagramJpeg(photo);
+  const tempPath = `${projectId}/${itemId}/publish-tmp-${crypto.randomUUID()}-${filename.replace(/\.[a-z0-9]+$/i, "").replace(/[^a-zA-Z0-9._-]/g, "_").slice(-60)}.jpg`;
+  const up = await db.storage.from(BUCKET).upload(tempPath, jpeg, { contentType: "image/jpeg", upsert: false });
+  if (up.error) throw new Error("Could not prepare the photos for TikTok.");
+  return { url: tiktokMediaUrl(tempPath), tempPath };
 }
 
 /** Instagram only takes JPEG photos: anything else is converted (file name gets a .jpg extension). */
@@ -237,6 +247,16 @@ export async function sendClaimed(env: Env, s: Senders, args: {
     if (target === "youtube") {
       if (media.kind !== "video" || !("bytes" in media)) throw new Error("YouTube needs a video file (from Drive or your computer).");
       r = await publishYouTubeVideo({ token: s.youtube!.token, title: youtubeTitle(item.title, caption), description: caption, video: media.bytes });
+    } else if (target === "tiktok" && media.kind === "image") {
+      // photo post: TikTok pulls JPEG copies from signed links on the verified prefix (kept until TikTok is done)
+      const urls: string[] = [];
+      for (const p of prepared) {
+        if (p.media.kind !== "image" || !("bytes" in p.media)) throw new Error("TikTok photo posts need the photo files themselves (from Drive or your computer).");
+        const link = await tiktokPhotoLink(db, projectId, item.id, p.media.bytes, p.media.filename);
+        tempPath = [tempPath, link.tempPath].filter(Boolean).join("\n");
+        urls.push(link.url);
+      }
+      r = await publishTikTokPhotos({ token: s.tiktok!.token, title: item.title, description: caption, photoUrls: urls, username: s.tiktok!.conn.account_handle, waitMs: 60_000 });
     } else if (target === "tiktok") {
       if (media.kind !== "video" || !("bytes" in media)) throw new Error("TikTok needs a video file (from Drive or your computer).");
       r = await publishTikTokVideo({ token: s.tiktok!.token, caption, video: media.bytes, username: s.tiktok!.conn.account_handle, waitMs: 60_000 });

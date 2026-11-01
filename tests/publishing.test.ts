@@ -131,10 +131,12 @@ describe("Meta adapter", () => {
 
 describe("TikTok publishing rules", () => {
   it("needs exactly one video", () => {
-    expect(validateForTarget("tiktok", { caption: "hi", mime: "image/jpeg", hasMedia: true })).toMatch(/needs a video/);
+    expect(validateForTarget("tiktok", { caption: "hi", mime: "image/jpeg", hasMedia: true })).toBeNull(); // photo post
+    expect(validateForTarget("tiktok", { caption: "hi", mime: "image/gif", hasMedia: true })).toMatch(/JPEG, PNG or WebP/);
     expect(validateForTarget("tiktok", { caption: "hi", mime: null, hasMedia: false })).toMatch(/needs a video/);
     expect(validateForTarget("tiktok", { caption: "hi", mime: "video/mp4", hasMedia: true })).toBeNull();
-    expect(validateGroup("tiktok", ["video/mp4", "video/mp4"])).toMatch(/single video/);
+    expect(validateGroup("tiktok", ["video/mp4", "video/mp4"])).toMatch(/all be photos/);
+    expect(validateGroup("tiktok", ["image/png", "image/jpeg"])).toBeNull();
   });
   it("limits the caption to 2,200 characters", () => {
     expect(validateForTarget("tiktok", { caption: "a".repeat(2201), mime: "video/mp4", hasMedia: true })).toMatch(/2,200/);
