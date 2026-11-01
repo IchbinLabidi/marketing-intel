@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, CircleAlert, ExternalLink, HardDrive, Laptop, Loader2, RefreshCcw, Send } from "lucide-react";
+import { CheckCircle2, CircleAlert, ExternalLink, HardDrive, Laptop, Loader2, RefreshCcw, Send, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,8 @@ import { createClient } from "@/lib/supabase/client";
 import { validateLocalFile, type PublishTarget } from "@/lib/publishing/rules";
 import { utcToZoned, zonedToUtc } from "@/lib/calendar/time";
 import { cn } from "@/lib/utils";
-import { checkPublicationAction, publishContextAction, publishPostAction, type Publication, type PublishContext } from "@/server/actions/publishing";
+import { checkPublicationAction, publishContextAction, publishPostAction, unpublishPublicationAction, type Publication, type PublishContext } from "@/server/actions/publishing";
+import { confirm } from "@/components/ui/confirm";
 import { finishMediaUploadAction, mediaUploadTicketAction } from "@/server/actions/production";
 import type { ContentItem } from "@/types/domain";
 import { DrivePicker } from "./drive-picker";
@@ -106,6 +107,17 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
   const check = async (p: Publication) => {
     setBusy(p.id);
     const r = await checkPublicationAction(projectId, p.id);
+    setBusy(null);
+    if (r.ok) toast.success(r.message ?? "Updated"); else toast.error(r.error);
+    await load();
+    onPublished();
+  };
+  // the person deleted the post on the network: reset that row so the post can be published again (nothing is deleted there)
+  const unpublish = async (p: Publication) => {
+    const where = LABEL[p.provider as PublishTarget] ?? p.provider;
+    if (!(await confirm({ title: `Mark as not published on ${where}?`, description: `Do this only if you deleted the post on ${where}. Orix Signals forgets the old link and lets you publish it again. Nothing is deleted on ${where}.`, confirmLabel: "Mark as not published" }))) return;
+    setBusy(`un-${p.id}`);
+    const r = await unpublishPublicationAction(projectId, p.id);
     setBusy(null);
     if (r.ok) toast.success(r.message ?? "Updated"); else toast.error(r.error);
     await load();
@@ -258,6 +270,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
                       {p.scheduled_for ? <span className="text-xs text-muted-foreground">{new Date(p.scheduled_for).toLocaleString("en-GB", { timeZone: tz })}</span> : null}
                       {p.platform_url ? <a href={p.platform_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">View post <ExternalLink className="size-3" /></a> : null}
                       {p.status === "processing" ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => check(p)}><RefreshCcw /> Check again</Button> : null}
+                      {p.status === "published" || p.status === "scheduled" ? <Button size="sm" variant="ghost" className="ml-auto text-xs" disabled={busy !== null} onClick={() => void unpublish(p)}>{busy === `un-${p.id}` ? <Loader2 className="animate-spin" /> : <Undo2 />} Deleted there? Mark as not published</Button> : null}
                       {p.error ? <p className="basis-full text-xs text-destructive"><CircleAlert className="mr-1 inline size-3" />{p.error}{p.error_kind === "transient" ? " You can try again." : ""}</p> : null}
                     </li>
                   ))}
