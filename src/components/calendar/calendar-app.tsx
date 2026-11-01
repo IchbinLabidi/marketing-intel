@@ -38,6 +38,7 @@ import { deadlineConflicts, isOverdue, participants, type Person } from "./plann
 import { DetailPanel } from "./detail-panel";
 import { QuickCreate } from "./quick-create";
 import { ListView } from "./list-view";
+import { BackToBacklogBar, useSelection } from "@/components/backlog/selection-bar";
 import { TimelineView } from "./timeline-view";
 import { AgendaView } from "./agenda-view";
 
@@ -127,6 +128,7 @@ export function CalendarApp({
   const [navigating, startNav] = React.useTransition();
   const [posts, setPosts] = React.useState(initialPosts);
   const [undated, setUndated] = React.useState(initialUndated);
+  const selection = useSelection();
   const [editor, setEditor] = React.useState<{ post: ContentItem | null; defaults: EditorDefaults } | null>(null);
   const [selected, setSelected] = React.useState<string | null>(initialItem?.id ?? null);
   const [extra, setExtra] = React.useState<ContentItem | null>(initialItem ?? null);
@@ -519,7 +521,10 @@ export function CalendarApp({
         <div className={cn("grid gap-4", view !== "list" && view !== "timeline" && "2xl:grid-cols-[minmax(0,1fr)_17rem]")}>
           <div className={cn("min-w-0 space-y-4 transition-opacity", navigating && "opacity-60")} aria-busy={navigating}>
             {view === "list" ? (
-              listRows.length ? <ListView rows={listRows} today={today} onOpen={openDetails} /> : <Empty readOnly={readOnly} filtered={Boolean(activeFilters || filters.mine || filters.q)} onCreate={() => openQuick(null, null)} />
+              listRows.length ? <>
+                {!readOnly ? <BackToBacklogBar projectId={projectId} ids={[...selection.selected].filter((id) => listRows.some((r) => r.post.id === id))} onClear={selection.clear} onDone={() => { const gone = new Set(selection.selected); setPosts((l) => l.filter((p) => !gone.has(p.id) || p.status === "scheduled" || p.status === "published")); }} /> : null}
+                <ListView rows={listRows} today={today} onOpen={openDetails} selection={readOnly ? undefined : { ...selection, canSelect: (p) => Boolean(p.scheduled_date) && canMove(p) && p.status !== "published" && p.status !== "scheduled" }} />
+              </> : <Empty readOnly={readOnly} filtered={Boolean(activeFilters || filters.mine || filters.q)} onCreate={() => openQuick(null, null)} />
             ) : view === "timeline" ? (
               timelineRows.length ? <TimelineView rows={timelineRows} from={range.from} to={range.to} today={today} onOpen={openDetails} /> : <Empty readOnly={readOnly} filtered={Boolean(activeFilters || filters.mine || filters.q)} onCreate={() => openQuick(null, null)} />
             ) : (

@@ -9,13 +9,16 @@ import type { ContentItem } from "@/types/domain";
 import { PlatformIcon } from "./platform-icon";
 import { StatePill, stateOf } from "./post-card";
 import { contentType, initials, isOverdue, type Person } from "./planning";
+import { SelectAllBox } from "@/components/backlog/selection-bar";
 
 type Row = { post: ContentItem; time: string | null; people: Person[] };
 type Key = "publish" | "deadline" | "title" | "status" | "priority" | "owner";
 const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 
 /** Sortable list of everything planned in the period, plus unscheduled items at the end. */
-export function ListView({ rows, today, onOpen }: { rows: Row[]; today: string; onOpen: (post: ContentItem) => void }) {
+type Selection = { selected: Set<string>; toggle: (id: string) => void; setAll: (ids: string[], on: boolean) => void; canSelect: (post: ContentItem) => boolean };
+
+export function ListView({ rows, today, onOpen, selection }: { rows: Row[]; today: string; onOpen: (post: ContentItem) => void; selection?: Selection }) {
   const [sort, setSort] = React.useState<{ key: Key; dir: 1 | -1 }>({ key: "publish", dir: 1 });
   const value = (r: Row, k: Key): string | number => {
     switch (k) {
@@ -46,7 +49,8 @@ export function ListView({ rows, today, onOpen }: { rows: Row[]; today: string; 
       <table className="w-full min-w-[820px] text-[13px]">
         <thead>
           <tr className="border-b text-left">
-            {head("title", "Content", "w-[34%] pl-4")}
+            {selection ? <th className="w-8 pl-4"><SelectAllBox ids={rows.filter((r) => selection.canSelect(r.post)).map((r) => r.post.id)} selected={selection.selected} onChange={(on) => selection.setAll(rows.filter((r) => selection.canSelect(r.post)).map((r) => r.post.id), on)} label="Select all shown" /></th> : null}
+            {head("title", "Content", cn("w-[34%]", !selection && "pl-4"))}
             {head("status", "Status")}
             {head("owner", "Owner")}
             {head("priority", "Priority")}
@@ -58,8 +62,9 @@ export function ListView({ rows, today, onOpen }: { rows: Row[]; today: string; 
           {sorted.map(({ post, time, people }) => {
             const overdue = isOverdue(post, today);
             return (
-              <tr key={post.id} className="cursor-pointer border-b last:border-0" onClick={() => onOpen(post)}>
-                <td className="py-2.5 pl-4">
+              <tr key={post.id} className={cn("cursor-pointer border-b last:border-0", selection?.selected.has(post.id) && "bg-primary-soft/40")} onClick={() => onOpen(post)}>
+                {selection ? <td className="w-8 pl-4" onClick={(e) => e.stopPropagation()}>{selection.canSelect(post) ? <input type="checkbox" aria-label={`Select ${post.title}`} checked={selection.selected.has(post.id)} onChange={() => selection.toggle(post.id)} /> : null}</td> : null}
+                <td className={cn("py-2.5", !selection && "pl-4")}>
                   <button type="button" className="flex min-w-0 items-center gap-2 text-left" onClick={(e) => { e.stopPropagation(); onOpen(post); }}>
                     <PlatformIcon platform={post.platform} className="size-3.5 text-muted-foreground" />
                     <span className="min-w-0">
