@@ -240,15 +240,15 @@ export async function unplanIdeasAction(projectId: string, ids: string[]): Promi
   const { allowed } = await guard(projectId);
   if (!allowed) return NO_EDIT;
   const db = await createClient();
-  // any number of ideas and briefs, in batches; production stage, writing and approvals are kept
+  // any number of ideas and briefs, in batches: the date goes and they return to the Idea stage (writing, files and
+  // history are kept), so they show only in the Backlog again
   const list = [...new Set(ids)].slice(0, UNPLAN_MAX);
   let moved = 0;
   for (let k = 0; k < list.length; k += BULK_MAX) {
     const batch = list.slice(k, k + BULK_MAX);
-    const { error, count } = await db.from("content_items").update({ scheduled_date: null, scheduled_time: null, scheduled_at: null }, { count: "exact" })
+    const { error, count } = await db.from("content_items").update({ scheduled_date: null, scheduled_time: null, scheduled_at: null, production_stage: "idea", status: "idea" }, { count: "exact" })
       .eq("project_id", projectId).in("id", batch).not("status", "in", "(published,scheduled)");
     if (error) return fail(error, "Could not move back to the Backlog");
-    await db.from("content_items").update({ status: "idea" }).eq("project_id", projectId).in("id", batch).eq("status", "planned");
     moved += count ?? 0;
   }
   refresh(projectId);

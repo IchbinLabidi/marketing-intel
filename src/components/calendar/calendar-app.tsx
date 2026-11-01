@@ -31,7 +31,7 @@ import { duplicatePostAction, reschedulePostAction, setProjectTimezoneAction, ty
 import type { Task } from "@/server/services/team";
 import type { ContentItem } from "@/types/domain";
 import { cn } from "@/lib/utils";
-import { PostCard, stateOf, type CardAction, type PillarRef } from "./post-card";
+import { PostCard, type CardAction, type PillarRef } from "./post-card";
 import { PostEditor, WorkflowLegend, type EditorDefaults } from "./post-editor";
 import { pillarDotClass } from "./styles";
 import { deadlineConflicts, isOverdue, participants, type Person } from "./planning";
@@ -355,7 +355,8 @@ export function CalendarApp({
   };
 
   const range = viewRange(view, date);
-  const listRows = [...posts, ...undated].map((p) => ({ post: p, time: placement(p, tz).time, people: peopleOf(p) }));
+  // Backlog ideas live only in the Backlog: the calendar lists dated posts
+  const listRows = posts.map((p) => ({ post: p, time: placement(p, tz).time, people: peopleOf(p) }));
   const timelineRows = [...new Map([...posts, ...deadlines].map((p) => [p.id, p])).values()].map((p) => ({ post: p, people: peopleOf(p) }));
   const agendaDays = view === "day" ? [date] : view === "week" ? weekDays(date) : (() => { const out: string[] = []; for (let d = range.from; d <= range.to; d = addDays(d, 1)) out.push(d); return out; })();
 
@@ -548,7 +549,7 @@ export function CalendarApp({
           </div>
           {view !== "list" && view !== "timeline" ? (
             <div className="space-y-4">
-              <UndatedTray posts={undated} card={card} projectId={projectId} />
+              <UndatedTray posts={undated} projectId={projectId} />
               {insights}
             </div>
           ) : null}
@@ -791,16 +792,14 @@ function TimeGrid({ days, today, byDate, deadlinesByDate, deadlineChip, conflict
   );
 }
 
-function UndatedTray({ posts, card, projectId }: { posts: ContentItem[]; card: (e: Entry, compact?: boolean) => React.ReactNode; projectId: string }) {
+/** Backlog ideas aren't shown on the calendar: only a count and a link to the Backlog, where they get a date. */
+function UndatedTray({ posts, projectId }: { posts: ContentItem[]; projectId: string }) {
   if (!posts.length) return null;
   return (
-    <div className="rounded-xl border bg-card p-3 shadow-xs">
-      <p className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold"><Inbox className="size-4" /> Ideas Backlog <span className="text-xs font-normal text-muted-foreground">· drag onto a day</span> <Link href={`/p/${projectId}/backlog`} className="ml-auto text-xs font-normal text-primary hover:underline">Open</Link></p>
-      <div className="scrollbar-thin max-h-72 space-y-1.5 overflow-y-auto pr-1">
-        {posts.map((p) => card({ post: p, time: null, hour: null }))}
-      </div>
-      <p className="mt-2 text-[11px] text-muted-foreground">{posts.filter((p) => stateOf(p) === "draft").length} drafts without a date</p>
-    </div>
+    <Link href={`/p/${projectId}/backlog`} className="flex items-center gap-1.5 rounded-xl border bg-card p-3 text-[13px] font-semibold shadow-xs hover:border-primary">
+      <Inbox className="size-4" /> Ideas Backlog <span className="text-xs font-normal text-muted-foreground">· {posts.length}{posts.length >= 200 ? "+" : ""} waiting for a date</span>
+      <span className="ml-auto text-xs font-normal text-primary">Open</span>
+    </Link>
   );
 }
 

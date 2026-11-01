@@ -128,8 +128,8 @@ export async function myContentIds(projectId: string, userId: string) {
 /** Posts with no date yet (the "unscheduled" tray). */
 export async function listUndatedPosts(projectId: string, filters: PostFilters) {
   const supabase = await createClient();
-  // the Ideas Backlog: undated, not archived, best-scored first
-  let q = supabase.from("content_items").select("*").eq("project_id", projectId).is("scheduled_date", null).is("archived_at", null);
+  // the Ideas Backlog: undated, not archived, not in Production, best-scored first
+  let q = supabase.from("content_items").select("*").eq("project_id", projectId).is("scheduled_date", null).is("archived_at", null).or("production_stage.is.null,production_stage.eq.idea");
   q = applyFilters(q, filters);
   const { data, error } = await q.order("idea_score", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }).limit(200);
   if (error) throw error;
