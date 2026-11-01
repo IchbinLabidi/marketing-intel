@@ -3,36 +3,29 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { canEdit } from "@/lib/domain/constants";
-import { publicationCopy } from "@/lib/production/platform-copy";
-import { composeCaption, MAX_GROUP, mediaKindOf, validateForTarget, validateGroup, type PublishTarget } from "@/lib/publishing/rules";
+import type { PublishTarget } from "@/lib/publishing/rules";
 import type { ActionResult } from "@/lib/validation/common";
-import { classifyMetaError, facebookScheduleError, publishFacebook, publishFacebookPhotos, publishInstagram, publishInstagramCarousel, PUBLISH_SCOPES, type MediaInput, type PublishResult } from "@/server/publishing/meta";
-import { MetaApiError } from "@/server/meta/graph";
-import { downloadDriveFile } from "@/server/drive/google";
-import { driveAccessToken, getDriveConnection } from "@/server/drive/service";
-import { SocialApiError } from "@/server/social/http";
+import { classifyMetaError, facebookScheduleError, publishInstagram, PUBLISH_SCOPES } from "@/server/publishing/meta";
 import { describeSocialError } from "@/server/social/sync";
-import { MAX_FILE_BYTES } from "@/lib/publishing/rules";
-import { isJpeg, toInstagramJpeg } from "@/server/publishing/convert";
-import { checkTikTok, publishTikTokVideo } from "@/server/publishing/tiktok";
-import { publishYouTubeVideo, YOUTUBE_UPLOAD_SCOPE, youtubeTitle } from "@/server/publishing/youtube";
+import { checkTikTok } from "@/server/publishing/tiktok";
+import { YOUTUBE_UPLOAD_SCOPE } from "@/server/publishing/youtube";
 import { getAccess } from "@/server/services/social";
-import type { SocialConnection } from "@/server/services/social";
-import { getPost, updatePost } from "@/server/services/calendar";
+import { getPost } from "@/server/services/calendar";
 import { getMetaConnection, readMetaTokens } from "@/server/services/meta";
 import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
 import { hasPermission } from "@/server/services/team";
+import {
+  accountOf, checkTargets, cleanup, guessMime, loadAssets, prepareSenders, sendClaimed, syncItemStatus, tiktokConnection, youtubeConnection,
+  type Asset, type Env, type Publication,
+} from "@/server/publishing/core";
 
-export type Publication = {
-  id: string; content_item_id: string; provider: string; account_ref: string; account_name: string | null; status: string;
-  scheduled_for: string | null; platform_post_id: string | null; platform_url: string | null; error: string | null; error_kind: string | null;
-  attempts: number; updated_at: string;
-};
+export type { Publication } from "@/server/publishing/core";
 
-const BUCKET = "production-media";
-const SIGNED_LINK_SECONDS = 60 * 60; // Instagram downloads the media within minutes; the link expires after an hour
 const refresh = (projectId: string) => revalidatePath(`/p/${projectId}`, "layout");
+// Orix Signals publishes Instagram, TikTok and YouTube itself at the chosen time (their APIs can't schedule a post)
+const MIN_LEAD_MS = 5 * 60_000;
+const MAX_LEAD_MS = 75 * 24 * 3600_000;
 
 async function guard(projectId: string) {
   const user = await requireUser();
@@ -50,84 +43,10 @@ export async function listPublicationsAction(projectId: string, itemId: string):
   return { ok: true, data: data as Publication[] };
 }
 
-type Asset = { id: string; body: { path?: string; url?: string; name?: string; mime?: string; source_type?: string; source_file_id?: string } };
-type Prepared = { media: MediaInput; tempPath: string | null };
-
-/** Stores a temporary private copy for Instagram to download, and returns a signed link to it (valid one hour). */
-async function temporaryLink(db: Awaited<ReturnType<typeof createClient>>, projectId: string, itemId: string, bytes: Blob, filename: string, mime: string) {
-  const tempPath = `${projectId}/${itemId}/publish-tmp-${crypto.randomUUID()}-${filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80)}`;
-  const up = await db.storage.from(BUCKET).upload(tempPath, bytes, { contentType: mime, upsert: false });
-  if (up.error) throw new Error("Could not prepare the file for Instagram.");
-  const { data } = await db.storage.from(BUCKET).createSignedUrl(tempPath, SIGNED_LINK_SECONDS);
-  if (!data?.signedUrl) { await db.storage.from(BUCKET).remove([tempPath]); throw new Error("Could not prepare the file for Instagram."); }
-  return { url: data.signedUrl, tempPath };
-}
-
-/** Instagram only takes JPEG photos: anything else is converted (file name gets a .jpg extension). */
-async function forInstagram(bytes: Blob, filename: string, mime: string, kind: "image" | "video") {
-  if (kind !== "image" || isJpeg(mime)) return { bytes, filename, mime };
-  return { bytes: await toInstagramJpeg(bytes), filename: `${filename.replace(/\.[a-z0-9]+$/i, "")}.jpg`, mime: "image/jpeg" };
-}
-
 /**
- * Turns a media attachment into what each network accepts. Never makes a private file public.
- * Google Drive files are downloaded through the Drive API with the project's authorization (no sharing link); for
- * Instagram, which needs a URL, a temporary private copy is stored and removed once Instagram has it.
- */
-async function mediaFor(db: Awaited<ReturnType<typeof createClient>>, projectId: string, itemId: string, asset: Asset | null, target: PublishTarget, allowTemporaryLink: boolean): Promise<Prepared> {
-  if (!asset) return { media: { kind: "none" }, tempPath: null };
-  const mime = asset.body.mime ?? (asset.body.url ? guessMime(asset.body.url) : "");
-  const kind = mediaKindOf(mime);
-  if (!kind) throw new Error("This attachment isn't an image or a video.");
-  if (asset.body.source_type === "google_drive") {
-    const conn = await getDriveConnection(projectId);
-    if (!conn || !asset.body.source_file_id) throw new Error("Google Drive isn't connected for this project. Reconnect it to publish this file.");
-    const bytes = await downloadDriveFile(await driveAccessToken(db, conn), asset.body.source_file_id, MAX_FILE_BYTES);
-    const filename = asset.body.name ?? "media";
-    if (target !== "instagram") return { media: { kind, bytes, filename, mime }, tempPath: null };
-    if (!allowTemporaryLink) throw new Error("Instagram downloads media from a link. Allow the temporary private link (valid 1 hour) to publish this file.");
-    const ig = await forInstagram(bytes, filename, mime, kind);
-    const link = await temporaryLink(db, projectId, itemId, ig.bytes, ig.filename, ig.mime);
-    return { media: { kind, url: link.url, mime: ig.mime }, tempPath: link.tempPath };
-  }
-  if (asset.body.url) {
-    // already a public https link chosen by the team: sent as is, so Instagram needs it to be a JPEG already
-    if (target === "instagram" && kind === "image" && !isJpeg(mime)) throw new Error("Instagram only accepts JPEG photos by link. Attach the file itself (Drive or computer) so Orix Signals can convert it.");
-    return { media: { kind, url: asset.body.url, mime }, tempPath: null };
-  }
-  if (!asset.body.path) throw new Error("The attachment has no stored file.");
-  if (target !== "instagram") {
-    // Facebook and TikTok receive the bytes directly: no link to the private file is ever created
-    const { data, error } = await db.storage.from(BUCKET).download(asset.body.path);
-    if (error || !data) throw new Error("The stored file could not be read. Re-attach it.");
-    return { media: { kind, bytes: data, filename: asset.body.name ?? "media", mime }, tempPath: null };
-  }
-  // Instagram only accepts a URL it downloads itself: a signed link valid for one hour, only with explicit consent
-  if (!allowTemporaryLink) throw new Error("Instagram downloads media from a link. Allow the temporary private link (valid 1 hour) to publish this file.");
-  if (kind === "image" && !isJpeg(mime)) {
-    // not a JPEG: a converted temporary copy is sent instead of the original
-    const { data: original, error } = await db.storage.from(BUCKET).download(asset.body.path);
-    if (error || !original) throw new Error("The stored file could not be read. Re-attach it.");
-    const ig = await forInstagram(original, asset.body.name ?? "photo", mime, kind);
-    const link = await temporaryLink(db, projectId, itemId, ig.bytes, ig.filename, ig.mime);
-    return { media: { kind, url: link.url, mime: ig.mime }, tempPath: link.tempPath };
-  }
-  const { data, error } = await db.storage.from(BUCKET).createSignedUrl(asset.body.path, SIGNED_LINK_SECONDS);
-  if (error || !data?.signedUrl) throw new Error("Could not prepare the file for Instagram.");
-  return { media: { kind, url: data.signedUrl, mime }, tempPath: null };
-}
-
-/** Removes temporary copies made for Instagram (best effort; never blocks the publication result). Several paths are stored one per line. */
-async function cleanup(db: Awaited<ReturnType<typeof createClient>>, path: string | null | undefined) {
-  const paths = (path ?? "").split("\n").filter(Boolean);
-  if (paths.length) await db.storage.from(BUCKET).remove(paths).catch(() => undefined);
-}
-
-const guessMime = (url: string) => (/\.(mp4|mov)(\?|$)/i.test(url) ? "video/mp4" : /\.png(\?|$)/i.test(url) ? "image/png" : "image/jpeg");
-
-/**
- * Publishes (or schedules, on Facebook) an approved calendar post to the project's connected Page and/or Instagram
- * account. One publication row per network and account guarantees the post can't be sent twice.
+ * Publishes an approved calendar post to the chosen networks, or schedules it: Facebook keeps a scheduled post itself;
+ * Instagram, TikTok and YouTube are queued here and sent by the scheduled-publishing job at that time.
+ * One publication row per network and account guarantees the post can't be sent twice.
  */
 export async function publishPostAction(
   projectId: string,
@@ -143,133 +62,80 @@ export async function publishPostAction(
   if (!["approved", "scheduled"].includes(item.status)) return { ok: false, error: "Only approved posts can be published. Approve it in Content Production first." };
   const scheduleAt = input.scheduleAt ? new Date(input.scheduleAt) : null;
   if (scheduleAt) {
-    if (targets.includes("instagram")) return { ok: false, error: "Instagram can't be scheduled through its API. Publish to Instagram now, or schedule Facebook only." };
-    if (targets.includes("tiktok")) return { ok: false, error: "TikTok can't be scheduled through its API. Publish to TikTok now, or schedule Facebook only." };
-    if (targets.includes("youtube")) return { ok: false, error: "YouTube uploads from Orix Signals are published now. Publish to YouTube now, or schedule Facebook only." };
-    const err = facebookScheduleError(scheduleAt);
-    if (err) return { ok: false, error: err };
+    if (Number.isNaN(scheduleAt.getTime())) return { ok: false, error: "Choose a valid date and time." };
+    if (targets.includes("facebook")) { const err = facebookScheduleError(scheduleAt); if (err) return { ok: false, error: err }; }
+    const lead = scheduleAt.getTime() - Date.now();
+    if (targets.some((t) => t !== "facebook") && (lead < MIN_LEAD_MS || lead > MAX_LEAD_MS)) return { ok: false, error: "Schedule at least 5 minutes and at most 75 days ahead." };
   }
-
-  // Meta (Facebook / Instagram) is only required when one of its networks is chosen
-  const needsMeta = targets.includes("facebook") || targets.includes("instagram");
-  const metaConn = needsMeta ? await getMetaConnection(projectId) : null;
-  if (needsMeta && (!metaConn || metaConn.status !== "active" || !metaConn.page_id)) return { ok: false, error: "Connect Meta (Facebook Page) on the Integrations page first." };
-  const conn = metaConn!;
-  const missing = needsMeta ? PUBLISH_SCOPES.filter((s) => (s === "instagram_content_publish" ? targets.includes("instagram") : targets.includes("facebook")) && !conn.granted_scopes.includes(s)) : [];
-  if (missing.length) return { ok: false, error: `Meta hasn't granted publishing yet (${missing.join(", ")}). Reconnect Meta on the Integrations page and accept the publishing permissions.` };
-  if (targets.includes("instagram") && !conn.ig_user_id) return { ok: false, error: "No Instagram professional account is linked to the connected Page." };
-  const pageToken = needsMeta ? (await readMetaTokens(conn.id)).page : null;
-  if (needsMeta && !pageToken) return { ok: false, error: "The Page access token is missing. Reconnect Meta." };
 
   const db = await createClient();
-  // TikTok: the project's connected account, with the posting permission
-  let tiktok: { conn: SocialConnection; token: string } | null = null;
-  if (targets.includes("tiktok")) {
-    const tt = await tiktokConnection(projectId);
-    if (!tt) return { ok: false, error: "Connect TikTok on the Integrations page first." };
-    if (!tt.granted_scopes.includes("video.publish")) return { ok: false, error: "TikTok hasn't granted posting yet. Reconnect TikTok on the Integrations page and accept posting videos." };
-    try { tiktok = { conn: tt, token: (await getAccess(db, tt)).token! }; } catch (e) { return { ok: false, error: describeSocialError(e) }; }
-  }
-  // YouTube: the project's channel authorized with upload permission
-  let youtube: { conn: SocialConnection; token: string } | null = null;
-  if (targets.includes("youtube")) {
-    const yt = await youtubeConnection(projectId);
-    if (!yt) return { ok: false, error: "Connect YouTube with Google (not public data only) on the Integrations page first." };
-    if (!yt.granted_scopes.includes(YOUTUBE_UPLOAD_SCOPE)) return { ok: false, error: "YouTube hasn't granted uploading yet. Click Connect YouTube on the Integrations page again and accept uploading videos." };
-    try { youtube = { conn: yt, token: (await getAccess(db, yt)).token! }; } catch (e) { return { ok: false, error: describeSocialError(e) }; }
-  }
-  // Media in the order the person selected it (the first one leads the carousel)
+  const env: Env = { db, admin: false };
+  const prep = await prepareSenders(env, projectId, targets);
+  if (!prep.ok) return { ok: false, error: prep.error };
   const ids = [...new Set(input.mediaAssetIds ?? (input.mediaAssetId ? [input.mediaAssetId] : []))];
-  if (ids.length > MAX_GROUP) return { ok: false, error: `Choose at most ${MAX_GROUP} photos for one post.` };
-  let assets: Asset[] = [];
-  if (ids.length) {
-    const { data } = await db.from("content_assets").select("id, body").eq("project_id", projectId).eq("content_item_id", itemId).eq("kind", "media").in("id", ids);
-    const found = (data ?? []) as Asset[];
-    if (found.length !== ids.length) return { ok: false, error: "The selected media isn't attached to this post." };
-    assets = ids.map((id) => found.find((a) => a.id === id)!);
-  }
-  const asset = assets[0] ?? null;
-  const mimeOf = (a: Asset) => a.body.mime ?? (a.body.url ? guessMime(a.body.url) : null);
-  // Each network sends its own approved copy from Content Studio; a network without one uses the general caption
-  const copyOf = (t: PublishTarget) => publicationCopy(item, t, composeCaption, input.youtubeVariant === "shorts" ? "shorts" : "video");
-  for (const t of targets) {
-    const problem = validateGroup(t, assets.map(mimeOf)) ?? validateForTarget(t, { caption: copyOf(t).text, mime: asset ? mimeOf(asset) : null, hasMedia: Boolean(asset) });
-    if (problem) return { ok: false, error: problem };
+  const loaded = await loadAssets(db, projectId, itemId, ids);
+  if (!loaded.ok) return { ok: false, error: loaded.error };
+  const assets: Asset[] = loaded.assets;
+  const youtubeVariant = input.youtubeVariant === "shorts" || input.youtubeVariant === "video" ? input.youtubeVariant : undefined;
+  const problem = checkTargets(item, targets, assets, youtubeVariant);
+  if (problem) return { ok: false, error: problem };
+  // a queued Instagram post needs the temporary-link consent now: nobody is there to give it at publishing time
+  if (scheduleAt && targets.includes("instagram") && !input.allowTemporaryLink && assets.some((a) => !a.body.url)) {
+    return { ok: false, error: "Instagram downloads media from a link. Allow the temporary private link (valid 1 hour) to schedule this file." };
   }
 
   const results: Publication[] = [];
   for (const target of targets) {
-    const accountRef = target === "youtube" ? youtube!.conn.external_account_id : target === "tiktok" ? tiktok!.conn.external_account_id : target === "facebook" ? conn.page_id! : conn.ig_user_id!;
-    const accountName = target === "youtube" ? youtube!.conn.account_name ?? youtube!.conn.account_handle : target === "tiktok" ? tiktok!.conn.account_handle ?? tiktok!.conn.account_name : target === "facebook" ? conn.page_name : conn.ig_username ? `@${conn.ig_username}` : null;
+    const account = accountOf(prep.senders, target);
+    const slot = () => db.from("content_publications").select("*").eq("content_item_id", itemId).eq("provider", target).eq("account_ref", account.ref).maybeSingle();
     // Claim the (post, network, account) slot. A row that is published, scheduled or in progress blocks a second send.
     await db.from("content_publications").upsert(
-      { project_id: projectId, content_item_id: itemId, provider: target, account_ref: accountRef, account_name: accountName, status: "queued", created_by: user.id },
+      { project_id: projectId, content_item_id: itemId, provider: target, account_ref: account.ref, account_name: account.name, status: "queued", created_by: user.id },
       { onConflict: "content_item_id,provider,account_ref", ignoreDuplicates: true },
     );
+    if (scheduleAt && target !== "facebook") {
+      // queued with its time: the scheduled-publishing job sends it then (a later "Publish now" takes it over)
+      const { data: queued } = await db.from("content_publications")
+        .update({ status: "queued", scheduled_for: scheduleAt.toISOString(), media_asset_ids: assets.map((a) => a.id), allow_temp_link: input.allowTemporaryLink, error: null, error_kind: null, next_attempt_at: null, created_by: user.id })
+        .eq("content_item_id", itemId).eq("provider", target).eq("account_ref", account.ref).in("status", ["queued", "failed", "cancelled"])
+        .select("*").maybeSingle();
+      const row = queued ?? (await slot()).data;
+      if (row) results.push(row as Publication);
+      continue;
+    }
     const { data: claimed } = await db.from("content_publications")
-      .update({ status: "uploading", error: null, error_kind: null, media_asset_id: asset?.id ?? null })
-      .eq("content_item_id", itemId).eq("provider", target).eq("account_ref", accountRef).in("status", ["queued", "failed", "cancelled"])
+      .update({ status: "uploading", error: null, error_kind: null, scheduled_for: null, media_asset_id: assets[0]?.id ?? null })
+      .eq("content_item_id", itemId).eq("provider", target).eq("account_ref", account.ref).in("status", ["queued", "failed", "cancelled"])
       .select("id, attempts").maybeSingle();
     if (!claimed) {
-      const { data: existing } = await db.from("content_publications").select("*").eq("content_item_id", itemId).eq("provider", target).eq("account_ref", accountRef).maybeSingle();
+      const { data: existing } = await slot();
       if (existing) results.push(existing as Publication);
       continue; // already published / scheduled / in progress
     }
-    let tempPath: string | null = null;
-    const { text: caption, title: copyTitle } = copyOf(target);
-    try {
-      const prepared: { media: MediaInput; tempPath: string | null }[] = [];
-      try {
-        for (const a of assets.length ? assets : [null]) prepared.push(await mediaFor(db, projectId, itemId, a, target, input.allowTemporaryLink));
-      } finally {
-        tempPath = prepared.map((p) => p.tempPath).filter(Boolean).join("\n") || null;
-      }
-      const media = prepared[0].media;
-      let r: PublishResult;
-      if (target === "youtube") {
-        if (media.kind !== "video" || !("bytes" in media)) throw new Error("YouTube needs a video file (from Drive or your computer).");
-        r = await publishYouTubeVideo({ token: youtube!.token, title: youtubeTitle(copyTitle ?? item.title, caption), description: caption, video: media.bytes });
-      } else if (target === "tiktok") {
-        if (media.kind !== "video" || !("bytes" in media)) throw new Error("TikTok needs a video file (from Drive or your computer).");
-        r = await publishTikTokVideo({ token: tiktok!.token, caption, video: media.bytes, username: tiktok!.conn.account_handle, waitMs: 60_000 });
-      } else if (target === "facebook") {
-        r = prepared.length > 1
-          ? await publishFacebookPhotos({ pageId: conn.page_id!, pageToken: pageToken!, message: caption, photos: prepared.map((p) => p.media), scheduleAt })
-          : await publishFacebook({ pageId: conn.page_id!, pageToken: pageToken!, message: caption, media, scheduleAt });
-      } else {
-        const items = prepared.map((p) => p.media);
-        if (items.some((m) => m.kind === "none" || !("url" in m))) throw new Error("Instagram needs an image or a video.");
-        const urls = items as Extract<MediaInput, { url: string }>[];
-        r = urls.length > 1
-          ? await publishInstagramCarousel({ igUserId: conn.ig_user_id!, pageToken: pageToken!, caption, items: urls, waitMs: 90_000 })
-          : await publishInstagram({ igUserId: conn.ig_user_id!, pageToken: pageToken!, caption, media: urls[0], waitMs: 90_000 });
-      }
-      const status = r.processing ? "processing" : r.scheduledFor ? "scheduled" : "published";
-      const { data: row } = await db.from("content_publications").update({
-        status, platform_post_id: r.postId || null, platform_url: r.url, scheduled_for: r.scheduledFor, container_id: r.containerId ?? null, attempts: claimed.attempts + 1, next_attempt_at: null,
-        // a video still processing keeps its temporary copy until Instagram is done with it
-        temp_media_path: r.processing ? tempPath : null,
-      }).eq("id", claimed.id).select("*").single();
-      if (!r.processing) await cleanup(db, tempPath);
-      results.push(row as Publication);
-    } catch (e) {
-      // our own checks (missing file, consent) are validation errors; Meta errors are classified by their code
-      await cleanup(db, tempPath);
-      const c = e instanceof MetaApiError ? classifyMetaError(e)
-        : e instanceof SocialApiError ? { kind: (e.isAuth || e.isPermission ? "auth" : e.kind === "server" || e.kind === "network" || e.kind === "rate_limit" ? "transient" : "permanent") as "auth" | "transient" | "permanent", message: describeSocialError(e) }
-        : { kind: "validation" as const, message: e instanceof Error ? e.message : "Unknown error" };
-      const { data: row } = await db.from("content_publications").update({
-        status: "failed", error: c.message.slice(0, 1000), error_kind: c.kind, attempts: claimed.attempts + 1,
-        next_attempt_at: c.kind === "transient" ? new Date(Date.now() + 2 ** Math.min(claimed.attempts, 6) * 60_000).toISOString() : null,
-      }).eq("id", claimed.id).select("*").single();
-      results.push(row as Publication);
-    }
+    results.push(await sendClaimed(env, prep.senders, { projectId, item, target, assets, claimed, scheduleAt: target === "facebook" ? scheduleAt : null, allowTemporaryLink: input.allowTemporaryLink, youtubeVariant }));
   }
-  await syncItemStatus(projectId, itemId, results);
+  await syncItemStatus(db, projectId, itemId, results);
   refresh(projectId);
   const failed = results.filter((r) => r.status === "failed");
   if (failed.length === results.length) return { ok: false, error: failed.map((f) => `${f.provider}: ${f.error}`).join(" · ") };
   return { ok: true, data: { publications: results }, message: summary(results) };
+}
+
+/** Stops a post queued in Orix Signals for a later time (it was never sent: nothing to undo on the network). */
+export async function cancelScheduledAction(projectId: string, publicationId: string): Promise<ActionResult> {
+  const { allowed } = await guard(projectId);
+  if (!allowed) return { ok: false, error: "Your role can't publish from the calendar." };
+  const db = await createClient();
+  const { data: row } = await db.from("content_publications").update({ status: "cancelled", error: "Schedule cancelled", error_kind: null, next_attempt_at: null })
+    .eq("project_id", projectId).eq("id", publicationId).eq("status", "queued").not("scheduled_for", "is", null).select("*").maybeSingle();
+  if (!row) return { ok: false, error: "This post is no longer waiting: it was already sent or cancelled." };
+  const { data: all } = await db.from("content_publications").select("*").eq("content_item_id", row.content_item_id);
+  const pubs = (all ?? []) as Publication[];
+  if (!pubs.some((p) => ["published", "scheduled", "uploading", "processing"].includes(p.status) || (p.status === "queued" && p.scheduled_for))) {
+    await db.from("content_items").update({ status: "approved" }).eq("id", row.content_item_id).eq("project_id", projectId).eq("status", "scheduled");
+  }
+  refresh(projectId);
+  return { ok: true, message: "Schedule cancelled" };
 }
 
 /** Resumes an Instagram video still being processed by Meta. */
@@ -281,12 +147,12 @@ export async function checkPublicationAction(projectId: string, publicationId: s
   if (!pub) return { ok: false, error: "Publication not found." };
   if (pub.status !== "processing" || !pub.container_id) return { ok: true, data: { publication: pub as Publication } };
   if (pub.provider === "tiktok") {
-    const tt = await tiktokConnection(projectId);
+    const tt = await tiktokConnection(db, projectId);
     if (!tt) return { ok: false, error: "Reconnect TikTok to finish this publication." };
     try {
       const r = await checkTikTok({ token: (await getAccess(db, tt)).token!, publishId: pub.container_id, username: tt.account_handle, waitMs: 20_000 });
       const { data: row } = await db.from("content_publications").update(r.processing ? { updated_at: new Date().toISOString() } : { status: "published", platform_post_id: r.postId, platform_url: r.url }).eq("id", pub.id).select("*").single();
-      await syncItemStatus(projectId, pub.content_item_id, [row as Publication]);
+      await syncItemStatus(db, projectId, pub.content_item_id, [row as Publication]);
       refresh(projectId);
       return { ok: true, data: { publication: row as Publication }, message: r.processing ? "TikTok is still processing the video. Check again in a minute." : "Published on TikTok" };
     } catch (e) {
@@ -302,7 +168,7 @@ export async function checkPublicationAction(projectId: string, publicationId: s
     const r = await publishInstagram({ igUserId: pub.account_ref, pageToken: page, caption: "", media: { kind: "video", url: "", mime: "video/mp4" }, containerId: pub.container_id, waitMs: 60_000 });
     const { data: row } = await db.from("content_publications").update(r.processing ? { updated_at: new Date().toISOString() } : { status: "published", platform_post_id: r.postId, platform_url: r.url, temp_media_path: null }).eq("id", pub.id).select("*").single();
     if (!r.processing) await cleanup(db, pub.temp_media_path);
-    await syncItemStatus(projectId, pub.content_item_id, [row as Publication]);
+    await syncItemStatus(db, projectId, pub.content_item_id, [row as Publication]);
     refresh(projectId);
     return { ok: true, data: { publication: row as Publication }, message: r.processing ? "Instagram is still processing the video. Check again in a minute." : "Published on Instagram" };
   } catch (e) {
@@ -314,31 +180,17 @@ export async function checkPublicationAction(projectId: string, publicationId: s
   }
 }
 
-/** The calendar item follows its publications: published as soon as one network has it live. */
-async function syncItemStatus(projectId: string, itemId: string, pubs: Publication[]) {
-  const live = pubs.find((p) => p.status === "published" && p.platform_url);
-  if (live) {
-    await updatePost(projectId, itemId, { status: "published", published_at: new Date().toISOString(), published_url: live.platform_url, publish_error: null }).catch(() => undefined);
-  } else if (pubs.some((p) => p.status === "scheduled")) {
-    await updatePost(projectId, itemId, { status: "scheduled", publish_error: null }).catch(() => undefined);
-  } else if (pubs.every((p) => p.status === "failed")) {
-    await updatePost(projectId, itemId, { publish_error: pubs.map((p) => `${p.provider}: ${p.error}`).join(" · ").slice(0, 1000) }).catch(() => undefined);
-  }
-}
-
-/** The project's YouTube channel authorized with Google (public-data channels can't upload). */
-async function youtubeConnection(projectId: string): Promise<SocialConnection | null> {
+/** The post was deleted on the network: mark that publication as not published (history kept) so it can be published
+ *  again. When no network still holds the post, it returns to Approved. Nothing is deleted on the network. */
+export async function unpublishPublicationAction(projectId: string, publicationId: string): Promise<ActionResult> {
+  const { allowed } = await guard(projectId);
+  if (!allowed) return { ok: false, error: "Your role can't publish from the calendar." };
   const db = await createClient();
-  const { data } = await db.from("social_connections").select("*").eq("project_id", projectId).eq("provider", "youtube").eq("auth_type", "oauth").eq("status", "connected").order("created_at", { ascending: false });
-  const rows = (data ?? []) as SocialConnection[];
-  return rows.find((r) => r.granted_scopes.includes(YOUTUBE_UPLOAD_SCOPE)) ?? rows[0] ?? null;
-}
-
-/** The project's connected TikTok account (the first active one). */
-async function tiktokConnection(projectId: string): Promise<SocialConnection | null> {
-  const db = await createClient();
-  const { data } = await db.from("social_connections").select("*").eq("project_id", projectId).eq("provider", "tiktok").eq("status", "connected").order("created_at", { ascending: false }).limit(1).maybeSingle();
-  return (data as SocialConnection | null) ?? null;
+  const { data, error } = await db.rpc("unpublish_publication", { p_project: projectId, p_publication: publicationId });
+  if (error) return { ok: false, error: error.message };
+  refresh(projectId);
+  const provider = (data as Publication | null)?.provider;
+  return { ok: true, message: `Marked as not published${provider ? ` on ${provider.charAt(0).toUpperCase()}${provider.slice(1)}` : ""}. You can publish it again.` };
 }
 
 const LABEL: Record<string, string> = { facebook: "Facebook", instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube" };
@@ -347,6 +199,7 @@ function summary(pubs: Publication[]) {
   return [
     by("published").length ? `Published on ${by("published").join(" and ")}` : null,
     by("scheduled").length ? `Scheduled on ${by("scheduled").join(" and ")}` : null,
+    by("queued").length ? `Scheduled: Orix Signals publishes ${by("queued").join(" and ")} at that time` : null,
     by("processing").length ? `${by("processing").join(" and ")} still processing the video` : null,
     by("failed").length ? `Failed on ${by("failed").join(" and ")}` : null,
   ].filter(Boolean).join(" · ");
@@ -381,8 +234,8 @@ export async function publishContextAction(projectId: string, itemId: string): P
   const conn = await getMetaConnection(projectId);
   const active = conn && conn.status === "active" && conn.page_id;
   const pubs = await listPublicationsAction(projectId, itemId);
-  const tt = await tiktokConnection(projectId);
-  const yt = await youtubeConnection(projectId);
+  const tt = await tiktokConnection(db, projectId);
+  const yt = await youtubeConnection(db, projectId);
   return {
     ok: true,
     data: {

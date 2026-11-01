@@ -75,17 +75,45 @@ export async function publishTikTokVideo(opts: { token: string; caption: string;
 }
 
 /** Follows a TikTok publication until it is live or failed (or `waitMs` runs out: processing). */
-export async function checkTikTok(opts: { token: string; publishId: string; username?: string | null; waitMs?: number }): Promise<PublishResult> {
+export async function checkTikTok(opts: { token: string; publishId: string; username?: string | null; waitMs?: number; kind?: "video" | "photo" }): Promise<PublishResult> {
   const deadline = Date.now() + (opts.waitMs ?? 30_000);
   for (;;) {
     const s = await status(opts.token, opts.publishId);
     if (s.status === "PUBLISH_COMPLETE") {
       const id = s.publicaly_available_post_id?.[0];
       const user = opts.username?.replace(/^@/, "");
-      return { postId: id ? String(id) : opts.publishId, url: id && user ? `https://www.tiktok.com/@${user}/video/${id}` : null, scheduledFor: null, containerId: opts.publishId };
+      return { postId: id ? String(id) : opts.publishId, url: id && user ? `https://www.tiktok.com/@${user}/${opts.kind === "photo" ? "photo" : "video"}/${id}` : null, scheduledFor: null, containerId: opts.publishId };
     }
-    if (s.status === "FAILED") throw new SocialApiError(`TikTok could not publish the video (${s.fail_reason ?? "unknown reason"}). Check: MP4/MOV, H.264, 3 s to the account's maximum duration.`, 400, "TikTok", "other");
+    if (s.status === "FAILED") throw new SocialApiError(opts.kind === "photo" ? `TikTok could not publish the photos (${s.fail_reason ?? "unknown reason"}).` : `TikTok could not publish the video (${s.fail_reason ?? "unknown reason"}). Check: MP4/MOV, H.264, 3 s to the account's maximum duration.`, 400, "TikTok", "other");
     if (Date.now() >= deadline) return { postId: "", url: null, scheduledFor: null, containerId: opts.publishId, processing: true };
     await new Promise((res) => setTimeout(res, 4000));
   }
+}
+
+/**
+ * Publishes a photo post: TikTok downloads each photo itself from a link on the app's verified URL prefix (JPEG,
+ * up to 35 photos, the first is the cover), then the status is followed like a video's.
+ */
+export async function publishTikTokPhotos(opts: { token: string; title: string; description: string; photoUrls: string[]; username?: string | null; waitMs?: number }): Promise<PublishResult & { privacy: string }> {
+  const { token } = opts;
+  const info = await tiktokCreatorInfo(token);
+  let privacy = chooseTikTokPrivacy(info.privacy_level_options ?? []);
+  const start = (level: string) => call<{ data: { publish_id: string } }>("/post/publish/content/init/", token, {
+    media_type: "PHOTO", post_mode: "DIRECT_POST",
+    post_info: { title: [...opts.title].slice(0, 90).join(""), description: opts.description.slice(0, 4000), privacy_level: level, disable_comment: false, auto_add_music: true },
+    source_info: { source: "PULL_FROM_URL", photo_cover_index: 0, photo_images: opts.photoUrls.slice(0, 35) },
+  });
+  let init: Awaited<ReturnType<typeof start>>;
+  try {
+    init = await start(privacy);
+  } catch (e) {
+    if (e instanceof SocialApiError && e.code === "url_ownership_unverified") {
+      throw new SocialApiError("TikTok hasn't verified the Orix Signals photo link yet. Verify the URL prefix in the TikTok developer portal (ask Claude for the steps).", 400, "TikTok", "other", e.code);
+    }
+    if (!(e instanceof SocialApiError) || e.code !== "unaudited_client_can_only_post_to_private_accounts" || privacy === "SELF_ONLY") throw e;
+    privacy = "SELF_ONLY";
+    init = await start(privacy);
+  }
+  const r = await checkTikTok({ token, publishId: init.data.publish_id, username: opts.username, waitMs: opts.waitMs ?? 60_000, kind: "photo" });
+  return { ...r, privacy };
 }

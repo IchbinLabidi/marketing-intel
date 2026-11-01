@@ -1,4 +1,4 @@
--- Content Studio V2: per-platform captions and descriptions. Additive and non-destructive.
+-- Content Studio V2: per-platform captions and descriptions. Additive and non-destructive. (Applied to the live database on 2026-11-01 under the working name 0024.)
 --
 -- content_items.platform_captions holds one entry per platform (tiktok, facebook, instagram, youtube_shorts, youtube,
 -- linkedin, x, threads, pinterest), each with its own title, caption/description, hashtags, CTA, keywords, link, alt

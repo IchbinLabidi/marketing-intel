@@ -1,4 +1,4 @@
-// Per-platform captions and descriptions (content_items.platform_captions, migration 0024). Pure and tested.
+// Per-platform captions and descriptions (content_items.platform_captions, migration 0026). Pure and tested.
 // The general caption (content_items.caption) stays as legacy copy: it is never copied into a platform automatically,
 // and publishing falls back to it only when a platform has no caption of its own.
 import { z } from "zod";

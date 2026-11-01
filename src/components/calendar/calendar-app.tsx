@@ -31,13 +31,14 @@ import { duplicatePostAction, reschedulePostAction, setProjectTimezoneAction, ty
 import type { Task } from "@/server/services/team";
 import type { ContentItem } from "@/types/domain";
 import { cn } from "@/lib/utils";
-import { PostCard, stateOf, type CardAction, type PillarRef } from "./post-card";
+import { PostCard, type CardAction, type PillarRef } from "./post-card";
 import { PostEditor, WorkflowLegend, type EditorDefaults } from "./post-editor";
 import { pillarDotClass } from "./styles";
 import { deadlineConflicts, isOverdue, participants, type Person } from "./planning";
 import { DetailPanel } from "./detail-panel";
 import { QuickCreate } from "./quick-create";
 import { ListView } from "./list-view";
+import { BackToBacklogBar, useSelection } from "@/components/backlog/selection-bar";
 import { TimelineView } from "./timeline-view";
 import { AgendaView } from "./agenda-view";
 
@@ -127,6 +128,7 @@ export function CalendarApp({
   const [navigating, startNav] = React.useTransition();
   const [posts, setPosts] = React.useState(initialPosts);
   const [undated, setUndated] = React.useState(initialUndated);
+  const selection = useSelection();
   const [editor, setEditor] = React.useState<{ post: ContentItem | null; defaults: EditorDefaults } | null>(null);
   const [selected, setSelected] = React.useState<string | null>(initialItem?.id ?? null);
   const [extra, setExtra] = React.useState<ContentItem | null>(initialItem ?? null);
@@ -353,7 +355,8 @@ export function CalendarApp({
   };
 
   const range = viewRange(view, date);
-  const listRows = [...posts, ...undated].map((p) => ({ post: p, time: placement(p, tz).time, people: peopleOf(p) }));
+  // Backlog ideas live only in the Backlog: the calendar lists dated posts
+  const listRows = posts.map((p) => ({ post: p, time: placement(p, tz).time, people: peopleOf(p) }));
   const timelineRows = [...new Map([...posts, ...deadlines].map((p) => [p.id, p])).values()].map((p) => ({ post: p, people: peopleOf(p) }));
   const agendaDays = view === "day" ? [date] : view === "week" ? weekDays(date) : (() => { const out: string[] = []; for (let d = range.from; d <= range.to; d = addDays(d, 1)) out.push(d); return out; })();
 
@@ -519,7 +522,10 @@ export function CalendarApp({
         <div className={cn("grid gap-4", view !== "list" && view !== "timeline" && "2xl:grid-cols-[minmax(0,1fr)_17rem]")}>
           <div className={cn("min-w-0 space-y-4 transition-opacity", navigating && "opacity-60")} aria-busy={navigating}>
             {view === "list" ? (
-              listRows.length ? <ListView rows={listRows} today={today} onOpen={openDetails} /> : <Empty readOnly={readOnly} filtered={Boolean(activeFilters || filters.mine || filters.q)} onCreate={() => openQuick(null, null)} />
+              listRows.length ? <>
+                {!readOnly ? <BackToBacklogBar projectId={projectId} ids={[...selection.selected].filter((id) => listRows.some((r) => r.post.id === id))} onClear={selection.clear} onDone={() => { const gone = new Set(selection.selected); setPosts((l) => l.filter((p) => !gone.has(p.id) || p.status === "scheduled" || p.status === "published")); }} /> : null}
+                <ListView rows={listRows} today={today} onOpen={openDetails} selection={readOnly ? undefined : { ...selection, canSelect: (p) => Boolean(p.scheduled_date) && canMove(p) && p.status !== "published" && p.status !== "scheduled" }} />
+              </> : <Empty readOnly={readOnly} filtered={Boolean(activeFilters || filters.mine || filters.q)} onCreate={() => openQuick(null, null)} />
             ) : view === "timeline" ? (
               timelineRows.length ? <TimelineView rows={timelineRows} from={range.from} to={range.to} today={today} onOpen={openDetails} /> : <Empty readOnly={readOnly} filtered={Boolean(activeFilters || filters.mine || filters.q)} onCreate={() => openQuick(null, null)} />
             ) : (
@@ -543,7 +549,7 @@ export function CalendarApp({
           </div>
           {view !== "list" && view !== "timeline" ? (
             <div className="space-y-4">
-              <UndatedTray posts={undated} card={card} projectId={projectId} />
+              <UndatedTray posts={undated} projectId={projectId} />
               {insights}
             </div>
           ) : null}
@@ -786,16 +792,14 @@ function TimeGrid({ days, today, byDate, deadlinesByDate, deadlineChip, conflict
   );
 }
 
-function UndatedTray({ posts, card, projectId }: { posts: ContentItem[]; card: (e: Entry, compact?: boolean) => React.ReactNode; projectId: string }) {
+/** Backlog ideas aren't shown on the calendar: only a count and a link to the Backlog, where they get a date. */
+function UndatedTray({ posts, projectId }: { posts: ContentItem[]; projectId: string }) {
   if (!posts.length) return null;
   return (
-    <div className="rounded-xl border bg-card p-3 shadow-xs">
-      <p className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold"><Inbox className="size-4" /> Ideas Backlog <span className="text-xs font-normal text-muted-foreground">· drag onto a day</span> <Link href={`/p/${projectId}/backlog`} className="ml-auto text-xs font-normal text-primary hover:underline">Open</Link></p>
-      <div className="scrollbar-thin max-h-72 space-y-1.5 overflow-y-auto pr-1">
-        {posts.map((p) => card({ post: p, time: null, hour: null }))}
-      </div>
-      <p className="mt-2 text-[11px] text-muted-foreground">{posts.filter((p) => stateOf(p) === "draft").length} drafts without a date</p>
-    </div>
+    <Link href={`/p/${projectId}/backlog`} className="flex items-center gap-1.5 rounded-xl border bg-card p-3 text-[13px] font-semibold shadow-xs hover:border-primary">
+      <Inbox className="size-4" /> Ideas Backlog <span className="text-xs font-normal text-muted-foreground">· {posts.length}{posts.length >= 200 ? "+" : ""} waiting for a date</span>
+      <span className="ml-auto text-xs font-normal text-primary">Open</span>
+    </Link>
   );
 }
 

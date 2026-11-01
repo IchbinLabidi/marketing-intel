@@ -34,6 +34,7 @@ import { PlannerDialog } from "./planner-dialog";
 
 type View = "list" | "cards" | "kanban";
 const PRIORITIES = ["urgent", "high", "medium", "low"] as const;
+const BRIEF_STAGES = ["brief", "in_production", "internal_review", "approval", "ready"] as const;
 const PRIORITY_LABEL: Record<string, string> = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low" };
 const PLATFORM_CHOICES = ["facebook", "instagram", "tiktok", "linkedin", "youtube"] as const;
 const scoreTone = (s: number | null) => ({ high: "success", good: "info", fair: "warning", low: "destructive", unscored: "outline" } as const)[scoreBand(s)];
@@ -98,6 +99,19 @@ export function BacklogApp(props: {
     setSelected(new Set());
     await reload();
   };
+  // every idea matching the filters, page by page (up to 2,000)
+  const selectAllMatching = async () => {
+    setBusy("selectall");
+    const all = new Set<string>();
+    for (let p = 0; p < 10; p++) {
+      const r = await listIdeasAction(projectId, filters, p);
+      if (!r.ok) { setBusy(null); return void toast.error(r.error); }
+      for (const i of r.data!.ideas) all.add(i.id);
+      if (all.size >= r.data!.total || !r.data!.ideas.length) break;
+    }
+    setBusy(null);
+    setSelected(all);
+  };
   const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const activeCount = Object.entries(filters).filter(([k, v]) => !["sort", "planning"].includes(k) && v != null && v !== "" && !(Array.isArray(v) && !v.length)).length;
 
@@ -138,6 +152,9 @@ export function BacklogApp(props: {
           </NativeSelect>
           <NativeSelect aria-label="Audience" className="w-40" value={filters.segments?.[0] ?? ""} onChange={(e) => setF({ segments: e.target.value ? [e.target.value] : [] })}>
             <option value="">All audiences</option>{SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_LABELS[s]}</option>)}<option value="none">Audience not set</option>
+          </NativeSelect>
+          <NativeSelect aria-label="Type" className="w-40" value={!filters.stages?.length ? "" : filters.stages.length === 1 && filters.stages[0] === "idea" ? "ideas" : "briefs"} onChange={(e) => setF({ stages: e.target.value === "ideas" ? ["idea"] : e.target.value === "briefs" ? [...BRIEF_STAGES] : [] })}>
+            <option value="">Ideas + briefs</option><option value="ideas">Ideas only</option><option value="briefs">Briefs &amp; in production</option>
           </NativeSelect>
           <NativeSelect aria-label="Sort" className="w-40" value={filters.sort} onChange={(e) => setF({ sort: e.target.value as BacklogFilters["sort"] })}>
             <option value="score">Highest score</option><option value="audience">Audience</option><option value="priority">Highest priority</option><option value="suggested">Suggested date</option><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="title">Title</option>
@@ -187,7 +204,10 @@ export function BacklogApp(props: {
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>{loading ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : null}{data.total} idea{data.total === 1 ? "" : "s"} · times in {tz}</span>
-          {canEdit && data.ideas.length ? <label className="flex items-center gap-1.5"><input type="checkbox" checked={selected.size > 0 && selected.size === data.ideas.length} onChange={(e) => setSelected(e.target.checked ? new Set(data.ideas.map((i) => i.id)) : new Set())} /> Select all shown</label> : null}
+          {canEdit && data.ideas.length ? <span className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5"><input type="checkbox" checked={selected.size > 0 && selected.size === data.ideas.length} onChange={(e) => setSelected(e.target.checked ? new Set(data.ideas.map((i) => i.id)) : new Set())} /> Select all shown</label>
+            {data.total > data.ideas.length ? <button type="button" className="text-primary hover:underline disabled:opacity-50" disabled={busy !== null} onClick={() => void selectAllMatching()}>{busy === "selectall" ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : null}Select all {data.total}</button> : null}
+          </span> : null}
         </div>
       </div>
 
@@ -202,7 +222,7 @@ export function BacklogApp(props: {
           {props.aiEnabled ? <Button size="sm" variant="outline" disabled={busy !== null || selected.size > 30} title={selected.size > 30 ? "Up to 30 at a time" : undefined} onClick={() => bulk("aiaudience", () => suggestAudienceAction(projectId, ids))}>{busy === "aiaudience" ? <Loader2 className="animate-spin" /> : <Sparkles />} AI: suggest audience</Button> : null}
           <NativeSelect aria-label="Set priority" className="h-8 w-32" value="" onChange={(e) => e.target.value && bulk("priority", () => setPriorityAction(projectId, ids, e.target.value as "low"))}><option value="">Priority…</option>{PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}</NativeSelect>
           <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => { const t = window.prompt("Tag to add"); if (t) void bulk("tag", () => tagIdeasAction(projectId, ids, t)); }}><Tag /> Tag</Button>
-          {filters.planning === "planned" || filters.planning === "all" ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("unplan", () => unplanIdeasAction(projectId, ids))}><Undo2 /> Back to Backlog</Button> : null}
+          {filters.planning !== "backlog" || filters.scheduledFrom || filters.scheduledTo ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={async () => { if (ids.length > 20 && !(await confirm({ title: `Move ${ids.length} items back to the Backlog?`, description: "They leave the Calendar and Production and show only in the Backlog. Their writing, files and history are kept; approvals restart if you send them to Production again. Scheduled and published posts are left as they are.", confirmLabel: "Back to Backlog" }))) return; await bulk("unplan", () => unplanIdeasAction(projectId, ids)); }}><Undo2 /> Back to Backlog</Button> : null}
           <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("archive", () => archiveIdeasAction(projectId, ids, !filters.archived))}>{filters.archived ? <ArchiveRestore /> : <Archive />} {filters.archived ? "Restore" : "Archive"}</Button>
           <Button size="sm" variant="ghost" className="text-destructive" disabled={busy !== null} onClick={async () => { if (await confirm({ title: `Delete ${selected.size} idea${selected.size > 1 ? "s" : ""}?`, description: "They are deleted permanently with their stored files. Scheduled and published posts are skipped.", confirmLabel: "Delete permanently", destructive: true })) await bulk("delete", () => deleteIdeasAction(projectId, ids)); }}><Trash2 /> Delete</Button>
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear</Button>

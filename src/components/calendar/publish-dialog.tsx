@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, CircleAlert, ExternalLink, HardDrive, Laptop, Loader2, RefreshCcw, Send } from "lucide-react";
+import { CheckCircle2, CircleAlert, ExternalLink, HardDrive, Laptop, Loader2, RefreshCcw, Send, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,8 @@ import { composeCaption, validateLocalFile, type PublishTarget } from "@/lib/pub
 import { utcToZoned, zonedToUtc } from "@/lib/calendar/time";
 import { cn } from "@/lib/utils";
 import { COPY_PLATFORM_LABELS, defaultYouTubeVariant, publicationCopy, readCaptions } from "@/lib/production/platform-copy";
-import { checkPublicationAction, publishContextAction, publishPostAction, type Publication, type PublishContext } from "@/server/actions/publishing";
+import { cancelScheduledAction, checkPublicationAction, publishContextAction, publishPostAction, unpublishPublicationAction, type Publication, type PublishContext } from "@/server/actions/publishing";
+import { confirm } from "@/components/ui/confirm";
 import { finishMediaUploadAction, mediaUploadTicketAction } from "@/server/actions/production";
 import type { ContentItem } from "@/types/domain";
 import { DrivePicker } from "./drive-picker";
@@ -113,15 +114,34 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
     await load();
     onPublished();
   };
+  const cancelSchedule = async (p: Publication) => {
+    setBusy(`cancel-${p.id}`);
+    const r = await cancelScheduledAction(projectId, p.id);
+    setBusy(null);
+    if (r.ok) toast.success(r.message ?? "Updated"); else toast.error(r.error);
+    await load();
+    onPublished();
+  };
+  // the person deleted the post on the network: reset that row so the post can be published again (nothing is deleted there)
+  const unpublish = async (p: Publication) => {
+    const where = LABEL[p.provider as PublishTarget] ?? p.provider;
+    if (!(await confirm({ title: `Mark as not published on ${where}?`, description: `Do this only if you deleted the post on ${where}. Orix Signals forgets the old link and lets you publish it again. Nothing is deleted on ${where}.`, confirmLabel: "Mark as not published" }))) return;
+    setBusy(`un-${p.id}`);
+    const r = await unpublishPublicationAction(projectId, p.id);
+    setBusy(null);
+    if (r.ok) toast.success(r.message ?? "Updated"); else toast.error(r.error);
+    await load();
+    onPublished();
+  };
 
   const needsConsent = targets.includes("instagram") && selected.some((a) => a.source === "stored" || a.source === "google_drive");
   const approved = ["approved", "scheduled"].includes(post.status);
-  const canSchedule = targets.every((t) => t === "facebook");
+  const canSchedule = true;
   const toggle = (t: PublishTarget) => {
     if (t !== "facebook" && !targets.includes(t)) setWhen("now"); // Instagram and TikTok can only be published now
     setTargets((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]));
   };
-  const done = (t: PublishTarget) => ctx?.publications.find((p) => p.provider === t && ["published", "scheduled", "processing", "uploading"].includes(p.status));
+  const done = (t: PublishTarget) => ctx?.publications.find((p) => p.provider === t && (["published", "scheduled", "processing", "uploading"].includes(p.status) || (p.status === "queued" && Boolean(p.scheduled_for))));
 
   return (
     <Dialog open modal={!picking} onOpenChange={(o) => !o && !busy && !picking && onClose()}>
@@ -222,7 +242,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
                 <label key={t} className={cn("flex items-center gap-2", !acc && "opacity-50")}>
                   <input type="checkbox" checked={targets.includes(t)} disabled={!acc || Boolean(done(t))} onChange={() => toggle(t)} />
                   {LABEL[t]} {acc ? <span className="text-muted-foreground">· {acc.name}</span> : <span className="text-muted-foreground">· not connected</span>}
-                  {done(t) ? <Badge variant="outline">already {done(t)!.status}</Badge> : null}
+                  {done(t) ? <Badge variant="outline">already {done(t)!.status === "queued" ? "scheduled" : done(t)!.status}</Badge> : null}
                 </label>
               ))}
               {needsConsent ? (
@@ -265,11 +285,11 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
               <div className="flex flex-wrap items-center gap-3">
                 <label className="flex items-center gap-1.5"><input type="radio" checked={when === "now"} onChange={() => setWhen("now")} /> Now</label>
                 <label className={cn("flex items-center gap-1.5", !canSchedule && "opacity-50")}>
-                  <input type="radio" checked={when === "schedule"} disabled={!canSchedule} onChange={() => setWhen("schedule")} /> Schedule on Facebook
+                  <input type="radio" checked={when === "schedule"} disabled={!canSchedule} onChange={() => setWhen("schedule")} /> Schedule
                 </label>
                 {when === "schedule" ? <><Input type="date" className="h-8 w-40" value={date} onChange={(e) => setDate(e.target.value)} /><Input type="time" className="h-8 w-28" value={time} onChange={(e) => setTime(e.target.value)} /><span className="text-xs text-muted-foreground">{tz}</span></> : null}
               </div>
-              <p className="text-xs text-muted-foreground">Facebook keeps the scheduled post and publishes it itself (10 minutes to 30 days ahead). Instagram, TikTok and YouTube are published now from Orix Signals: publish them at the right time.</p>
+              <p className="text-xs text-muted-foreground">Facebook keeps the scheduled post and publishes it itself (10 minutes to 30 days ahead). Instagram, TikTok and YouTube can&apos;t schedule through their API, so Orix Signals publishes them at that time (within 5 minutes, up to 75 days ahead). Keep the media attached until then.</p>
               {targets.includes("youtube") ? <p className="text-xs text-muted-foreground">YouTube: one video, titled with the YouTube title from Content Studio (or the post title); its description, CTA and hashtags become the description. Vertical videos under 3 minutes appear as Shorts. Until Google approves Orix Signals&apos;s YouTube access, uploads stay private (you can make them public in YouTube Studio).</p> : null}
               {targets.includes("tiktok") ? <p className="text-xs text-muted-foreground">TikTok: one video (MP4 or MOV, up to 50 MB). Until TikTok approves Orix Signals, videos are posted as private (only you can see them); you can make them public in the TikTok app.</p> : null}
             </section>
@@ -282,10 +302,12 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
                   {ctx.publications.map((p) => (
                     <li key={p.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
                       <span className="font-medium">{LABEL[p.provider as PublishTarget] ?? p.provider}</span>
-                      <Badge variant={STATUS[p.status]?.tone ?? "outline"} dot>{STATUS[p.status]?.label ?? p.status}</Badge>
+                      {p.status === "queued" && p.scheduled_for ? <Badge variant="info" dot>Scheduled in Orix Signals</Badge> : <Badge variant={STATUS[p.status]?.tone ?? "outline"} dot>{STATUS[p.status]?.label ?? p.status}</Badge>}
                       {p.scheduled_for ? <span className="text-xs text-muted-foreground">{new Date(p.scheduled_for).toLocaleString("en-GB", { timeZone: tz })}</span> : null}
                       {p.platform_url ? <a href={p.platform_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">View post <ExternalLink className="size-3" /></a> : null}
                       {p.status === "processing" ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => check(p)}><RefreshCcw /> Check again</Button> : null}
+                      {p.status === "queued" && p.scheduled_for ? <Button size="sm" variant="ghost" className="ml-auto text-xs" disabled={busy !== null} onClick={() => void cancelSchedule(p)}>{busy === `cancel-${p.id}` ? <Loader2 className="animate-spin" /> : <X />} Cancel schedule</Button> : null}
+                      {p.status === "published" || p.status === "scheduled" ? <Button size="sm" variant="ghost" className="ml-auto text-xs" disabled={busy !== null} onClick={() => void unpublish(p)}>{busy === `un-${p.id}` ? <Loader2 className="animate-spin" /> : <Undo2 />} Deleted there? Mark as not published</Button> : null}
                       {p.error ? <p className="basis-full text-xs text-destructive"><CircleAlert className="mr-1 inline size-3" />{p.error}{p.error_kind === "transient" ? " You can try again." : ""}</p> : null}
                     </li>
                   ))}
