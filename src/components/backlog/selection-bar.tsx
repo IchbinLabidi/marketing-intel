@@ -25,14 +25,14 @@ export function SelectAllBox({ ids, selected, onChange, label = "Select all" }: 
   return <input ref={ref} type="checkbox" aria-label={label} checked={ids.length > 0 && n === ids.length} onChange={(e) => onChange(e.target.checked)} onClick={(e) => e.stopPropagation()} />;
 }
 
-/** Sticky bar for a selection: "Back to Backlog" clears the calendar dates of ideas and briefs (their content, production
- *  stage and approvals stay); scheduled and published posts are skipped. */
+/** Sticky bar for a selection: "Back to Backlog" takes ideas and briefs off the Calendar and out of Production (date cleared,
+ *  back to the Idea stage, writing and files kept); scheduled and published posts are skipped. */
 export function BackToBacklogBar({ projectId, ids, onClear, onDone, children }: { projectId: string; ids: string[]; onClear: () => void; onDone?: () => void; children?: React.ReactNode }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   if (!ids.length) return null;
   const run = async () => {
-    if (ids.length > 20 && !(await confirm({ title: `Move ${ids.length} items back to the Backlog?`, description: "Their calendar dates are cleared. Ideas and briefs keep their content, production stage and approvals. Scheduled and published posts are left as they are.", confirmLabel: "Back to Backlog" }))) return;
+    if (ids.length > 20 && !(await confirm({ title: `Move ${ids.length} items back to the Backlog?`, description: "They leave the Calendar and Production and show only in the Backlog. Their writing, files and history are kept; approvals restart if you send them to Production again. Scheduled and published posts are left as they are.", confirmLabel: "Back to Backlog" }))) return;
     setBusy(true);
     const r = await unplanIdeasAction(projectId, ids);
     setBusy(false);
