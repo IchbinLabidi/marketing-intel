@@ -6,8 +6,9 @@ export const LIMITS = {
   facebook: { caption: 63_206, image: ["image/jpeg", "image/png", "image/gif", "image/webp"], video: ["video/mp4", "video/quicktime"] },
   // Instagram Content Publishing API: JPEG images only (stored and Drive photos in other formats are converted to JPEG
   // before sending); Reels as MP4/MOV; caption ≤ 2,200 characters, ≤ 30 hashtags
-  // TikTok Content Posting API (Direct Post): one video per post, MP4/MOV/WebM, caption (title) ≤ 2,200 characters
-  tiktok: { caption: 2_200, video: ["video/mp4", "video/quicktime", "video/webm"] },
+  // TikTok Content Posting API (Direct Post): one video (MP4/MOV/WebM, caption ≤ 2,200 characters) or a photo post
+  // (photos sent as JPEG from a verified link, description ≤ 4,000 characters)
+  tiktok: { caption: 2_200, photoCaption: 4_000, image: ["image/jpeg", "image/png", "image/webp"], video: ["video/mp4", "video/quicktime", "video/webm"] },
   // YouTube Data API (videos.insert): one video, description ≤ 5,000 characters (the title comes from the post title)
   youtube: { caption: 5_000, video: ["video/mp4", "video/quicktime", "video/webm", "video/x-msvideo", "video/mpeg"] },
   instagram: { caption: 2_200, hashtags: 30, image: ["image/jpeg", "image/png", "image/webp", "image/gif"], video: ["video/mp4", "video/quicktime"] },
@@ -39,7 +40,13 @@ export function validateForTarget(target: PublishTarget, p: { caption: string; m
     return null;
   }
   if (target === "tiktok") {
-    if (!p.hasMedia || mediaKindOf(p.mime) !== "video") return "TikTok publishing from Orix Signals needs a video (MP4 or MOV).";
+    const kind = p.hasMedia ? mediaKindOf(p.mime) : null;
+    if (kind === "image") {
+      if (!(LIMITS.tiktok.image as readonly string[]).includes(p.mime!)) return "TikTok photo posts accept JPEG, PNG or WebP photos (sent as JPEG).";
+      if (p.caption.length > LIMITS.tiktok.photoCaption) return `TikTok photo descriptions are limited to ${LIMITS.tiktok.photoCaption.toLocaleString("en")} characters.`;
+      return null;
+    }
+    if (kind !== "video") return "TikTok needs a video (MP4 or MOV) or photos.";
     if (!(LIMITS.tiktok.video as readonly string[]).includes(p.mime!)) return "TikTok accepts MP4, MOV or WebM videos.";
     if (p.caption.length > LIMITS.tiktok.caption) return `TikTok captions are limited to ${LIMITS.tiktok.caption.toLocaleString("en")} characters.`;
     return null;
@@ -67,11 +74,11 @@ export const MAX_GROUP = 10; // Instagram carousels and Facebook multi-photo pos
 /** Several files in one post: only photos, at most 10 (Instagram carousel limit). Null when fine. */
 export function validateGroup(target: PublishTarget, mimes: (string | null | undefined)[]): string | null {
   if (mimes.length < 2) return null;
-  if (target === "tiktok") return "TikTok posts from Orix Signals are a single video. Select only one file for TikTok.";
   if (target === "youtube") return "A YouTube upload is a single video. Select only one file for YouTube.";
   if (mimes.length > MAX_GROUP) return `Choose at most ${MAX_GROUP} photos for one post.`;
   if (mimes.some((m) => mediaKindOf(m) !== "image")) return "Several files in one post must all be photos. Publish a video on its own.";
   if (target === "instagram" && mimes.some((m) => !(LIMITS.instagram.image as readonly string[]).includes(m!))) return "Instagram accepts JPEG, PNG, WebP or GIF photos (sent as JPEG).";
+  if (target === "tiktok" && mimes.some((m) => !(LIMITS.tiktok.image as readonly string[]).includes(m!))) return "TikTok photo posts accept JPEG, PNG or WebP photos (sent as JPEG).";
   return null;
 }
 
