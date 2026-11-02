@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { FUNNEL_STAGES, LANGUAGES, PLATFORMS } from "@/lib/domain/constants";
 import { isIsoDate, isTime } from "@/lib/calendar/time";
+import { AUDIENCES } from "@/lib/backlog/audience";
 import { optionalEnum, optionalText } from "./common";
 
 const uuidOrNull = z.union([z.uuid(), z.literal("")]).nullish().transform((v) => v || null);
@@ -33,6 +34,8 @@ export const postSchema = z
     opportunity_id: uuidOrNull,
     funnel_stage: optionalEnum(FUNNEL_STAGES),
     language: optionalEnum(LANGUAGES),
+    /** audience tag; empty on a new post = classified on save, on an existing post = left as it is */
+    audience: optionalEnum(AUDIENCES),
     media_url: z
       .string()
       .trim()

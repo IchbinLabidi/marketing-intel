@@ -19,12 +19,13 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { PlatformIcon } from "@/components/calendar/platform-icon";
 import { PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
 import { CRITERIA, impactEffort, normalizeWeights, scoreBand, type Weights } from "@/lib/backlog/score";
-import { ALL_CONVERSIONS, goalsFor, SEGMENTS, SEGMENT_LABELS, SIDE_LABELS, type AudienceMix, type Side } from "@/lib/backlog/audience";
+import { ALL_CONVERSIONS, AUDIENCES, AUDIENCE_LABELS, goalsFor, SEGMENTS, SEGMENT_LABELS, SIDE_LABELS, type Audience, type AudienceMix, type Side } from "@/lib/backlog/audience";
+import { AudienceFilter, AudienceSelect } from "@/components/app/audience-badge";
 import { FORMATS, STAGE_LABELS, type ProductionStage } from "@/lib/production/model";
 import { cn } from "@/lib/utils";
 import {
   archiveIdeasAction, createIdeaAction, deleteIdeasAction, deletePresetAction, duplicateIdeaAction, listIdeasAction, refreshSuggestionsAction,
-  saveScoreWeightsAction, savePresetAction, scoreIdeasAction, sendToProductionAction, setAudienceAction, setPriorityAction, suggestAudienceAction, tagIdeasAction, unplanIdeasAction,
+  saveScoreWeightsAction, savePresetAction, scoreIdeasAction, sendToProductionAction, setAudienceTagAction, setPriorityAction, suggestAudienceAction, tagIdeasAction, tagUntaggedAction, unplanIdeasAction,
   type FilterPreset,
 } from "@/server/actions/backlog";
 import type { BacklogFilters, Idea } from "@/server/services/backlog";
@@ -115,6 +116,12 @@ export function BacklogApp(props: {
   const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const activeCount = Object.entries(filters).filter(([k, v]) => !["sort", "planning"].includes(k) && v != null && v !== "" && !(Array.isArray(v) && !v.length)).length;
 
+  const setTag = async (i: Idea, audience: Audience) => {
+    setData((d) => ({ ...d, ideas: d.ideas.map((x) => (x.id === i.id ? { ...x, audience } : x)) }));
+    const r = await setAudienceTagAction(projectId, [i.id], audience);
+    if (!r.ok) toast.error(r.error);
+    await load(filters, 0);
+  };
   const actions = (i: Idea) => ({
     preview: () => setOpen(i),
     place: () => setPlace({ idea: i }),
@@ -150,9 +157,7 @@ export function BacklogApp(props: {
           <NativeSelect aria-label="Planning status" className="w-40" value={filters.archived ? "archived" : filters.planning} onChange={(e) => e.target.value === "archived" ? setF({ archived: true, planning: "all" }) : setF({ archived: false, planning: e.target.value as BacklogFilters["planning"] })}>
             <option value="backlog">In the Backlog</option><option value="planned">On the calendar</option><option value="all">Backlog + calendar</option><option value="published">Published</option><option value="archived">Archived</option>
           </NativeSelect>
-          <NativeSelect aria-label="Audience" className="w-40" value={filters.segments?.[0] ?? ""} onChange={(e) => setF({ segments: e.target.value ? [e.target.value] : [] })}>
-            <option value="">All audiences</option>{SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_LABELS[s]}</option>)}<option value="none">Audience not set</option>
-          </NativeSelect>
+          <AudienceFilter className="w-40" value={filters.audiences?.[0] ?? ""} onChange={(v) => setF({ audiences: v ? [v] : [] })} />
           <NativeSelect aria-label="Type" className="w-40" value={!filters.stages?.length ? "" : filters.stages.length === 1 && filters.stages[0] === "idea" ? "ideas" : "briefs"} onChange={(e) => setF({ stages: e.target.value === "ideas" ? ["idea"] : e.target.value === "briefs" ? [...BRIEF_STAGES] : [] })}>
             <option value="">Ideas + briefs</option><option value="ideas">Ideas only</option><option value="briefs">Briefs &amp; in production</option>
           </NativeSelect>
@@ -186,6 +191,7 @@ export function BacklogApp(props: {
         {more ? (
           <div className="grid gap-2 rounded-lg border bg-card p-3 sm:grid-cols-2 lg:grid-cols-4">
             <FilterSelect label="Content pillar" value={filters.pillars?.[0] ?? ""} onChange={(v) => setF({ pillars: v ? [v] : [] })} options={[["none", "No pillar"], ...props.pillars.map((p) => [p.id, `${p.name}${p.segment === "teachers" ? " · Teachers" : ""}`])]} />
+            <FilterSelect label="Segment" value={filters.segments?.[0] ?? ""} onChange={(v) => setF({ segments: v ? [v] : [] })} options={[...SEGMENTS.map((x) => [x, SEGMENT_LABELS[x]]), ["none", "Segment not set"]]} />
             <FilterSelect label="Conversion goal" value={filters.goals?.[0] ?? ""} onChange={(v) => setF({ goals: v ? [v] : [] })} options={(filters.segments?.[0] && filters.segments[0] !== "none" ? goalsFor(filters.segments[0]) : ALL_CONVERSIONS).map((g) => [g.key, g.label])} />
             <FilterSelect label="Format" value={filters.formats?.[0] ?? ""} onChange={(v) => setF({ formats: v ? [v] : [] })} options={FORMATS.map((f) => [f, f])} />
             <FilterSelect label="Platform" value={filters.platforms?.[0] ?? ""} onChange={(v) => setF({ platforms: v ? [v] : [] })} options={PLATFORM_CHOICES.map((p) => [p, PLATFORM_LABELS[p as Platform]])} />
@@ -203,7 +209,9 @@ export function BacklogApp(props: {
           </div>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span>{loading ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : null}{data.total} idea{data.total === 1 ? "" : "s"} · times in {tz}</span>
+          <span>{loading ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : null}{data.total} idea{data.total === 1 ? "" : "s"} · times in {tz}
+            {canEdit && props.aiEnabled && filters.audiences?.[0] === "none" && data.total ? <button type="button" className="ml-3 text-primary hover:underline disabled:opacity-50" disabled={busy !== null} onClick={() => bulk("backfill", () => tagUntaggedAction(projectId))}>{busy === "backfill" ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : <Sparkles className="mr-1 inline size-3" />}Tag untagged items with AI</button> : null}
+          </span>
           {canEdit && data.ideas.length ? <span className="flex items-center gap-3">
             <label className="flex items-center gap-1.5"><input type="checkbox" checked={selected.size > 0 && selected.size === data.ideas.length} onChange={(e) => setSelected(e.target.checked ? new Set(data.ideas.map((i) => i.id)) : new Set())} /> Select all shown</label>
             {data.total > data.ideas.length ? <button type="button" className="text-primary hover:underline disabled:opacity-50" disabled={busy !== null} onClick={() => void selectAllMatching()}>{busy === "selectall" ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : null}Select all {data.total}</button> : null}
@@ -218,7 +226,7 @@ export function BacklogApp(props: {
           {props.aiEnabled ? <Button size="sm" variant="outline" disabled={busy !== null || selected.size > 20} title={selected.size > 20 ? "Score up to 20 at a time" : undefined} onClick={() => bulk("score", () => scoreIdeasAction(projectId, ids))}>{busy === "score" ? <Loader2 className="animate-spin" /> : <Sparkles />} Score with AI</Button> : null}
           <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("suggest", () => refreshSuggestionsAction(projectId, ids))}>{busy === "suggest" ? <Loader2 className="animate-spin" /> : <CalendarPlus />} Suggest times</Button>
           <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("production", () => sendToProductionAction(projectId, ids))}><Send /> Send to Production</Button>
-          <NativeSelect aria-label="Set audience" className="h-8 w-36" value="" onChange={(e) => e.target.value && bulk("audience", () => setAudienceAction(projectId, ids, e.target.value === "none" ? null : (e.target.value as "students")))}><option value="">Set audience…</option>{SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_LABELS[s]}</option>)}<option value="none">Clear audience</option></NativeSelect>
+          <NativeSelect aria-label="Set audience" className="h-8 w-36" value="" onChange={(e) => e.target.value && bulk("audience", () => setAudienceTagAction(projectId, ids, e.target.value as Audience))}><option value="">Set audience…</option>{AUDIENCES.map((a) => <option key={a} value={a}>{AUDIENCE_LABELS[a]}</option>)}</NativeSelect>
           {props.aiEnabled ? <Button size="sm" variant="outline" disabled={busy !== null || selected.size > 30} title={selected.size > 30 ? "Up to 30 at a time" : undefined} onClick={() => bulk("aiaudience", () => suggestAudienceAction(projectId, ids))}>{busy === "aiaudience" ? <Loader2 className="animate-spin" /> : <Sparkles />} AI: suggest audience</Button> : null}
           <NativeSelect aria-label="Set priority" className="h-8 w-32" value="" onChange={(e) => e.target.value && bulk("priority", () => setPriorityAction(projectId, ids, e.target.value as "low"))}><option value="">Priority…</option>{PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}</NativeSelect>
           <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => { const t = window.prompt("Tag to add"); if (t) void bulk("tag", () => tagIdeasAction(projectId, ids, t)); }}><Tag /> Tag</Button>
@@ -243,7 +251,7 @@ export function BacklogApp(props: {
             <tbody>{data.ideas.map((i) => (
               <tr key={i.id} className="border-b last:border-0 hover:bg-muted/40">
                 {canEdit ? <td className="p-2"><input type="checkbox" aria-label={`Select ${i.title}`} checked={selected.has(i.id)} onChange={() => toggle(i.id)} /></td> : null}
-                <td className="max-w-md p-2"><button className="text-left font-medium hover:text-primary" onClick={() => setOpen(i)}>{i.title}</button><Meta idea={i} pillar={pillarName(i.pillar_id)} /></td>
+                <td className="max-w-md p-2"><button className="text-left font-medium hover:text-primary" onClick={() => setOpen(i)}>{i.title}</button><Meta idea={i} pillar={pillarName(i.pillar_id)} canEdit={canEdit} onAudience={(a) => void setTag(i, a)} /></td>
                 <td className="p-2"><ScoreBadge s={i.idea_score} /> <ImpactEffort idea={i} /></td>
                 <td className="p-2 text-xs">{i.suggested_slot ? <>{slotLabel(i.suggested_slot.date, i.suggested_slot.time)}<br /><span className="text-muted-foreground">{i.suggested_slot.confidence}</span></> : "—"}</td>
                 <td className="p-2 text-xs">{PRIORITY_LABEL[i.priority ?? "medium"]}</td>
@@ -255,7 +263,7 @@ export function BacklogApp(props: {
         </div>
       ) : view === "cards" ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {data.ideas.map((i) => <IdeaCard key={i.id} idea={i} pillar={pillarName(i.pillar_id)} canEdit={canEdit} selected={selected.has(i.id)} onToggle={() => toggle(i.id)} a={actions(i)} />)}
+          {data.ideas.map((i) => <IdeaCard key={i.id} idea={i} pillar={pillarName(i.pillar_id)} canEdit={canEdit} selected={selected.has(i.id)} onToggle={() => toggle(i.id)} a={actions(i)} onAudience={(a) => void setTag(i, a)} />)}
         </div>
       ) : (
         <DndContext sensors={sensors} onDragEnd={onDragEnd}>
@@ -264,7 +272,7 @@ export function BacklogApp(props: {
               const col = data.ideas.filter((i) => (i.priority ?? "medium") === p);
               return (
                 <KanbanColumn key={p} id={p} label={`${PRIORITY_LABEL[p]} priority`} count={col.length}>
-                  {col.map((i) => <DraggableCard key={i.id} id={i.id} disabled={!canEdit}><IdeaCard idea={i} pillar={pillarName(i.pillar_id)} canEdit={canEdit} selected={selected.has(i.id)} onToggle={() => toggle(i.id)} a={actions(i)} compact /></DraggableCard>)}
+                  {col.map((i) => <DraggableCard key={i.id} id={i.id} disabled={!canEdit}><IdeaCard idea={i} pillar={pillarName(i.pillar_id)} canEdit={canEdit} selected={selected.has(i.id)} onToggle={() => toggle(i.id)} a={actions(i)} onAudience={(a) => void setTag(i, a)} compact /></DraggableCard>)}
                 </KanbanColumn>
               );
             })}
@@ -293,11 +301,12 @@ function ImpactEffort({ idea }: { idea: Idea }) {
   return ie ? <span className="whitespace-nowrap text-xs text-muted-foreground" title="Impact = business value, Effort = production complexity (0–100, from the score criteria)">Impact {ie.impact} · Effort {ie.effort}</span> : null;
 }
 
-function Meta({ idea, pillar }: { idea: Idea; pillar: string | null }) {
+function Meta({ idea, pillar, canEdit, onAudience }: { idea: Idea; pillar: string | null; canEdit: boolean; onAudience: (a: Audience) => void }) {
   const platforms = idea.target_platforms?.length ? idea.target_platforms : idea.platform ? [idea.platform] : [];
   return (
     <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
-      {idea.audience_segment ? <span className={cn("rounded px-1 font-medium", idea.audience_segment === "teachers" ? "bg-warning/15 text-warning-foreground" : "bg-primary-soft text-primary")}>{SEGMENT_LABELS[idea.audience_segment as keyof typeof SEGMENT_LABELS]}</span> : null}
+      <AudienceSelect value={idea.audience} onChange={onAudience} disabled={!canEdit} />
+      {idea.audience_segment === "both" ? <span className="rounded bg-primary-soft px-1 font-medium text-primary" title="Segment: speaks to both sides of the marketplace">{SEGMENT_LABELS.both}</span> : null}
       {pillar ? <span>{pillar}</span> : null}{pillar && idea.format ? <span>·</span> : null}{idea.format ? <span>{idea.format}</span> : null}
       {platforms.map((p) => <PlatformIcon key={p} platform={p} />)}
       {(idea.tags ?? []).slice(0, 3).map((t) => <span key={t} className="rounded bg-muted px-1">#{t}</span>)}
@@ -326,7 +335,7 @@ function RowMenu({ idea, canEdit, a }: { idea: Idea; canEdit: boolean; a: Acts }
   );
 }
 
-function IdeaCard({ idea, pillar, canEdit, selected, onToggle, a, compact }: { idea: Idea; pillar: string | null; canEdit: boolean; selected: boolean; onToggle: () => void; a: Acts; compact?: boolean }) {
+function IdeaCard({ idea, pillar, canEdit, selected, onToggle, a, onAudience, compact }: { idea: Idea; pillar: string | null; canEdit: boolean; selected: boolean; onToggle: () => void; a: Acts; onAudience: (a: Audience) => void; compact?: boolean }) {
   const s = idea.suggested_slot;
   return (
     <article className={cn("flex flex-col gap-2 rounded-xl border bg-card p-3 shadow-xs", selected && "ring-2 ring-primary")}>
@@ -335,7 +344,7 @@ function IdeaCard({ idea, pillar, canEdit, selected, onToggle, a, compact }: { i
         <button className="min-w-0 flex-1 text-left text-[13px] font-semibold leading-5 hover:text-primary" onClick={a.preview} onPointerDown={(e) => e.stopPropagation()}>{idea.title}</button>
         <div onPointerDown={(e) => e.stopPropagation()}><RowMenu idea={idea} canEdit={canEdit} a={a} /></div>
       </div>
-      <Meta idea={idea} pillar={pillar} />
+      <Meta idea={idea} pillar={pillar} canEdit={canEdit} onAudience={onAudience} />
       {!compact && idea.description ? <p dir="auto" className="line-clamp-2 text-xs text-muted-foreground">{idea.description}</p> : null}
       <div className="mt-auto flex flex-wrap items-center gap-1.5 text-xs">
         <ScoreBadge s={idea.idea_score} />
@@ -369,11 +378,12 @@ function DraggableCard({ id, disabled, children }: { id: string; disabled: boole
 }
 
 function NewIdeaDialog({ projectId, pillars, onClose, onCreated }: { projectId: string; pillars: { id: string; name: string; segment?: string }[]; onClose: () => void; onCreated: () => void }) {
-  const [f, setF] = React.useState({ title: "", description: "", pillar_id: "", format: "", platforms: ["facebook"] as string[], audience: "", tags: "", segment: "", goal: "" });
+  const [f, setF] = React.useState({ title: "", description: "", pillar_id: "", format: "", platforms: ["facebook"] as string[], audience: "", tags: "", tag: "", goal: "" });
+  const segment = f.tag ? `${f.tag}s` : "";
   const [busy, setBusy] = React.useState(false);
   const submit = async () => {
     setBusy(true);
-    const r = await createIdeaAction(projectId, { title: f.title, description: f.description || null, pillar_id: f.pillar_id || null, format: f.format || null, target_platforms: f.platforms, target_audience: f.audience || null, tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean), audience_segment: (f.segment || null) as never, conversion_goal: f.goal || null });
+    const r = await createIdeaAction(projectId, { title: f.title, description: f.description || null, pillar_id: f.pillar_id || null, format: f.format || null, target_platforms: f.platforms, target_audience: f.audience || null, tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean), audience: (f.tag || null) as Audience | null, conversion_goal: f.goal || null });
     setBusy(false);
     if (!r.ok) return void toast.error(r.error);
     toast.success(r.message ?? "Added");
@@ -387,9 +397,9 @@ function NewIdeaDialog({ projectId, pillars, onClose, onCreated }: { projectId: 
           <Input autoFocus placeholder="Idea title" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
           <textarea className="min-h-20 w-full rounded-md border bg-transparent px-3 py-2 text-[13px]" placeholder="Description (optional)" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
           <div className="grid gap-2 sm:grid-cols-2">
-            <NativeSelect value={f.segment} onChange={(e) => setF({ ...f, segment: e.target.value, goal: "", pillar_id: "" })} aria-label="Audience"><option value="">Audience…</option>{SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_LABELS[s]}</option>)}</NativeSelect>
-            <NativeSelect value={f.goal} onChange={(e) => setF({ ...f, goal: e.target.value })} aria-label="Conversion goal"><option value="">Conversion goal…</option>{goalsFor(f.segment).map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}</NativeSelect>
-            <NativeSelect value={f.pillar_id} onChange={(e) => setF({ ...f, pillar_id: e.target.value })} aria-label="Content pillar"><option value="">No pillar</option>{(["students_parents", "teachers", "both"] as Side[]).map((side) => { const list = pillars.filter((p) => (p.segment ?? "students_parents") === side && (!f.segment || side === "both" || (side === "teachers") === (f.segment === "teachers"))); return list.length ? <optgroup key={side} label={SIDE_LABELS[side]}>{list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup> : null; })}</NativeSelect>
+            <NativeSelect value={f.tag} onChange={(e) => setF({ ...f, tag: e.target.value, goal: "", pillar_id: "" })} aria-label="Audience"><option value="">Audience: AI decides</option>{AUDIENCES.map((a) => <option key={a} value={a}>{AUDIENCE_LABELS[a]}</option>)}</NativeSelect>
+            <NativeSelect value={f.goal} onChange={(e) => setF({ ...f, goal: e.target.value })} aria-label="Conversion goal"><option value="">Conversion goal…</option>{goalsFor(segment).map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}</NativeSelect>
+            <NativeSelect value={f.pillar_id} onChange={(e) => setF({ ...f, pillar_id: e.target.value })} aria-label="Content pillar"><option value="">No pillar</option>{(["students_parents", "teachers", "both"] as Side[]).map((side) => { const list = pillars.filter((p) => (p.segment ?? "students_parents") === side && (!segment || side === "both" || (side === "teachers") === (segment === "teachers"))); return list.length ? <optgroup key={side} label={SIDE_LABELS[side]}>{list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup> : null; })}</NativeSelect>
             <NativeSelect value={f.format} onChange={(e) => setF({ ...f, format: e.target.value })} aria-label="Format"><option value="">Format…</option>{FORMATS.map((x) => <option key={x} value={x}>{x}</option>)}</NativeSelect>
             <Input placeholder="Target audience" value={f.audience} onChange={(e) => setF({ ...f, audience: e.target.value })} />
             <Input placeholder="Tags, comma separated" value={f.tags} onChange={(e) => setF({ ...f, tags: e.target.value })} />

@@ -1,5 +1,6 @@
 "use client";
 
+import { AudienceBadge, AudienceMark } from "@/components/app/audience-badge";
 import * as React from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { ContextMenu } from "radix-ui";
@@ -113,6 +114,7 @@ export function PostCard({
           <PlatformIcon platform={post.platform} className="size-3 shrink-0 text-muted-foreground" />
           {time ? <span className="tabular-nums text-muted-foreground">{time}</span> : null}
           <span className="min-w-0 flex-1 truncate font-medium">{post.title}</span>
+          <AudienceMark audience={post.audience} />
           <PriorityMark priority={post.priority} />
           {overdue ? <Flag className="size-3 shrink-0 text-destructive" aria-label="Deadline passed" /> : null}
           <Faces people={people} size="xs" />
@@ -128,6 +130,7 @@ export function PostCard({
           <span className="line-clamp-2 text-[12.5px] font-medium leading-snug" dir="auto">{post.title}</span>
           <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <StatePill state={state} />
+            <AudienceBadge audience={post.audience} />
             {post.production_stage ? <span className="text-[11px] text-muted-foreground">{STAGE_LABELS[post.production_stage]}</span> : null}
             {post.due_date ? (
               <span className={cn("inline-flex items-center gap-0.5 text-[11px] tabular-nums", overdue ? "font-medium text-destructive" : "text-muted-foreground")}>

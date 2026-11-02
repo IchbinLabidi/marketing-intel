@@ -1,5 +1,6 @@
 "use client";
 
+import { AudienceSelect } from "@/components/app/audience-badge";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CalendarPlus, Loader2, Sparkles, Trash2 } from "lucide-react";
@@ -69,7 +70,7 @@ export function CalendarGenerator({
       items: draft.items.map((i) => ({
         scheduled_date: i.scheduled_date, platform: i.platform, title: i.title, format: i.format, pillar_id: i.pillar_id, campaign_id: i.campaign_id,
         funnel_stage: i.funnel_stage, hook: i.hook, cta: i.cta, marketing_objective: i.marketing_objective, opportunity_id: i.opportunity_id,
-        historical_source_id: i.historical_source_id,
+        historical_source_id: i.historical_source_id, audience: i.audience ?? null,
         // the rationale travels with the brief so the team sees why the item exists
         creative_brief: [i.creative_brief, i.rationale ? `Why: ${i.rationale}` : null].filter(Boolean).join("\n\n").slice(0, 3000) || null,
       })),
@@ -189,6 +190,7 @@ export function CalendarGenerator({
                         </td>
                         <td className="space-y-1 pr-2 pt-2">
                           <Input aria-label="Title" value={i.title} onChange={(e) => update(k, { title: e.target.value })} className="h-8" />
+                          <AudienceSelect value={i.audience ?? null} onChange={(audience) => update(k, { audience })} />
                           {i.hook ? <p className="text-xs"><span className="text-muted-foreground">Hook: </span>{i.hook}</p> : null}
                           {i.creative_brief ? <p className="text-xs text-muted-foreground">{i.creative_brief}</p> : null}
                           <p className="text-[11px] text-muted-foreground">

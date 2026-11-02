@@ -1,5 +1,7 @@
 "use server";
 
+import { parseAudience } from "@/lib/backlog/audience";
+import { withAudience } from "@/server/ai/audience";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { canEdit, FUNNEL_STAGES, LANGUAGES, PLATFORMS, type FunnelStage, type Language, type Platform } from "@/lib/domain/constants";
@@ -367,10 +369,11 @@ export async function generateCalendarAction(projectId: string, calendarId: stri
         caption: article ? null : c.caption, creative_brief: article ? c.caption : null, hashtags: c.hashtags.map((h) => h.replace(/^#*/, "")).filter(Boolean).slice(0, 30),
         visual_direction: c.creative_direction, rationale: stripRefs(c.rationale) + (c.signals.length ? "" : " (strategy-based, not performance-validated)"),
         format_details: c.reel ? { kind: "reel", ...c.reel } : c.carousel ? { kind: "carousel", ...c.carousel } : c.story ? { kind: "story", ...c.story } : c.article ? { kind: "article", ...c.article } : null,
-        objective_kpi: STAGE_KPI[s.funnel_stage], language,
+        objective_kpi: STAGE_KPI[s.funnel_stage], language, audience: parseAudience(c.audience),
       };
     });
-    const ins = await db.from("content_items").insert(rows);
+    // a missing or invalid audience is classified before saving: no generated post is stored untagged
+    const ins = await db.from("content_items").insert(await withAudience(projectId, user.id, rows));
     if (ins.error) throw ins.error;
     await db.from("editorial_calendars").update({ status: "generated" }).eq("project_id", projectId).eq("id", calendarId);
     await checkCalendar(projectId, calendarId, { userId: user.id, workspaceId: project.workspace_id });

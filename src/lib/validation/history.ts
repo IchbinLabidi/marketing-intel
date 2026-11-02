@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AUDIENCES } from "@/lib/backlog/audience";
 import { FUNNEL_STAGES, METRICS, PLATFORMS } from "@/lib/domain/constants";
 import { optionalDate, optionalEnum, optionalNumber, optionalText } from "./common";
 
@@ -47,6 +48,8 @@ export const draftItemSchema = z.object({
   marketing_objective: z.string().max(1000).nullable(),
   opportunity_id: z.uuid().nullable(),
   historical_source_id: z.uuid().nullable(),
+  /** audience tag from the AI draft; missing ones are classified when the calendar is saved */
+  audience: z.enum(AUDIENCES).nullish(),
 });
 export type DraftItem = z.infer<typeof draftItemSchema>;
 

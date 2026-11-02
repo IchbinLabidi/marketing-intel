@@ -1,4 +1,5 @@
 import "server-only";
+import { AUDIENCE_GUIDE } from "@/lib/backlog/audience";
 import { z } from "zod";
 import { FUNNEL_STAGES, INSIGHT_TYPES, METRIC_LABELS, PLATFORMS, PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
 import { effectiveDate, type AnalysisItem, type HistoricalStats } from "@/lib/history/analysis";
@@ -207,6 +208,7 @@ export const calendarDraftSchema = z.object({
       date: z.string().describe("YYYY-MM-DD within the requested period"),
       platform: z.enum(PLATFORMS),
       title: z.string(),
+      audience: z.string().describe("Who the item targets: exactly one of student, parent, teacher"),
       format: z.string(),
       pillar: z.string().nullable().describe("Exact strategy pillar name or null"),
       campaign: z.string().nullable().describe("Exact strategy campaign name or null"),
@@ -247,6 +249,7 @@ export function buildCalendarPrompt(input: {
     "- Use the history's gaps (missing pillars, untested formats, quiet periods) to propose new topics.",
     "- Where performance data exists, give more slots to the formats, topics, hooks and CTAs that performed best on each platform, and refresh top past posts rather than repeating weak ones. Keep a few experiments.",
     "- Keep the brand voice. Write titles, hooks, briefs and CTAs in the project's default content language.",
+    `- Tag each item with the ONE audience it targets: ${AUDIENCE_GUIDE}.`,
     "- Never promise performance. Set repurpose_of / recommendation refs only when the item really builds on them.",
     input.instruction ? `\nAdditional instruction from the user: ${input.instruction}` : "",
     "\n# Seasonal windows in this period (approximate dates)",

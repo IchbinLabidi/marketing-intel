@@ -12,7 +12,8 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
 import { CRITERIA } from "@/lib/backlog/score";
-import { goalsFor, SEGMENTS, SEGMENT_LABELS, SIDE_LABELS, conversionLabel, type Side } from "@/lib/backlog/audience";
+import { audienceOfSegment, AUDIENCES, AUDIENCE_LABELS, goalsFor, isAudience, segmentForAudience, SEGMENTS, SEGMENT_LABELS, SIDE_LABELS, conversionLabel, type Side } from "@/lib/backlog/audience";
+import { AudienceBadge } from "@/components/app/audience-badge";
 import { FORMATS } from "@/lib/production/model";
 import { dismissSuggestionAction, refreshSuggestionsAction, scoreIdeasAction, setScoreAction, updateIdeaAction } from "@/server/actions/backlog";
 import { productionDetailsAction } from "@/server/actions/production";
@@ -35,8 +36,14 @@ export function IdeaDetail({ projectId, idea, pillars, tz, canEdit, onClose, onC
     title: idea.title, description: idea.description ?? idea.hook ?? "", pillar_id: idea.pillar_id ?? "", format: idea.format ?? "",
     target_platforms: idea.target_platforms?.length ? idea.target_platforms : idea.platform ? [idea.platform] : [], target_audience: idea.target_audience ?? "",
     tags: (idea.tags ?? []).join(", "), priority: idea.priority ?? "medium",
-    audience_segment: idea.audience_segment ?? "", conversion_goal: idea.conversion_goal ?? "",
+    audience_segment: idea.audience_segment ?? "", conversion_goal: idea.conversion_goal ?? "", audience: idea.audience ?? "",
   });
+  // the tag and the segment stay in step: a single-side segment names the tag, a tag sets the segment (except "both")
+  const pickAudience = (a: string) => {
+    if (!isAudience(a)) return;
+    const seg = segmentForAudience(a, form.audience_segment);
+    setForm({ ...form, audience: a, audience_segment: seg, conversion_goal: goalsFor(seg).some((g) => g.key === form.conversion_goal) ? form.conversion_goal : "" });
+  };
   const [busy, setBusy] = React.useState<string | null>(null);
   const [override, setOverride] = React.useState<{ score: string; note: string } | null>(null);
   const [assets, setAssets] = React.useState<TileAsset[] | null>(null);
@@ -57,6 +64,7 @@ export function IdeaDetail({ projectId, idea, pillars, tz, canEdit, onClose, onC
       target_platforms: form.target_platforms, target_audience: form.target_audience || null, priority: form.priority,
       tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
       audience_segment: (form.audience_segment || null) as never, conversion_goal: form.conversion_goal || null,
+      ...(isAudience(form.audience) ? { audience: form.audience } : {}),
     });
     if (!r.ok) return void toast.error(r.error);
     toast.success(r.message ?? "Saved"); onChanged(r.data!);
@@ -71,6 +79,7 @@ export function IdeaDetail({ projectId, idea, pillars, tz, canEdit, onClose, onC
           <DialogTitle className="pr-6">{idea.title}</DialogTitle>
           <DialogDescription className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{lifecycleOf(idea)}</Badge>
+            <AudienceBadge audience={idea.audience} />
             {idea.scheduled_date ? <span>Calendar: {idea.scheduled_date}{idea.scheduled_time ? ` ${idea.scheduled_time.slice(0, 5)}` : ""}</span> : <span>Not on the calendar</span>}
             <span>· Created {idea.created_at.slice(0, 10)}</span>
             {idea.audience_segment ? <span>· {SEGMENT_LABELS[idea.audience_segment as keyof typeof SEGMENT_LABELS]}{idea.conversion_goal ? ` → ${conversionLabel(idea.conversion_goal)}` : ""}</span> : null}
@@ -84,7 +93,9 @@ export function IdeaDetail({ projectId, idea, pillars, tz, canEdit, onClose, onC
             <label className="block space-y-1"><span className="text-xs text-muted-foreground">Description</span><Textarea rows={4} value={form.description} disabled={!canEdit} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-1"><span className="text-xs text-muted-foreground">Audience</span>
-                <NativeSelect value={form.audience_segment} disabled={!canEdit} onChange={(e) => { const seg = e.target.value; setForm({ ...form, audience_segment: seg, conversion_goal: goalsFor(seg).some((g) => g.key === form.conversion_goal) ? form.conversion_goal : "" }); }}><option value="">Not set</option>{SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_LABELS[s]}</option>)}</NativeSelect></label>
+                <NativeSelect value={form.audience} disabled={!canEdit} onChange={(e) => pickAudience(e.target.value)}>{!form.audience ? <option value="">Untagged</option> : null}{AUDIENCES.map((a) => <option key={a} value={a}>{AUDIENCE_LABELS[a]}</option>)}</NativeSelect></label>
+              <label className="space-y-1"><span className="text-xs text-muted-foreground">Segment</span>
+                <NativeSelect value={form.audience_segment} disabled={!canEdit} onChange={(e) => { const seg = e.target.value; setForm({ ...form, audience_segment: seg, audience: audienceOfSegment(seg) ?? form.audience, conversion_goal: goalsFor(seg).some((g) => g.key === form.conversion_goal) ? form.conversion_goal : "" }); }}><option value="">Not set</option>{SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_LABELS[s]}</option>)}</NativeSelect></label>
               <label className="space-y-1"><span className="text-xs text-muted-foreground">Conversion goal</span>
                 <NativeSelect value={form.conversion_goal} disabled={!canEdit} onChange={(e) => setForm({ ...form, conversion_goal: e.target.value })}><option value="">Not set</option>{goalsFor(form.audience_segment).map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}</NativeSelect></label>
               <label className="space-y-1"><span className="text-xs text-muted-foreground">Content pillar</span>

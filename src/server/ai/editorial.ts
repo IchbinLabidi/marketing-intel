@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { FUNNEL_LABELS, PLATFORM_LABELS, type FunnelStage, type Platform } from "@/lib/domain/constants";
+import { AUDIENCE_GUIDE } from "@/lib/backlog/audience";
 
 // Editorial engine prompts. The plan and slots are calculated; the model writes the content of each slot, following
 // platform conventions, and judges near-duplicate pairs. Facts come only from cited signals.
@@ -15,6 +16,7 @@ Rules:
 - Facts, numbers and results come only from the numbered signals (S1, S2…). Never invent statistics, prices, dates or testimonials; leave [placeholders] for details the brand must fill in.
 - The rationale says in one or two sentences why this post is in the plan (objective, pillar, signal, date). Say "not performance-validated" when no signal supports it.
 - Reels: opening hook (first 2 seconds), a short script, 3-6 scenes, on-screen text lines, CTA. Carousels: cover title, 5-8 slides, final CTA slide. Stories: 3-5 frames. Articles: target keyword, SEO title, meta description, H1, H2/H3 outline.
+- Tag every post with the ONE audience it targets: ${AUDIENCE_GUIDE}.
 - Write in the project's default content language (Tunisian Derja with French school terms for Tunisian Arabic projects).`;
 
 const scene = z.object({ visual: z.string(), voiceover: z.string(), on_screen_text: z.string() });
@@ -25,6 +27,7 @@ export const weekContentSchema = z.object({
     slot: z.string().describe("Slot key, e.g. P4"),
     opportunity: z.string().nullable().describe("Opportunity key used (O2…), or null"),
     title: z.string().describe("Internal title of the post"),
+    audience: z.string().describe("Who the post targets: exactly one of student, parent, teacher"),
     topic: z.string(),
     hook: z.string().describe("First line / first seconds the audience sees"),
     angle: z.string().describe("The specific angle or purpose that makes this post different"),
