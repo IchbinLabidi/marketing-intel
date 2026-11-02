@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { ContentItem, EditorialCalendar } from "@/types/domain";
+import { withAudience } from "@/server/ai/audience";
 
 export async function listCalendars(projectId: string): Promise<(EditorialCalendar & { item_count: number })[]> {
   const supabase = await createClient();
@@ -40,7 +41,7 @@ export async function createCalendarWithItems(
     .select("id")
     .single();
   if (error) throw error;
-  const rows = items.map((i, position) => ({ ...i, project_id: projectId, calendar_id: data.id, status: "planned", position, created_by: userId }));
+  const rows = (await withAudience(projectId, userId, items)).map((i, position) => ({ ...i, project_id: projectId, calendar_id: data.id, status: "planned", position, created_by: userId }));
   const ins = await supabase.from("content_items").insert(rows);
   if (ins.error) {
     await supabase.from("editorial_calendars").delete().eq("id", data.id);
@@ -66,6 +67,8 @@ export type PostFilters = {
   ids?: string[] | null;
   /** internal deadline before this date and not yet approved/scheduled/published */
   overdueBefore?: string | null;
+  /** audience tag: student | parent | teacher, or "none" for untagged */
+  audiences?: string[];
 };
 
 function applyFilters<Q extends { in: (c: string, v: string[]) => Q; eq: (c: string, v: string) => Q; or: (f: string) => Q; is: (c: string, v: null) => Q; ilike: (c: string, v: string) => Q; lt: (c: string, v: string) => Q; not: (c: string, op: string, v: string) => Q }>(q: Q, f: PostFilters) {
@@ -82,6 +85,7 @@ function applyFilters<Q extends { in: (c: string, v: string[]) => Q; eq: (c: str
   else if (f.assignee) q = q.eq("assignee_id", f.assignee);
   if (f.priorities?.length) q = q.in("priority", f.priorities);
   if (f.formats?.length) q = q.in("format", f.formats);
+  if (f.audiences?.length) q = f.audiences.includes("none") ? q.is("audience", null) : q.in("audience", f.audiences);
   // PostgREST filter values: strip characters that would break the expression
   if (f.search) q = q.ilike("title", `%${f.search.replace(/[%_,()]/g, " ").trim()}%`);
   if (f.ids) q = q.in("id", f.ids.length ? f.ids : ["00000000-0000-0000-0000-000000000000"]);
@@ -159,11 +163,13 @@ export async function postsNear(projectId: string, platform: string, atUtc: stri
   return (data ?? []) as { id: string; platform: string; scheduled_at: string; title: string }[];
 }
 
-export async function insertPost(projectId: string, userId: string, values: Partial<ContentItem>) {
+/** Every new item gets its audience tag (the one given, else classified: see withAudience). */
+export async function insertPost(projectId: string, userId: string, values: Partial<ContentItem> & { target_audience?: string | null }) {
   const supabase = await createClient();
+  const [tagged] = await withAudience(projectId, userId, [values]);
   const { data, error } = await supabase
     .from("content_items")
-    .insert({ ...values, project_id: projectId, created_by: userId })
+    .insert({ ...tagged, project_id: projectId, created_by: userId })
     .select("*")
     .single();
   if (error) throw error;

@@ -9,11 +9,12 @@ import { isIsoDate, isTime, todayInZone } from "@/lib/calendar/time";
 import { CRITERIA, normalizeWeights, weightedScore, type ScoreDetails } from "@/lib/backlog/score";
 import { suggestSlot, type SuggestedSlot } from "@/lib/backlog/slots";
 import { planCalendar, type PlanIdea, type PlanRequest, type Placement } from "@/lib/backlog/planner";
-import { conversionLabel, goalFits, normalizeMix, SEGMENTS, SEGMENT_LABELS, sideOf, SIDE_LABELS, type Segment } from "@/lib/backlog/audience";
+import { AUDIENCE_GUIDE, AUDIENCE_LABELS, AUDIENCES, conversionLabel, goalFits, normalizeMix, parseAudience, segmentForAudience, SEGMENTS, SEGMENT_LABELS, sideOf, SIDE_LABELS, type Audience, type Segment } from "@/lib/backlog/audience";
 import type { ActionResult } from "@/lib/validation/common";
 import { describeAIError } from "@/server/ai/client";
 import { buildProjectContext } from "@/server/ai/context";
 import { runStructuredWithMeta } from "@/server/ai/run";
+import { tagUntagged, withAudience } from "@/server/ai/audience";
 import { busyDays, listIdeas, type BacklogFilters, type Idea } from "@/server/services/backlog";
 import { loadHistoryAnalysis, loadHistoryPerformance } from "@/server/services/history-analysis";
 import { getProjectContext } from "@/server/services/projects";
@@ -54,6 +55,7 @@ const ideaSchema = z.object({
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
   audience_segment: z.enum(SEGMENTS).nullish(),
   conversion_goal: z.string().max(40).nullish(),
+  audience: z.enum(AUDIENCES).nullish(),
 });
 export type IdeaInput = z.infer<typeof ideaSchema>;
 
@@ -68,13 +70,15 @@ export async function createIdeaAction(projectId: string, input: unknown): Promi
     const db = await createClient();
     const v = parsed.data;
     const platforms = v.target_platforms?.length ? v.target_platforms : v.platform ? [v.platform] : [];
-    const { data, error } = await db.from("content_items").insert({
+    // no tag chosen: the segment decides, else a quick AI classification (never saved untagged)
+    const [row] = await withAudience(projectId, user.id, [{
       project_id: projectId, created_by: user.id, title: v.title, description: v.description ?? null, pillar_id: v.pillar_id ?? null,
       format: v.format ?? null, platform: v.platform ?? platforms[0] ?? null, target_platforms: platforms, target_audience: v.target_audience ?? null,
       tags: v.tags ?? [], status: "idea", production_stage: "idea", idea_source: "manual", language: project.default_language || "fr",
-      audience_segment: v.audience_segment ?? null, conversion_goal: v.conversion_goal ?? null,
+      audience: v.audience ?? null, audience_segment: v.audience_segment ?? null, conversion_goal: v.conversion_goal ?? null,
       scheduled_date: null, scheduled_time: null, scheduled_at: null,
-    }).select("*").single();
+    }]);
+    const { data, error } = await db.from("content_items").insert(row).select("*").single();
     if (error) throw error;
     if (v.priority && v.priority !== "medium") await db.from("content_items").update({ priority: v.priority }).eq("id", data.id);
     await computeSlots(projectId, [data as Idea], tz);
@@ -95,6 +99,7 @@ export async function updateIdeaAction(projectId: string, id: string, input: unk
     const v = parsed.data;
     const patch: Record<string, unknown> = {};
     for (const k of ["title", "description", "pillar_id", "format", "target_audience", "tags", "priority", "audience_segment", "conversion_goal"] as const) if (k in v) patch[k] = v[k] ?? null;
+    if (v.audience) patch.audience = v.audience; // a tag can be changed, not removed
     if ("tags" in v) patch.tags = v.tags ?? [];
     if (v.target_platforms) { patch.target_platforms = v.target_platforms; if (!("platform" in v)) patch.platform = v.target_platforms[0] ?? null; }
     if ("platform" in v) patch.platform = v.platform ?? null;
@@ -344,7 +349,7 @@ export async function duplicateIdeaAction(projectId: string, id: string): Promis
     project_id: projectId, created_by: user.id, title: `${src.title} (copy)`.slice(0, 300), description: src.description, hook: src.hook, caption: src.caption,
     cta: src.cta, hashtags: src.hashtags, creative_brief: src.creative_brief, pillar_id: src.pillar_id, format: src.format, platform: src.platform,
     target_platforms: src.target_platforms, target_audience: src.target_audience, tags: src.tags, funnel_stage: src.funnel_stage, language: src.language,
-    audience_segment: src.audience_segment, conversion_goal: src.conversion_goal,
+    audience: src.audience, audience_segment: src.audience_segment, conversion_goal: src.conversion_goal,
     idea_score: src.idea_score, score_details: src.score_details, status: "idea", production_stage: "idea", idea_source: "manual",
   }).select("*").single();
   if (error) return fail(error, "Could not duplicate");
@@ -448,7 +453,7 @@ export async function setAudienceAction(projectId: string, ids: string[], segmen
   return { ok: true, message: `${n} idea${n === 1 ? "" : "s"} set to ${segment ? SEGMENT_LABELS[segment] : "no audience"}` };
 }
 
-const audienceSchema = z.object({ ideas: z.array(z.object({ id: z.string(), segment: z.enum(SEGMENTS), conversion_goal: z.string(), reason: z.string().max(200) })) });
+const audienceSchema = z.object({ ideas: z.array(z.object({ id: z.string(), audience: z.string().describe("student, parent or teacher"), segment: z.enum(SEGMENTS), conversion_goal: z.string(), reason: z.string().max(200) })) });
 
 /** AI proposes the audience and conversion goal of up to 30 ideas (applied right away, editable afterwards). */
 export async function suggestAudienceAction(projectId: string, ids: string[]): Promise<ActionResult<{ set: number }>> {
@@ -465,17 +470,47 @@ export async function suggestAudienceAction(projectId: string, ids: string[]): P
     const goals = { students_parents: ["forum_participation", "teacher_profile_visits", "lesson_requests", "completed_bookings"], teachers: ["teacher_registration", "profile_completion", "teacher_activation", "lesson_requests_received", "completed_sessions"] };
     const { data } = await runStructuredWithMeta({
       feature: "backlog.audience", projectId, workspaceId: project.workspace_id, userId: user.id, schema: audienceSchema, effort: "low",
-      system: `You classify social media content ideas of ${project.name}, a two-sided educational marketplace (students & parents on one side, teachers on the other). For each idea choose the audience segment: students, parents, teachers, or both (only when it genuinely speaks to both sides). Then choose ONE conversion goal from that side: students/parents → ${goals.students_parents.join(", ")}; teachers → ${goals.teachers.join(", ")}; both → any of them. Never give a teacher idea a student goal or the reverse. Give a short reason. Return the ids exactly as given.`,
+      system: `You classify social media content ideas of ${project.name}, a two-sided educational marketplace (students & parents on one side, teachers on the other). For each idea choose the ONE audience it targets (${AUDIENCE_GUIDE}), then the audience segment: students, parents, teachers, or both (only when it genuinely speaks to both sides; otherwise the segment matching the audience). Then choose ONE conversion goal from that side: students/parents → ${goals.students_parents.join(", ")}; teachers → ${goals.teachers.join(", ")}; both → any of them. Never give a teacher idea a student goal or the reverse. Give a short reason. Return the ids exactly as given.`,
       prompt: JSON.stringify(rows.map((r) => ({ id: r.id, title: r.title, description: r.description ?? r.hook ?? (r.caption ?? "").slice(0, 300), format: r.format, pillar: pillar(r.pillar_id), audience_text: r.target_audience }))),
     });
     let set = 0;
     for (const s of data.ideas) {
       if (!list.includes(s.id)) continue;
-      const goal = goalFits(s.segment, s.conversion_goal) ? s.conversion_goal : null;
-      const { error } = await db.from("content_items").update({ audience_segment: s.segment, conversion_goal: goal }).eq("project_id", projectId).eq("id", s.id);
+      const audience = parseAudience(s.audience) ?? parseAudience(s.segment);
+      const segment = audience ? segmentForAudience(audience, s.segment) : s.segment;
+      const goal = goalFits(segment, s.conversion_goal) ? s.conversion_goal : null;
+      const { error } = await db.from("content_items").update({ audience_segment: segment, conversion_goal: goal, ...(audience ? { audience } : {}) }).eq("project_id", projectId).eq("id", s.id);
       if (!error) set++;
     }
     refresh(projectId);
     return { ok: true, data: { set }, message: `Audience suggested for ${set} idea${set === 1 ? "" : "s"}. Review and change any of them in the idea panel.` };
+  } catch (e) { return { ok: false, error: describeAIError(e) }; }
+}
+
+/** Sets the audience tag (student / parent / teacher) of one or more items; a single-side segment follows it. */
+export async function setAudienceTagAction(projectId: string, ids: string[], audience: Audience): Promise<ActionResult> {
+  const { allowed } = await guard(projectId);
+  if (!allowed) return NO_EDIT;
+  if (!(AUDIENCES as readonly string[]).includes(audience)) return { ok: false, error: "Unknown audience." };
+  const db = await createClient();
+  const { data } = await db.from("content_items").select("id, audience_segment, conversion_goal").eq("project_id", projectId).in("id", ids.slice(0, BULK_MAX));
+  let n = 0;
+  for (const r of data ?? []) {
+    const segment = segmentForAudience(audience, r.audience_segment);
+    const { error } = await db.from("content_items").update({ audience, audience_segment: segment, ...(goalFits(segment, r.conversion_goal) ? {} : { conversion_goal: null }) }).eq("id", r.id);
+    if (!error) n++;
+  }
+  refresh(projectId);
+  return { ok: true, message: `${n} item${n === 1 ? "" : "s"} tagged ${AUDIENCE_LABELS[audience]}` };
+}
+
+/** AI backfill for older items: tags the brand's untagged items (up to 120 per run), or only the selected ones. */
+export async function tagUntaggedAction(projectId: string, ids?: string[]): Promise<ActionResult<{ tagged: number }>> {
+  const { user, allowed } = await guard(projectId);
+  if (!allowed) return NO_EDIT;
+  try {
+    const r = await tagUntagged(projectId, user.id, ids);
+    refresh(projectId);
+    return { ok: true, data: { tagged: r.tagged }, message: r.tagged ? `${r.tagged} item${r.tagged === 1 ? "" : "s"} tagged${r.remaining ? ": run it again for the rest" : ""}. Change any tag from its badge.` : "Every item already has an audience tag." };
   } catch (e) { return { ok: false, error: describeAIError(e) }; }
 }

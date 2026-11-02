@@ -55,3 +55,43 @@ export function distribution(segments: (string | null | undefined)[]) {
   const pct = (n: number) => (total ? Math.round((n / total) * 100) : 0);
   return { total, counts, pct: { students_parents: pct(counts.students_parents), teachers: pct(counts.teachers), both: pct(counts.both), unset: pct(counts.unset) } };
 }
+
+// --- Audience tag: who one idea speaks to (exactly one of three). Separate from the segment above, which also allows
+// "both" and drives the marketplace-side mix; setting the tag keeps a single-side segment in step with it.
+
+export const AUDIENCES = ["student", "parent", "teacher"] as const;
+export type Audience = (typeof AUDIENCES)[number];
+export const AUDIENCE_LABELS: Record<Audience, string> = { student: "Student", parent: "Parent", teacher: "Teacher" };
+/** What each tag means, for AI prompts. */
+export const AUDIENCE_GUIDE = "student = aimed at learners (pupils, high-school/bac students, university students); parent = aimed at parents or families choosing or following a child's learning; teacher = aimed at teachers, tutors or educators (recruiting, helping or speaking to them)";
+export const isAudience = (v: unknown): v is Audience => typeof v === "string" && (AUDIENCES as readonly string[]).includes(v);
+
+/** Reads a tag from loose AI or user text ("Students", "parents", "Enseignant"…); null when it isn't one of the three. */
+export function parseAudience(v: unknown): Audience | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim().toLowerCase();
+  if (isAudience(s)) return s;
+  return s ? guessAudience(s) : null;
+}
+
+/** Keyword match on free text (same patterns as migration 0022); null when nothing is clear. */
+export function guessAudience(text: string | null | undefined): Audience | null {
+  if (!text) return null;
+  if (/(enseignant|professeur|teacher|tutor|educator|formateur|أستاذ|اساتذة|أساتذة|\bprofs?\b)/i.test(text)) return "teacher";
+  if (/(parent|أولياء|الولي|famille|family)/i.test(text)) return "parent";
+  if (/(élève|eleve|lycée|lyceen|lycéen|\bbac\b|student|étudiant|etudiant|learner|pupil|تلميذ|تلامذة|طالب|collég)/i.test(text)) return "student";
+  return null;
+}
+
+export const audienceOfSegment = (s: string | null | undefined): Audience | null => (s === "students" ? "student" : s === "parents" ? "parent" : s === "teachers" ? "teacher" : null);
+
+/** The segment to store with a tag: "both" is kept (it is broader than one tag), otherwise the matching single side. */
+export const segmentForAudience = (a: Audience, current: string | null | undefined): Segment => (current === "both" ? "both" : (`${a}s` as Segment));
+
+/**
+ * Last-resort tag when the AI gave none: the idea's segment, then keywords in its texts, then its pillar's side,
+ * then "student" (most educational content speaks to learners).
+ */
+export function fallbackAudience(i: { segment?: string | null; texts?: (string | null | undefined)[]; pillarSegment?: string | null }): Audience {
+  return audienceOfSegment(i.segment) ?? (i.texts ?? []).map(guessAudience).find(Boolean) ?? (i.pillarSegment === "teachers" ? "teacher" : "student");
+}

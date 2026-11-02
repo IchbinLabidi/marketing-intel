@@ -1,5 +1,6 @@
 "use client";
 
+import { AudienceBadge } from "@/components/app/audience-badge";
 import * as React from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, Flag } from "lucide-react";
 import { PRIORITY_LABELS, type Priority } from "@/lib/permissions";
@@ -69,7 +70,7 @@ export function ListView({ rows, today, onOpen, selection }: { rows: Row[]; toda
                     <PlatformIcon platform={post.platform} className="size-3.5 text-muted-foreground" />
                     <span className="min-w-0">
                       <span className="block truncate font-medium" dir="auto">{post.title}</span>
-                      <span className="block text-xs text-muted-foreground">{contentType(post.format)}{post.production_stage ? ` · ${STAGE_LABELS[post.production_stage]}` : ""}</span>
+                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><AudienceBadge audience={post.audience} />{contentType(post.format)}{post.production_stage ? ` · ${STAGE_LABELS[post.production_stage]}` : ""}</span>
                     </span>
                   </button>
                 </td>

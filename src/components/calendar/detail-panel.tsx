@@ -1,5 +1,7 @@
 "use client";
 
+import { AudienceSelect } from "@/components/app/audience-badge";
+import { setAudienceTagAction } from "@/server/actions/backlog";
 import { PublishedPerformanceBlock } from "./published-performance";
 import * as React from "react";
 import Link from "next/link";
@@ -114,6 +116,11 @@ export function DetailPanel({
             <h2 className="text-[16px] font-semibold leading-snug tracking-[-0.01em]" dir="auto">{post.title}</h2>
             <div className="flex flex-wrap items-center gap-2">
               <StatePill state={state} />
+              <AudienceSelect value={post.audience} disabled={readOnly} onChange={async (a) => {
+                const r = await setAudienceTagAction(projectId, [post.id], a);
+                if (!r.ok) return void toast.error(r.error);
+                onChanged({ ...post, audience: a });
+              }} />
               {post.production_stage ? <Badge variant="outline">{STAGE_LABELS[post.production_stage]}</Badge> : null}
               {overdue ? <Badge variant="destructive" dot>Overdue</Badge> : null}
             </div>

@@ -1,5 +1,6 @@
 "use server";
 
+import { parseAudience } from "@/lib/backlog/audience";
 import { revalidatePath } from "next/cache";
 import { canEdit, PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
 import { upcomingWindows } from "@/lib/history/seasons";
@@ -261,6 +262,7 @@ export async function generateCalendarDraftAction(projectId: string, request: Ca
         scheduled_date: i.date,
         platform: i.platform,
         title: i.title.slice(0, 300),
+        audience: parseAudience(i.audience),
         format: i.format || null,
         pillar_id,
         pillar_name: pillar_id ? pillarName(pillar_id) ?? null : null,

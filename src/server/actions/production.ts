@@ -1,5 +1,6 @@
 "use server";
 
+import { tagUntagged } from "@/server/ai/audience";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
@@ -64,9 +65,15 @@ export async function saveProductionAction(projectId: string, id: string | null,
   const parsed = productionSchema.safeParse(input);
   if (!parsed.success) return zodErrorToResult(parsed.error);
   try {
-    const { db } = await access(projectId);
+    const { db, user } = await access(projectId);
     const { data, error } = await db.rpc("save_production", { p_project: projectId, p_id: id, p_revision: revision, p_values: parsed.data });
     if (error) throw error;
+    // new content gets its audience tag (classified from its text) before it is shown
+    if (!id && (data as ProductionItem)?.id) {
+      await tagUntagged(projectId, user.id, [(data as ProductionItem).id]);
+      const { data: fresh } = await db.from("content_items").select("*").eq("id", (data as ProductionItem).id).single();
+      if (fresh) { refresh(projectId); return { ok: true, data: fresh as ProductionItem, message: "Content saved" }; }
+    }
     refresh(projectId); return { ok: true, data: data as ProductionItem, message: "Content saved" };
   } catch (e) { return failure(e); }
 }

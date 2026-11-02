@@ -342,6 +342,10 @@ export type ContentItem = MetricValues & {
   due_date?: string | null;
   priority?: "low" | "medium" | "high" | "urgent";
   created_by?: string | null;
+  /** who the post targets (migration 0027); null = untagged (older items) */
+  audience?: import("@/lib/backlog/audience").Audience | null;
+  /** marketplace segment (migration 0022): students | parents | teachers | both */
+  audience_segment?: string | null;
 };
 
 export type StrategyBundle = {

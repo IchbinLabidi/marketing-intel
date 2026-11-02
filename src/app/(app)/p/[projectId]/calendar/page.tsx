@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { AUDIENCES } from "@/lib/backlog/audience";
 import Link from "next/link";
 import { Lightbulb, Sparkles } from "lucide-react";
 import { CalendarApp, type CalendarFilters } from "@/components/calendar/calendar-app";
@@ -51,6 +52,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     q: one(sp.q).slice(0, 100),
     mine: one(sp.mine) === "1",
     overdue: one(sp.overdue) === "1",
+    audience: [...AUDIENCES, "none"].includes(one(sp.audience)) ? one(sp.audience) : "",
   };
   const query: PostFilters = {
     platforms: filters.platform,
@@ -65,6 +67,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     search: filters.q || null,
     ids: filters.mine ? await myContentIds(projectId, user.id) : null,
     overdueBefore: filters.overdue ? today : null,
+    audiences: filters.audience ? [filters.audience] : [],
   };
 
   // Historical insights load in parallel and stream in; the calendar itself never waits for them.

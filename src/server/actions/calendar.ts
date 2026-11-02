@@ -1,5 +1,6 @@
 "use server";
 
+import { segmentForAudience } from "@/lib/backlog/audience";
 import { revalidatePath } from "next/cache";
 import { canEdit, type Platform } from "@/lib/domain/constants";
 import { bestPublicationTimes } from "@/lib/calendar/insights";
@@ -85,8 +86,8 @@ export async function savePostAction(projectId: string, id: string | null, input
       if (conflicts.length) return { ok: true, data: { conflicts } };
     }
     // The compact calendar form does not edit language. Preserve the production language.
-    const { language, ...fields } = p;
-    const values = { ...fields, ...(language ? { language } : {}), status, ...schedule, ...(id ? {} : { opportunity_id }) };
+    const { language, audience, ...fields } = p;
+    const values = { ...fields, ...(language ? { language } : {}), ...(audience ? { audience, audience_segment: segmentForAudience(audience, current?.audience_segment) } : {}), status, ...schedule, ...(id ? {} : { opportunity_id }) };
     const post = id ? await updatePost(projectId, id, values) : await insertPost(projectId, user.id, values);
     await syncOpportunityState(projectId, post.opportunity_id);
     refresh(projectId);
@@ -142,6 +143,7 @@ export async function duplicatePostAction(projectId: string, id: string): Promis
       campaign_id: post.campaign_id, marketing_objective: post.marketing_objective, funnel_stage: post.funnel_stage, hook: post.hook,
       caption: post.caption, cta: post.cta, creative_brief: post.creative_brief, hashtags: post.hashtags, media_url: post.media_url,
       scheduled_date: post.scheduled_date, scheduled_time: null, scheduled_at: null, status: "planned",
+      audience: post.audience, audience_segment: post.audience_segment,
     });
     refresh(projectId);
     return { ok: true, data: { post: copy }, message: "Post duplicated as a draft" };

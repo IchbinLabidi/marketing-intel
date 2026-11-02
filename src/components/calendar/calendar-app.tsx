@@ -1,5 +1,6 @@
 "use client";
 
+import { AudienceFilter } from "@/components/app/audience-badge";
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -45,10 +46,12 @@ import { AgendaView } from "./agenda-view";
 export type CalendarFilters = {
   platform: string[]; state: string[]; pillar: string; funnel: string; campaign: string; plan: string; from: string; to: string;
   assignee: string; priority: string[]; format: string[]; q: string; mine: boolean; overdue: boolean;
+  /** audience tag: student | parent | teacher | none (untagged) */
+  audience: string;
 };
 
 const EMPTY_FILTERS: Omit<CalendarFilters, never> = {
-  platform: [], state: [], pillar: "", funnel: "", campaign: "", plan: "", from: "", to: "", assignee: "", priority: [], format: [], q: "", mine: false, overdue: false,
+  platform: [], state: [], pillar: "", funnel: "", campaign: "", plan: "", from: "", to: "", assignee: "", priority: [], format: [], q: "", mine: false, overdue: false, audience: "",
 };
 const HOURS = Array.from({ length: 18 }, (_, k) => k + 6); // 06:00–23:00; earlier posts sit in the 06 row
 const TIMEZONES = ["Africa/Tunis", "Africa/Algiers", "Africa/Casablanca", "Europe/Paris", "Europe/London", "Asia/Dubai", "America/New_York", "UTC"];
@@ -178,7 +181,7 @@ export function CalendarApp({
     for (const s of next.state) q.append("state", s);
     for (const p of next.priority) q.append("priority", p);
     for (const f of next.format) q.append("format", f);
-    for (const k of ["pillar", "funnel", "campaign", "plan", "from", "to", "assignee", "q"] as const) if (next[k]) q.set(k, next[k]);
+    for (const k of ["pillar", "funnel", "campaign", "plan", "from", "to", "assignee", "q", "audience"] as const) if (next[k]) q.set(k, next[k]);
     if (next.mine) q.set("mine", "1");
     if (next.overdue) q.set("overdue", "1");
     return q;
@@ -417,6 +420,7 @@ export function CalendarApp({
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <AudienceFilter className="h-8 w-36 text-[13px]" value={filters.audience} onChange={(v) => go({ audience: v })} />
           <div className="inline-flex rounded-lg border bg-secondary p-0.5" role="group" aria-label="Whose work">
             <button type="button" aria-pressed={!filters.mine} onClick={() => go({ mine: false })} className={cn("inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[13px] font-medium", !filters.mine ? "bg-card shadow-xs" : "text-muted-foreground hover:text-foreground")}><Users className="size-3.5" /> Team</button>
             <button type="button" aria-pressed={filters.mine} onClick={() => go({ mine: true })} className={cn("inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[13px] font-medium", filters.mine ? "bg-card shadow-xs" : "text-muted-foreground hover:text-foreground")}><User className="size-3.5" /> My work</button>

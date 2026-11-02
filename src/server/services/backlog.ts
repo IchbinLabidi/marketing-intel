@@ -22,6 +22,8 @@ export type BacklogFilters = {
   confidence?: string[]; slotTime?: string;
   /** students | parents | teachers | both | none */
   segments?: string[]; goals?: string[];
+  /** audience tag: student | parent | teacher | none (untagged) */
+  audiences?: string[];
   sort?: "score" | "newest" | "oldest" | "priority" | "suggested" | "title" | "audience";
 };
 
@@ -64,11 +66,15 @@ export async function listIdeas(projectId: string, f: BacklogFilters, page = 0):
     q = f.segments.includes("none") ? q.or(`audience_segment.is.null${named.length ? `,audience_segment.in.(${named.join(",")})` : ""}`) : q.in("audience_segment", named);
   }
   if (f.goals?.length) q = q.in("conversion_goal", f.goals);
+  if (f.audiences?.length) {
+    const named = f.audiences.filter((a) => a !== "none");
+    q = f.audiences.includes("none") ? q.or(`audience.is.null${named.length ? `,audience.in.(${named.join(",")})` : ""}`) : q.in("audience", named);
+  }
   switch (f.sort ?? "score") {
     case "newest": q = q.order("created_at", { ascending: false }); break;
     case "oldest": q = q.order("created_at", { ascending: true }); break;
     case "title": q = q.order("title"); break;
-    case "audience": q = q.order("audience_segment", { ascending: true, nullsFirst: false }).order("idea_score", { ascending: false, nullsFirst: false }); break;
+    case "audience": q = q.order("audience", { ascending: true, nullsFirst: false }).order("audience_segment", { ascending: true, nullsFirst: false }).order("idea_score", { ascending: false, nullsFirst: false }); break;
     case "suggested": q = q.order("suggested_slot->>date", { ascending: true, nullsFirst: false }); break;
     // highest priority first; ties follow the publishing order (calendar date, then suggested date), then the score
     case "priority": q = q.order("priority_rank", { ascending: true }).order("scheduled_date", { ascending: true, nullsFirst: false }).order("suggested_slot->>date", { ascending: true, nullsFirst: false }).order("idea_score", { ascending: false, nullsFirst: false }); break;
