@@ -121,10 +121,15 @@ const scoreSchema = z.object({
 });
 
 /** AI rates each idea on the six criteria; the score is the brand-weighted average. Up to 20 ideas per call. */
+/** Ideas per scoring call, and calls running at once (each carries the brand context; the request has ~300 s). */
+const SCORE_BATCH = 20;
+const SCORE_PARALLEL = 5;
+
+/** AI rates up to 200 ideas: batches of 20, five at a time. A failed batch doesn't undo the others. */
 export async function scoreIdeasAction(projectId: string, ids: string[]): Promise<ActionResult<{ scored: number }>> {
   const { user, project, allowed } = await guard(projectId);
   if (!allowed) return NO_EDIT;
-  const list = [...new Set(ids)].slice(0, 20);
+  const list = [...new Set(ids)].slice(0, BULK_MAX);
   if (!list.length) return { ok: false, error: "Select ideas to score." };
   try {
     const db = await createClient();
@@ -133,20 +138,32 @@ export async function scoreIdeasAction(projectId: string, ids: string[]): Promis
     const { bundle, brand, channels } = await loadHistoryAnalysis(projectId);
     const weights = normalizeWeights(project.idea_score_weights as Record<string, unknown> | null);
     const pillar = (id: string | null) => bundle.pillars.find((p) => p.id === id)?.name ?? "none";
-    const { data, model } = await runStructuredWithMeta({
+    const context = buildProjectContext({ project, brand, channels, strategy: bundle });
+    const batches = Array.from({ length: Math.ceil(rows.length / SCORE_BATCH) }, (_, k) => rows.slice(k * SCORE_BATCH, (k + 1) * SCORE_BATCH));
+    const scoreBatch = (batch: typeof rows) => runStructuredWithMeta({
       feature: "backlog.score", projectId, workspaceId: project.workspace_id, userId: user.id, schema: scoreSchema, effort: "low",
       system: "You evaluate social media content ideas for one brand. Rate each idea from 0 to 100 on: audience relevance (fits the brand's personas), engagement potential, marketing value (supports the brand's objectives and funnel), originality (not repetitive), educational value, production feasibility (effort for a small team), and hook strength (how strongly the first line or first 2 seconds stops the scroll for this audience). Judge each idea for ITS audience segment and conversion goal: for two-sided brands, teacher content (recruitment, activation) is evaluated only against teacher goals and student/parent content only against student-side goals (forum participation, profile visits, lesson requests, bookings); never mix the two. Be calibrated and critical: most ideas land between 40 and 80. Explain in one or two sentences why, citing the strongest and weakest criterion. These are estimates for prioritising ideas, never performance predictions. Return the ids exactly as given.",
-      prompt: `${buildProjectContext({ project, brand, channels, strategy: bundle })}\n\nIdeas to rate (JSON):\n${JSON.stringify(rows.map((r) => ({ id: r.id, title: r.title, description: r.description ?? r.hook, format: r.format, platforms: (r.target_platforms as string[])?.length ? r.target_platforms : [r.platform], audience: r.target_audience, segment: r.audience_segment ? SEGMENT_LABELS[r.audience_segment as Segment] : "not set", side: sideOf(r.audience_segment) ? SIDE_LABELS[sideOf(r.audience_segment)!] : "not set", conversion_goal: conversionLabel(r.conversion_goal) ?? "not set", pillar: pillar(r.pillar_id), tags: r.tags, funnel: r.funnel_stage })))}`,
+      prompt: `${context}\n\nIdeas to rate (JSON):\n${JSON.stringify(batch.map((r) => ({ id: r.id, title: r.title, description: r.description ?? r.hook, format: r.format, platforms: (r.target_platforms as string[])?.length ? r.target_platforms : [r.platform], audience: r.target_audience, segment: r.audience_segment ? SEGMENT_LABELS[r.audience_segment as Segment] : "not set", side: sideOf(r.audience_segment) ? SIDE_LABELS[sideOf(r.audience_segment)!] : "not set", conversion_goal: conversionLabel(r.conversion_goal) ?? "not set", pillar: pillar(r.pillar_id), tags: r.tags, funnel: r.funnel_stage })))}`,
     });
+    const settled: PromiseSettledResult<Awaited<ReturnType<typeof scoreBatch>>>[] = [];
+    for (let k = 0; k < batches.length; k += SCORE_PARALLEL) settled.push(...(await Promise.allSettled(batches.slice(k, k + SCORE_PARALLEL).map(scoreBatch))));
+    const answers = settled.flatMap((r) => (r.status === "fulfilled" ? r.value.data.ideas.map((s) => ({ s, model: r.value.model })) : []));
+    if (!answers.length) {
+      const failed = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (failed) throw failed.reason;
+    }
+    const failedBatches = settled.filter((r) => r.status === "rejected").length;
     let scored = 0;
-    for (const s of data.ideas) {
+    for (const { s, model } of answers) {
       if (!list.includes(s.id)) continue;
       const details: ScoreDetails = { criteria: s.criteria, weights, explanation: s.explanation, source: "ai", model, scored_at: new Date().toISOString() };
       const { error } = await db.from("content_items").update({ idea_score: weightedScore(s.criteria, weights), score_details: details }).eq("project_id", projectId).eq("id", s.id);
       if (!error) scored++;
     }
     refresh(projectId);
-    return { ok: true, data: { scored }, message: `${scored} idea${scored === 1 ? "" : "s"} scored. Scores are estimates to rank ideas, not performance predictions.` };
+    const more = list.length < new Set(ids).size ? ` (the first ${BULK_MAX}; run it again for the rest)` : "";
+    const missed = failedBatches ? ` ${failedBatches} batch${failedBatches > 1 ? "es" : ""} failed: score the rest again.` : "";
+    return { ok: true, data: { scored }, message: `${scored} idea${scored === 1 ? "" : "s"} scored${more}.${missed} Scores are estimates to rank ideas, not performance predictions.` };
   } catch (e) { return { ok: false, error: describeAIError(e) }; }
 }
 
