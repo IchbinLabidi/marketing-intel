@@ -455,11 +455,16 @@ export async function setAudienceAction(projectId: string, ids: string[], segmen
 
 const audienceSchema = z.object({ ideas: z.array(z.object({ id: z.string(), audience: z.string().describe("student, parent or teacher"), segment: z.enum(SEGMENTS), conversion_goal: z.string(), reason: z.string().max(200) })) });
 
-/** AI proposes the audience and conversion goal of up to 30 ideas (applied right away, editable afterwards). */
+/** AI ideas per call; a selection is split into calls run side by side. */
+const AUDIENCE_BATCH = 30;
+/** Most ideas one click handles (the request must finish within the hosting time limit). */
+const AUDIENCE_MAX = BULK_MAX;
+
+/** AI proposes the audience tag, segment and conversion goal of up to 200 ideas (applied right away, editable afterwards). */
 export async function suggestAudienceAction(projectId: string, ids: string[]): Promise<ActionResult<{ set: number }>> {
   const { user, project, allowed } = await guard(projectId);
   if (!allowed) return NO_EDIT;
-  const list = [...new Set(ids)].slice(0, 30);
+  const list = [...new Set(ids)].slice(0, AUDIENCE_MAX);
   if (!list.length) return { ok: false, error: "Select ideas first." };
   try {
     const db = await createClient();
@@ -468,22 +473,33 @@ export async function suggestAudienceAction(projectId: string, ids: string[]): P
     const { bundle } = await loadHistoryAnalysis(projectId);
     const pillar = (id: string | null) => { const p = bundle.pillars.find((x) => x.id === id); return p ? `${p.name} (${p.audience_segment === "teachers" ? "teacher pillar" : "student & parent pillar"})` : "none"; };
     const goals = { students_parents: ["forum_participation", "teacher_profile_visits", "lesson_requests", "completed_bookings"], teachers: ["teacher_registration", "profile_completion", "teacher_activation", "lesson_requests_received", "completed_sessions"] };
-    const { data } = await runStructuredWithMeta({
+    const batches = Array.from({ length: Math.ceil(rows.length / AUDIENCE_BATCH) }, (_, k) => rows.slice(k * AUDIENCE_BATCH, (k + 1) * AUDIENCE_BATCH));
+    // one failed batch doesn't sink the others; ideas it leaves without a tag get the fallback classification below
+    const settled = await Promise.allSettled(batches.map((batch) => runStructuredWithMeta({
       feature: "backlog.audience", projectId, workspaceId: project.workspace_id, userId: user.id, schema: audienceSchema, effort: "low",
       system: `You classify social media content ideas of ${project.name}, a two-sided educational marketplace (students & parents on one side, teachers on the other). For each idea choose the ONE audience it targets (${AUDIENCE_GUIDE}), then the audience segment: students, parents, teachers, or both (only when it genuinely speaks to both sides; otherwise the segment matching the audience). Then choose ONE conversion goal from that side: students/parents → ${goals.students_parents.join(", ")}; teachers → ${goals.teachers.join(", ")}; both → any of them. Never give a teacher idea a student goal or the reverse. Give a short reason. Return the ids exactly as given.`,
-      prompt: JSON.stringify(rows.map((r) => ({ id: r.id, title: r.title, description: r.description ?? r.hook ?? (r.caption ?? "").slice(0, 300), format: r.format, pillar: pillar(r.pillar_id), audience_text: r.target_audience }))),
-    });
+      prompt: JSON.stringify(batch.map((r) => ({ id: r.id, title: r.title, description: r.description ?? r.hook ?? (r.caption ?? "").slice(0, 300), format: r.format, pillar: pillar(r.pillar_id), audience_text: r.target_audience }))),
+    })));
+    const answers = settled.flatMap((r) => (r.status === "fulfilled" ? r.value.data.ideas : []));
+    if (!answers.length) {
+      const failed = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (failed) throw failed.reason;
+    }
     let set = 0;
-    for (const s of data.ideas) {
+    const tagged = new Set<string>();
+    for (const s of answers) {
       if (!list.includes(s.id)) continue;
       const audience = parseAudience(s.audience) ?? parseAudience(s.segment);
       const segment = audience ? segmentForAudience(audience, s.segment) : s.segment;
       const goal = goalFits(segment, s.conversion_goal) ? s.conversion_goal : null;
       const { error } = await db.from("content_items").update({ audience_segment: segment, conversion_goal: goal, ...(audience ? { audience } : {}) }).eq("project_id", projectId).eq("id", s.id);
-      if (!error) set++;
+      if (!error) { set++; if (audience) tagged.add(s.id); }
     }
+    // ideas the AI skipped (or a failed batch) still get a tag if they have none
+    const rest = rows.map((r) => r.id).filter((id) => !tagged.has(id));
+    if (rest.length) set += (await tagUntagged(projectId, user.id, rest)).tagged;
     refresh(projectId);
-    return { ok: true, data: { set }, message: `Audience suggested for ${set} idea${set === 1 ? "" : "s"}. Review and change any of them in the idea panel.` };
+    return { ok: true, data: { set }, message: `Audience suggested for ${set} idea${set === 1 ? "" : "s"}${list.length < new Set(ids).size ? ` (the first ${AUDIENCE_MAX}; run it again for the rest)` : ""}. Change any tag from its badge.` };
   } catch (e) { return { ok: false, error: describeAIError(e) }; }
 }
 
