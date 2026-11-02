@@ -223,7 +223,7 @@ export function BacklogApp(props: {
       {canEdit && selected.size ? (
         <div className="sticky top-2 z-20 flex flex-wrap items-center gap-1.5 rounded-lg border bg-card p-2 shadow-sm">
           <span className="px-1 text-[13px] font-medium">{selected.size} selected</span>
-          {props.aiEnabled ? <Button size="sm" variant="outline" disabled={busy !== null || selected.size > 20} title={selected.size > 20 ? "Score up to 20 at a time" : undefined} onClick={() => bulk("score", () => scoreIdeasAction(projectId, ids))}>{busy === "score" ? <Loader2 className="animate-spin" /> : <Sparkles />} Score with AI</Button> : null}
+          {props.aiEnabled ? <Button size="sm" variant="outline" disabled={busy !== null} title={selected.size > 200 ? "Scores the first 200; run it again for the rest" : undefined} onClick={() => bulk("score", () => scoreIdeasAction(projectId, ids))}>{busy === "score" ? <Loader2 className="animate-spin" /> : <Sparkles />} Score with AI</Button> : null}
           <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("suggest", () => refreshSuggestionsAction(projectId, ids))}>{busy === "suggest" ? <Loader2 className="animate-spin" /> : <CalendarPlus />} Suggest times</Button>
           <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("production", () => sendToProductionAction(projectId, ids))}><Send /> Send to Production</Button>
           <NativeSelect aria-label="Set audience" className="h-8 w-36" value="" onChange={(e) => e.target.value && bulk("audience", () => setAudienceTagAction(projectId, ids, e.target.value as Audience))}><option value="">Set audience…</option>{AUDIENCES.map((a) => <option key={a} value={a}>{AUDIENCE_LABELS[a]}</option>)}</NativeSelect>
