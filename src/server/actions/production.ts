@@ -19,13 +19,29 @@ import { describeAIError } from "@/server/ai/client";
 import { performanceDigest } from "@/server/ai/history";
 import { loadHistoryAnalysis } from "@/server/services/history-analysis";
 import { recentPostTitles } from "@/server/services/calendar";
-import { isIsoDate, isTime, utcToZoned, zonedToUtc } from "@/lib/calendar/time";
+import { isIsoDate, isTime, slotFields, utcToZoned, zonedToUtc } from "@/lib/calendar/time";
 import { runStructured } from "@/server/ai/run";
 import { deleteMediaAction } from "@/server/actions/media";
 import { PRODUCTION_SYSTEM, productionDraftSchema, productionPrompt, type ProductionDraft } from "@/server/ai/production";
 import { CAPTION_SYSTEM, captionDraftSchema, captionPrompt, sanitizeDraft, type CaptionDraft } from "@/server/ai/captions";
 
 const refresh = (id: string) => revalidatePath(`/p/${id}`, "layout");
+/**
+ * Saves the planned publication date/time of content still in production (no approval needed; nothing is scheduled
+ * or published). Scheduled content changes its slot with scheduleProductionAction instead.
+ */
+export async function planProductionSlotAction(projectId: string, id: string, revision: number, date: string | null, time: string | null): Promise<ActionResult<ProductionItem>> {
+  try {
+    const { db, project, item } = await editable(projectId, id);
+    if (item.status === "scheduled") throw new Error("This content is scheduled: use “Update publication slot” to move it.");
+    const slot = slotFields(date || null, time || null, project.timezone || "Africa/Tunis");
+    if (!slot.ok) throw new Error(slot.error);
+    const { data, error } = await db.from("content_items").update(slot.fields).eq("project_id", projectId).eq("id", id).eq("revision", revision).select("*").maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("Content changed in another session. Reload before changing the date.");
+    refresh(projectId); return { ok: true, data, message: date ? "Publication date saved" : "Publication date removed" };
+  } catch (e) { return failure(e); }
+}
 export async function scheduleProductionAction(projectId: string, id: string, revision: number, date: string, time: string): Promise<ActionResult<ProductionItem>> {
   try {
     const { db, project, item } = await editable(projectId, id);

@@ -107,3 +107,18 @@ export function shiftView(view: CalendarView, date: string, dir: 1 | -1) {
 
 export const isIsoDate = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(toUtc(v));
 export const isTime = (v: unknown): v is string => typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+
+/**
+ * A planned publication slot (local date and optional time in the project zone) as the three stored columns.
+ * No date = back to undated. A time that doesn't exist (daylight-saving jump) is refused rather than shifted.
+ */
+export function slotFields(date: string | null, time: string | null, tz: string):
+  { ok: true; fields: { scheduled_date: string | null; scheduled_time: string | null; scheduled_at: string | null } } | { ok: false; error: string } {
+  if (!date) return { ok: true, fields: { scheduled_date: null, scheduled_time: null, scheduled_at: null } };
+  if (!isIsoDate(date) || (time && !isTime(time))) return { ok: false, error: "Enter a valid publication date and time." };
+  if (!time) return { ok: true, fields: { scheduled_date: date, scheduled_time: null, scheduled_at: null } };
+  const at = zonedToUtc(date, time, tz);
+  const back = utcToZoned(at, tz);
+  if (back.date !== date || back.time !== time) return { ok: false, error: "This local time does not exist because of a daylight-saving change." };
+  return { ok: true, fields: { scheduled_date: date, scheduled_time: time, scheduled_at: at } };
+}
