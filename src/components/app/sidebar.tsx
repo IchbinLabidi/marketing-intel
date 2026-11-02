@@ -39,7 +39,13 @@ export function AppSidebar(props: SidebarProps) {
   const [openedOn, setOpenedOn] = React.useState<string | null>(null);
   const open = openedOn === pathname;
   const setOpen = React.useCallback((value: boolean) => setOpenedOn(value ? pathname : null), [pathname]);
-  const activeProject = props.projects.find((p) => p.id === props.activeProjectId) ?? null;
+  // The layout (and its cookie-based project) isn't re-rendered on client navigation, so the project in the URL wins;
+  // on pages outside a project the last project opened in this tab is kept.
+  const urlProject = projectInPath(pathname, props.projects);
+  const [lastProject, setLastProject] = React.useState(urlProject ?? props.activeProjectId);
+  if (urlProject && urlProject !== lastProject) setLastProject(urlProject);
+  const activeProjectId = urlProject ?? lastProject;
+  const activeProject = props.projects.find((p) => p.id === activeProjectId) ?? null;
 
   React.useEffect(() => {
     if (!open) return;
@@ -92,10 +98,16 @@ export function AppSidebar(props: SidebarProps) {
         >
           <X className="size-4" />
         </button>
-        <SidebarContent {...props} activeProject={activeProject} />
+        <SidebarContent {...props} activeProjectId={activeProjectId} activeProject={activeProject} />
       </aside>
     </>
   );
+}
+
+/** The project a /p/<id>/… path belongs to, when it is one of the workspace's projects. */
+export function projectInPath(pathname: string, projects: { id: string }[]) {
+  const id = /^\/p\/([^/?#]+)/.exec(pathname)?.[1];
+  return id && projects.some((p) => p.id === id) ? id : null;
 }
 
 function SidebarContent({
