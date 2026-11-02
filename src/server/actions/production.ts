@@ -82,8 +82,13 @@ export async function saveProductionAction(projectId: string, id: string | null,
   if (!parsed.success) return zodErrorToResult(parsed.error);
   try {
     const { db, user } = await access(projectId);
-    const { data, error } = await db.rpc("save_production", { p_project: projectId, p_id: id, p_revision: revision, p_values: parsed.data });
+    let { data, error } = await db.rpc("save_production", { p_project: projectId, p_id: id, p_revision: revision, p_values: parsed.data });
     if (error) throw error;
+    if (!id && (data as ProductionItem)?.id) {
+      const created = data as ProductionItem;
+      ({ data, error } = await db.rpc("production_transition", { p_project: projectId, p_id: created.id, p_revision: created.revision, p_stage: "brief", p_decision: null, p_comment: "" }));
+      if (error) throw error;
+    }
     // new content gets its audience tag (classified from its text) before it is shown
     if (!id && (data as ProductionItem)?.id) {
       await tagUntagged(projectId, user.id, [(data as ProductionItem).id]);
