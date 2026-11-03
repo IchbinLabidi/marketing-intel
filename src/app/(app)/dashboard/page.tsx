@@ -8,7 +8,8 @@ import { Progress } from "@/components/ui/progress";
 import { CreateProjectDialog } from "@/components/projects/create-project-dialog";
 import { canEdit } from "@/lib/domain/constants";
 import { requireUser } from "@/server/services/session";
-import { getActiveWorkspace } from "@/server/services/workspaces";
+import { countProjectsByWorkspace, getActiveWorkspace, listWorkspaces } from "@/server/services/workspaces";
+import { SwitchWorkspaceButton } from "@/components/app/switch-workspace-button";
 import { listChannels, listProjects } from "@/server/services/projects";
 import { getStrategyBundle, strategyCompleteness } from "@/server/services/strategy";
 import { isAIConfigured } from "@/server/ai/client";
@@ -27,6 +28,13 @@ export default async function DashboardPage() {
     }),
   );
   const firstName = user.fullName.split(" ")[0];
+  // An empty workspace while the person belongs to a team that has projects: point them there.
+  const otherWithProjects =
+    projects.length === 0
+      ? await Promise.all([listWorkspaces(), countProjectsByWorkspace()]).then(([all, counts]) =>
+          all.filter((w) => w.id !== workspace.id && (counts.get(w.id) ?? 0) > 0).map((w) => ({ ...w, projects: counts.get(w.id) ?? 0 })),
+        )
+      : [];
 
   return (
     <div className="space-y-8">
@@ -43,6 +51,17 @@ export default async function DashboardPage() {
           server environment to enable strategy suggestions, analysis and calendar generation. Everything else works without it.
         </Alert>
       ) : null}
+
+      {otherWithProjects.map((w) => (
+        <Alert
+          key={w.id}
+          variant="info"
+          title={`Your team's projects are in ${w.name}`}
+          action={<SwitchWorkspaceButton workspaceId={w.id} label={`Open ${w.name}`} />}
+        >
+          You&apos;re a member of {w.name} ({w.projects} project{w.projects === 1 ? "" : "s"}). The workspace you&apos;re in now has no projects.
+        </Alert>
+      ))}
 
       {projects.length === 0 ? (
         <EmptyState

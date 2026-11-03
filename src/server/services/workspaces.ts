@@ -23,10 +23,33 @@ export const listWorkspaces = cache(async (): Promise<Workspace[]> => {
   });
 });
 
+/** Active (non-archived) project count per workspace the user can read. */
+export const countProjectsByWorkspace = cache(async (): Promise<Map<string, number>> => {
+  const workspaces = await listWorkspaces();
+  const counts = new Map<string, number>(workspaces.map((w) => [w.id, 0]));
+  if (!workspaces.length) return counts;
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .select("workspace_id")
+    .in("workspace_id", workspaces.map((w) => w.id))
+    .is("archived_at", null);
+  if (error) throw error;
+  for (const row of data ?? []) counts.set(row.workspace_id, (counts.get(row.workspace_id) ?? 0) + 1);
+  return counts;
+});
+
 export const getActiveWorkspace = cache(async (): Promise<Workspace | null> => {
   const workspaces = await listWorkspaces();
   const preferred = (await cookies()).get(ACTIVE_WORKSPACE_COOKIE)?.value;
-  return workspaces.find((w) => w.id === preferred) ?? workspaces[0] ?? null;
+  const chosen = workspaces.find((w) => w.id === preferred);
+  if (chosen) return chosen;
+  if (workspaces.length <= 1) return workspaces[0] ?? null;
+  // No choice made on this browser yet. Every sign-up gets a personal workspace, so an invited
+  // member also owns an empty one, created before they joined the team. Open the most recently
+  // joined workspace that has projects (the team's), not the empty personal one.
+  const counts = await countProjectsByWorkspace();
+  return [...workspaces].reverse().find((w) => (counts.get(w.id) ?? 0) > 0) ?? workspaces[0];
 });
 
 export async function getWorkspaceRole(workspaceId: string): Promise<WorkspaceRole | null> {
