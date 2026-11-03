@@ -291,7 +291,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
               </div>
               <p className="text-xs text-muted-foreground">Facebook keeps the scheduled post and publishes it itself (10 minutes to 30 days ahead). Instagram, TikTok and YouTube can&apos;t schedule through their API, so Orix Signals publishes them at that time (within 5 minutes, up to 75 days ahead). Keep the media attached until then.</p>
               {targets.includes("youtube") ? <p className="text-xs text-muted-foreground">YouTube: one video, titled with the YouTube title from Content Studio (or the post title); its description, CTA and hashtags become the description. Vertical videos under 3 minutes appear as Shorts. Until Google approves Orix Signals&apos;s YouTube access, uploads stay private (you can make them public in YouTube Studio).</p> : null}
-              {targets.includes("tiktok") ? <p className="text-xs text-muted-foreground">TikTok: one video (MP4 or MOV, up to 50 MB). Until TikTok approves Orix Signals, videos are posted as private (only you can see them); you can make them public in the TikTok app.</p> : null}
+              {targets.includes("tiktok") ? <p className="text-xs text-muted-foreground">TikTok: one video (MP4 or MOV, up to 100 MB). Until TikTok approves Orix Signals, videos are posted as private (only you can see them); you can make them public in the TikTok app.</p> : null}
             </section>
 
             {/* Status */}

@@ -1,4 +1,5 @@
 import "server-only";
+import { MAX_FILE_BYTES, tiktokChunks } from "@/lib/publishing/rules";
 import { SocialApiError } from "@/server/social/http";
 import type { PublishResult } from "./meta";
 
@@ -6,7 +7,6 @@ import type { PublishResult } from "./meta";
 // ever created. Until TikTok audits the app, posts can only be private ("SELF_ONLY"); the creator's allowed privacy
 // levels are read first and the most public one allowed is used, never more than the creator permits.
 const API = "https://open.tiktokapis.com/v2";
-const MAX_SINGLE_CHUNK = 64 * 1024 * 1024; // files up to 64 MB are uploaded in one chunk (our limit is 50 MB)
 
 type TikTokError = { error?: { code?: string; message?: string; log_id?: string } };
 
@@ -49,12 +49,13 @@ async function status(token: string, publishId: string) {
 /** Publishes a video, then follows its status for up to `waitMs`; past that the caller resumes with `checkTikTok`. */
 export async function publishTikTokVideo(opts: { token: string; caption: string; video: Blob; username?: string | null; waitMs?: number }): Promise<PublishResult & { privacy: string }> {
   const { token, caption, video } = opts;
-  if (video.size > MAX_SINGLE_CHUNK) throw new SocialApiError("The video is larger than 64 MB.", 400, "TikTok", "other");
+  if (video.size > MAX_FILE_BYTES) throw new SocialApiError(`The video is larger than ${MAX_FILE_BYTES / 1024 / 1024} MB.`, 400, "TikTok", "other");
+  const chunks = tiktokChunks(video.size);
   const info = await tiktokCreatorInfo(token);
   let privacy = chooseTikTokPrivacy(info.privacy_level_options ?? []);
   const start = (level: string) => call<{ data: { publish_id: string; upload_url: string } }>("/post/publish/video/init/", token, {
     post_info: { title: caption.slice(0, 2200), privacy_level: level, disable_duet: false, disable_comment: false, disable_stitch: false },
-    source_info: { source: "FILE_UPLOAD", video_size: video.size, chunk_size: video.size, total_chunk_count: 1 },
+    source_info: { source: "FILE_UPLOAD", video_size: video.size, chunk_size: chunks.chunkSize, total_chunk_count: chunks.count },
   });
   let init: Awaited<ReturnType<typeof start>>;
   try {
@@ -65,11 +66,14 @@ export async function publishTikTokVideo(opts: { token: string; caption: string;
     privacy = "SELF_ONLY";
     init = await start(privacy);
   }
-  const put = await fetch(init.data.upload_url, {
-    method: "PUT", body: video, cache: "no-store", signal: AbortSignal.timeout(120_000),
-    headers: { "Content-Type": video.type || "video/mp4", "Content-Length": String(video.size), "Content-Range": `bytes 0-${video.size - 1}/${video.size}` },
-  }).catch(() => null);
-  if (!put || !put.ok) throw new SocialApiError(`TikTok refused the video upload (${put?.status ?? "network"}).`, put?.status ?? 0, "TikTok", put && put.status < 500 ? "other" : "server");
+  // chunks go up in order (videos over 64 MB are split; see tiktokChunks)
+  for (const [from, to] of chunks.ranges) {
+    const put = await fetch(init.data.upload_url, {
+      method: "PUT", body: video.slice(from, to + 1), cache: "no-store", signal: AbortSignal.timeout(120_000),
+      headers: { "Content-Type": video.type || "video/mp4", "Content-Length": String(to - from + 1), "Content-Range": `bytes ${from}-${to}/${video.size}` },
+    }).catch(() => null);
+    if (!put || !put.ok) throw new SocialApiError(`TikTok refused the video upload (${put?.status ?? "network"}).`, put?.status ?? 0, "TikTok", put && put.status < 500 ? "other" : "server");
+  }
   const r = await checkTikTok({ token, publishId: init.data.publish_id, username: opts.username, waitMs: opts.waitMs ?? 60_000 });
   return { ...r, privacy };
 }

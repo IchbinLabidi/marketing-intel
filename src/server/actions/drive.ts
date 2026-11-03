@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { MAX_FILE_BYTES, mediaKindOf } from "@/lib/publishing/rules";
+import { MAX_FILE_BYTES, MAX_FILE_MB, mediaKindOf } from "@/lib/publishing/rules";
 import type { ActionResult } from "@/lib/validation/common";
 import { driveConfig, driveFileMeta, revokeDriveToken } from "@/server/drive/google";
 import { driveAccessToken, getDriveConnection } from "@/server/drive/service";
@@ -55,7 +55,7 @@ export async function attachDriveFileAction(projectId: string, itemId: string, f
     if (meta.capabilities?.canDownload === false) return { ok: false, error: "Your Google account can't download this file (the owner restricted downloads)." };
     if (!mediaKindOf(meta.mimeType)) return { ok: false, error: "Choose an image or a video." };
     const size = Number(meta.size ?? 0);
-    if (size > MAX_FILE_BYTES) return { ok: false, error: `This file is ${(size / 1024 / 1024).toFixed(1)} MB; publishing supports up to 50 MB.` };
+    if (size > MAX_FILE_BYTES) return { ok: false, error: `This file is ${(size / 1024 / 1024).toFixed(1)} MB; publishing supports up to ${MAX_FILE_MB} MB.` };
     const { data: item } = await db.from("content_items").select("language").eq("project_id", projectId).eq("id", itemId).maybeSingle();
     if (!item) return { ok: false, error: "Post not found." };
     const { data: row, error } = await db.from("content_assets").insert({

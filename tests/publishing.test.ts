@@ -34,7 +34,8 @@ describe("publishing rules", () => {
   it("checks a computer file before any upload", () => {
     expect(validateLocalFile({ type: "image/jpeg", size: 1000 })).toBeNull();
     expect(validateLocalFile({ type: "application/pdf", size: 1000 })).toMatch(/image or a video/);
-    expect(validateLocalFile({ type: "video/mp4", size: 60 * 1024 * 1024 })).toMatch(/50 MB/);
+    expect(validateLocalFile({ type: "video/mp4", size: 60 * 1024 * 1024 })).toBeNull();
+    expect(validateLocalFile({ type: "video/mp4", size: 110 * 1024 * 1024 })).toMatch(/100 MB/);
   });
 
   it("enforces Facebook's scheduling window", () => {
@@ -158,5 +159,17 @@ describe("YouTube publishing rules", () => {
     expect(youtubeTitle("A <b>title</b>", "")).toBe("A btitle/b");
     expect(youtubeTitle(null, "\nFirst line\nsecond")).toBe("First line");
     expect(youtubeTitle("x".repeat(150), "").length).toBe(100);
+  });
+});
+
+describe("TikTok upload chunks", () => {
+  it("sends files up to 64 MB in one chunk and splits bigger ones (last chunk takes the rest)", async () => {
+    const { tiktokChunks } = await import("@/lib/publishing/rules");
+    const MB = 1024 * 1024;
+    expect(tiktokChunks(50 * MB)).toEqual({ chunkSize: 50 * MB, count: 1, ranges: [[0, 50 * MB - 1]] });
+    const big = tiktokChunks(100 * MB);
+    expect(big.count).toBe(3);
+    expect(big.ranges[2]).toEqual([64 * MB, 100 * MB - 1]);
+    expect(big.ranges[2][1] - big.ranges[2][0] + 1).toBeLessThanOrEqual(128 * MB);
   });
 });

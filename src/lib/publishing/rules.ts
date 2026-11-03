@@ -14,7 +14,20 @@ export const LIMITS = {
   instagram: { caption: 2_200, hashtags: 30, image: ["image/jpeg", "image/png", "image/webp", "image/gif"], video: ["video/mp4", "video/quicktime"] },
 } as const;
 
-export const MAX_FILE_BYTES = 50 * 1024 * 1024; // storage limit for files kept for publishing
+export const MAX_FILE_MB = 100;
+export const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024; // storage limit for files kept for publishing (production-media bucket)
+
+/**
+ * TikTok FILE_UPLOAD chunks: one chunk up to 64 MB; above that, chunks of 32 MB with the remainder in the last one
+ * (TikTok: chunks 5–64 MB, the last up to 128 MB, chunk count = floor(size / chunk size)).
+ */
+export function tiktokChunks(size: number): { chunkSize: number; count: number; ranges: [number, number][] } {
+  const ONE = 64 * 1024 * 1024;
+  const chunkSize = size <= ONE ? size : 32 * 1024 * 1024;
+  const count = size <= ONE ? 1 : Math.floor(size / chunkSize);
+  const ranges = Array.from({ length: count }, (_, k): [number, number] => [k * chunkSize, k === count - 1 ? size - 1 : (k + 1) * chunkSize - 1]);
+  return { chunkSize, count, ranges };
+}
 
 export function mediaKindOf(mime: string | null | undefined): "image" | "video" | null {
   if (!mime) return null;
@@ -86,7 +99,7 @@ export function validateGroup(target: PublishTarget, mimes: (string | null | und
 export function validateLocalFile(f: { type: string; size: number }): string | null {
   if (!mediaKindOf(f.type)) return "Choose an image or a video.";
   if (!["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/quicktime"].includes(f.type)) return "Use JPG, PNG, WebP, GIF, MP4 or MOV.";
-  if (f.size > MAX_FILE_BYTES) return `The file is ${(f.size / 1024 / 1024).toFixed(1)} MB; the limit for files kept for publishing is 50 MB.`;
+  if (f.size > MAX_FILE_BYTES) return `The file is ${(f.size / 1024 / 1024).toFixed(1)} MB; the limit for files kept for publishing is ${MAX_FILE_MB} MB.`;
   if (f.size === 0) return "The file is empty.";
   return null;
 }
