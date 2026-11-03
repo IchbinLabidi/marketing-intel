@@ -57,7 +57,43 @@ export async function setProjectArchived(projectId: string, archived: boolean) {
   if (error) throw error;
 }
 
+/** Buckets whose object paths start with "<project_id>/". The database rows cascade; files do not. */
+const PROJECT_BUCKETS = ["imports", "production-media"] as const;
+
+async function listFilesUnder(supabase: Awaited<ReturnType<typeof createClient>>, bucket: string, prefix: string, depth = 0): Promise<string[]> {
+  if (depth > 4) return [];
+  const files: string[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await supabase.storage.from(bucket).list(prefix, { limit: 1000, offset });
+    if (error || !data?.length) break;
+    for (const entry of data) {
+      const path = `${prefix}/${entry.name}`;
+      // Folders come back without an id.
+      if (entry.id) files.push(path);
+      else files.push(...(await listFilesUnder(supabase, bucket, path, depth + 1)));
+    }
+    if (data.length < 1000) break;
+  }
+  return files;
+}
+
+/** Best effort: removes the project's uploaded files. Runs before the row is deleted, while storage policies can still resolve the project. */
+async function deleteProjectFiles(projectId: string) {
+  const supabase = await createClient();
+  for (const bucket of PROJECT_BUCKETS) {
+    try {
+      const files = await listFilesUnder(supabase, bucket, projectId);
+      for (let i = 0; i < files.length; i += 100) {
+        await supabase.storage.from(bucket).remove(files.slice(i, i + 100));
+      }
+    } catch (e) {
+      console.error(`Could not remove ${bucket} files for project ${projectId}`, e);
+    }
+  }
+}
+
 export async function deleteProject(projectId: string) {
+  await deleteProjectFiles(projectId);
   const supabase = await createClient();
   const { error, count } = await supabase.from("projects").delete({ count: "exact" }).eq("id", projectId);
   if (error) throw error;
