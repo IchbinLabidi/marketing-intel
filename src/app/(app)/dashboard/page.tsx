@@ -6,7 +6,8 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { CreateProjectDialog } from "@/components/projects/create-project-dialog";
-import { canEdit } from "@/lib/domain/constants";
+import { canAdmin, canEdit } from "@/lib/domain/constants";
+import { DeleteProjectButton } from "@/components/projects/delete-project-dialog";
 import { requireUser } from "@/server/services/session";
 import { countProjectsByWorkspace, getActiveWorkspace, listWorkspaces } from "@/server/services/workspaces";
 import { SwitchWorkspaceButton } from "@/components/app/switch-workspace-button";
@@ -28,6 +29,7 @@ export default async function DashboardPage() {
     }),
   );
   const firstName = user.fullName.split(" ")[0];
+  const isAdmin = canAdmin(workspace.role);
   // An empty workspace while the person belongs to a team that has projects: point them there.
   const otherWithProjects =
     projects.length === 0
@@ -106,13 +108,16 @@ export default async function DashboardPage() {
                         {channels} channel{channels === 1 ? "" : "s"} · {pillars} content pillar{pillars === 1 ? "" : "s"}
                       </p>
                     </div>
-                    <Link
-                      href={`/p/${project.id}`}
-                      className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                      aria-label={`Open ${project.name}`}
-                    >
-                      <ArrowUpRight className="size-4" />
-                    </Link>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      {isAdmin ? <DeleteProjectButton project={{ id: project.id, name: project.name }} /> : null}
+                      <Link
+                        href={`/p/${project.id}`}
+                        className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        aria-label={`Open ${project.name}`}
+                      >
+                        <ArrowUpRight className="size-4" />
+                      </Link>
+                    </div>
                   </div>
 
                   <div className="space-y-3 px-5 py-4">

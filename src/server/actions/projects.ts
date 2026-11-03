@@ -6,6 +6,7 @@ import { canAdmin, canEdit } from "@/lib/domain/constants";
 import { formToObject, zodErrorToResult, type ActionResult } from "@/lib/validation/common";
 import { brandProfileSchema, channelSchema, projectSchema } from "@/lib/validation/project";
 import { requireUser } from "@/server/services/session";
+import { verifyCurrentPassword } from "@/server/services/reauth";
 import { getActiveWorkspace } from "@/server/services/workspaces";
 import {
   addChannel,
@@ -64,16 +65,27 @@ export async function archiveProjectAction(projectId: string, archived: boolean)
   }
 }
 
-export async function deleteProjectAction(projectId: string): Promise<ActionResult> {
+/**
+ * Hard-deletes a project and its data. Owners and admins only, and they must re-enter their account
+ * password: both are checked here on the server, whatever the UI shows.
+ */
+export async function deleteProjectAction(
+  projectId: string,
+  password: string,
+  after: "dashboard" | "projects" = "projects",
+): Promise<ActionResult> {
+  const user = await requireUser();
   const { role } = await getProjectContext(projectId);
   if (!canAdmin(role)) return { ok: false, error: "Only owners and admins can delete projects." };
+  if (typeof password !== "string" || !password) return { ok: false, error: "Enter your password to confirm." };
+  if (!(await verifyCurrentPassword(user, password))) return { ok: false, error: "Incorrect password." };
   try {
     await deleteProject(projectId);
   } catch (e) {
     return fail(e, "Could not delete project");
   }
   revalidatePath("/", "layout");
-  redirect("/projects");
+  redirect(after === "dashboard" ? "/dashboard" : "/projects");
 }
 
 export async function saveBrandProfileAction(projectId: string, _: ActionResult | null, formData: FormData): Promise<ActionResult> {
