@@ -61,7 +61,7 @@ const production: Translation<typeof en> = {
       confirm: "Supprimer le modèle",
     },
     column: { dropHere: "Déposez ici les contenus terminés", empty: "Aucun contenu à cette étape" },
-    card: { move: "Déplacer {title}", overdue: "En retard · {date}", due: "Échéance {date}", scheduled: "Programmé · {date}" },
+    card: { move: "Déplacer {title}", overdue: "En retard · {date}", due: "Échéance {date}", scheduled: "Programmé · {date}", published: "Publié", publish: "Publier", publishStatus: "Suivi de publication" },
     workflowDialog: {
       title: "Workflow de production",
       description: "Renommez les colonnes du tableau pour votre équipe. Déplacer un contenu vers Terminé vaut approbation.",

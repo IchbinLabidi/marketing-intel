@@ -59,7 +59,7 @@ const production = {
       confirm: "Delete template",
     },
     column: { dropHere: "Drag finished content here", empty: "No content in this stage" },
-    card: { move: "Move {title}", overdue: "Overdue · {date}", due: "Due {date}", scheduled: "Scheduled · {date}" },
+    card: { move: "Move {title}", overdue: "Overdue · {date}", due: "Due {date}", scheduled: "Scheduled · {date}", published: "Published", publish: "Publish", publishStatus: "Publishing status" },
     workflowDialog: {
       title: "Production workflow",
       description: "Rename the board columns for your team. Moving content to Done counts as approving it.",
