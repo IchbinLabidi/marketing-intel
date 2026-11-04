@@ -13,12 +13,13 @@ const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(
 /** Google's redirect: validates state against the cookie, exchanges the code on the server, stores tokens encrypted. */
 export async function GET(request: NextRequest) {
   const user = await requireUser();
-  let saved: { state: string; verifier: string; projectId: string; userId: string; back: string } | null = null;
+  let saved: { state: string; verifier: string; projectId: string; userId: string; back: string; item?: string | null } | null = null;
   try { saved = JSON.parse(request.cookies.get("drive_oauth")?.value ?? "null"); } catch { saved = null; }
   const page = (to: string) => new URL(saved ? `/p/${saved.projectId}/${to}` : "/projects", request.url);
   // Success returns where the person started; failures always land on Integrations, which explains them.
   const done = (params: Record<string, string>) => {
-    const back = page(params.error ? "integrations" : saved?.back === "calendar" ? "calendar" : "integrations");
+    const back = page(params.error ? "integrations" : saved?.back === "calendar" || saved?.back === "production" ? saved.back : "integrations");
+    if (!params.error && saved?.back === "production" && saved.item) back.searchParams.set("item", saved.item);
     for (const [k, v] of Object.entries({ provider: "google_drive", ...params })) back.searchParams.set(k, v);
     const res = NextResponse.redirect(back);
     res.cookies.delete({ name: "drive_oauth", path: "/api/drive" });

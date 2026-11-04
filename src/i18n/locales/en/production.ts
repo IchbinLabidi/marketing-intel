@@ -114,6 +114,11 @@ const production = {
     sectionsLabel: "Content sections",
     tabs: { write: "Write", brief: "Brief & strategy", media: "Media", team: "Team & tasks", review: "Review & discussion", history: "History" },
     media: {
+      sourcesLabel: "Media source",
+      tabPost: "On this content",
+      tabComputer: "From your computer",
+      tabDrive: "Google Drive",
+      orLink: "Or attach a link",
       intro: "Attach design files, photos, video or references. Uploads are private to this workspace. Media changes return approved work to production.",
       saveFirst: "Save this draft to attach media.",
       viewLarger: "View {name} larger",

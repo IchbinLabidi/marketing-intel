@@ -47,7 +47,7 @@ function loadPicker(loadError: string) {
  * Google Drive tab: connect (once per project), then pick images/videos with Google's own Picker. Only the file id
  * and metadata are saved; the bytes are read through the Drive API when the post is published.
  */
-export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { projectId: string; itemId: string; onPicking: (open: boolean) => void; onAttached: (assetIds: string[]) => void }) {
+export function DrivePicker({ projectId, itemId, onPicking, onAttached, back = "calendar" }: { projectId: string; itemId: string; onPicking: (open: boolean) => void; onAttached: (assetIds: string[]) => void; back?: "calendar" | "production" }) {
   const t = useT("calendar");
   const [state, setState] = React.useState<DrivePickerState | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -58,6 +58,7 @@ export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { proj
     return () => { alive = false; };
   }, [projectId]);
 
+  const connectHref = `/api/drive/connect?project=${projectId}&back=${back}${back === "production" ? `&item=${itemId}` : ""}`;
   const open = async () => {
     if (!state?.picker) return;
     setBusy(true);
@@ -108,7 +109,7 @@ export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { proj
     return (
       <div className="space-y-2">
         <p className="text-muted-foreground">{t("drive.connectIntro")}</p>
-        <Button asChild size="sm"><a href={`/api/drive/connect?project=${projectId}&back=calendar`}><HardDrive /> {t("drive.connect")}</a></Button>
+        <Button asChild size="sm"><a href={connectHref}><HardDrive /> {t("drive.connect")}</a></Button>
       </div>
     );
   }
@@ -117,7 +118,7 @@ export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { proj
       <p className="text-muted-foreground">{t("drive.connectedAs", { email: state.email ?? t("drive.yourAccount") })}</p>
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={open} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <HardDrive />} {t("drive.choose")}</Button>
-        <Button asChild size="sm" variant="ghost"><a href={`/api/drive/connect?project=${projectId}&back=calendar`} title={t("drive.otherAccountHint")}>{t("drive.otherAccount")}</a></Button>
+        <Button asChild size="sm" variant="ghost"><a href={connectHref} title={t("drive.otherAccountHint")}>{t("drive.otherAccount")}</a></Button>
       </div>
     </div>
   );
