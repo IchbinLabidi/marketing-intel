@@ -227,8 +227,11 @@ function SidebarContent({
       <div className="space-y-1 border-t border-sidebar-border p-2.5">
         <div className="flex items-center gap-1">
           <div className="min-w-0 flex-1"><NavList items={[settingsNav(t)]} pathname={pathname} /></div>
-          <LanguageSwitcher size="sm" />
-          <ThemeSwitcher size="sm" />
+          {/* on desktop these live in the top bar (app layout); the drawer keeps them on small screens */}
+          <div className="flex items-center gap-1 lg:hidden">
+            <LanguageSwitcher size="sm" />
+            <ThemeSwitcher size="sm" />
+          </div>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/40">

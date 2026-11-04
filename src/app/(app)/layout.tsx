@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app/sidebar";
+import { LanguageSwitcher } from "@/components/app/language-switcher";
+import { ThemeSwitcher } from "@/components/app/theme-switcher";
 import { ACTIVE_PROJECT_COOKIE } from "@/lib/supabase/proxy";
 import { requireUser } from "@/server/services/session";
 import { getActiveWorkspace, listWorkspaces } from "@/server/services/workspaces";
@@ -39,6 +41,10 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       />
       </div>
       <main className="min-w-0 flex-1">
+        <div className="sticky top-0 z-20 hidden h-12 items-center justify-end gap-1.5 border-b bg-background/90 px-6 backdrop-blur lg:flex xl:px-10 print:hidden">
+          <LanguageSwitcher size="sm" />
+          <ThemeSwitcher size="sm" />
+        </div>
         <div className="mx-auto w-full max-w-[1240px] px-4 py-6 sm:px-6 sm:py-8 xl:px-10 xl:py-9">{children}</div>
       </main>
     </div>
