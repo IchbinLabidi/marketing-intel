@@ -11,7 +11,7 @@ import { SubmitButton, useResultToast, useFormAction } from "@/components/app/fo
 import { archiveProjectAction, updateProjectAction } from "@/server/actions/projects";
 import type { Project } from "@/types/domain";
 import { ProjectFormFields } from "./project-form-fields";
-import { DeleteProjectDialog } from "./delete-project-dialog";
+import { DeleteProjectDialog, useConfirmDeleteReturn } from "./delete-project-dialog";
 import { useT } from "@/i18n/client";
 
 export function ProjectActions({ project, canEdit, canAdmin }: { project: Project; canEdit: boolean; canAdmin: boolean }) {
@@ -21,6 +21,10 @@ export function ProjectActions({ project, canEdit, canAdmin }: { project: Projec
   const [pending, startTransition] = useTransition();
   const { state, pending: saving, formProps } = useFormAction(updateProjectAction.bind(null, project.id));
   useResultToast(state, () => setDialog(null));
+  // back from the emailed delete-confirmation link: reopen the delete dialog
+  useConfirmDeleteReturn(project.id, () => {
+    if (canAdmin) setDialog("delete");
+  });
 
   if (!canEdit) return null;
   return (
