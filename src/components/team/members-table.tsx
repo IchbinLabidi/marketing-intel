@@ -2,13 +2,14 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { LogOut, UserMinus } from "lucide-react";
+import { Check, LogOut, Pencil, UserMinus, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { confirm } from "@/components/ui/confirm";
 import { canGrant } from "@/lib/permissions";
-import { removeMemberAction, setMemberRoleAction } from "@/server/actions/team";
+import { removeMemberAction, renameMemberAction, setMemberRoleAction } from "@/server/actions/team";
 import type { TeamMember, TeamRole } from "@/server/services/team";
 import { PersonChip } from "./task-badges";
 import { useT } from "@/i18n/client";
@@ -19,7 +20,25 @@ export function MembersTable({ members, roles, perms, userId }: { members: TeamM
   const mine = React.useMemo(() => new Set(perms), [perms]);
   const manage = mine.has("team.manage");
   const [busy, setBusy] = React.useState<string | null>(null);
+  const [editing, setEditing] = React.useState<string | null>(null);
+  const [draft, setDraft] = React.useState("");
   const roleOf = (m: TeamMember) => roles.find((r) => r.id === m.role_id);
+
+  const startRename = (m: TeamMember) => {
+    setDraft(m.full_name);
+    setEditing(m.user_id);
+  };
+  const saveRename = async (m: TeamMember) => {
+    const name = draft.trim();
+    if (!name || name === m.full_name) return setEditing(null);
+    setBusy(m.user_id);
+    const r = await renameMemberAction(m.user_id, name);
+    setBusy(null);
+    if (r.ok) {
+      toast.success(r.message);
+      setEditing(null);
+    } else toast.error(r.error);
+  };
 
   const change = async (m: TeamMember, roleId: string) => {
     setBusy(m.user_id);
@@ -53,10 +72,48 @@ export function MembersTable({ members, roles, perms, userId }: { members: TeamM
           const self = m.user_id === userId;
           // Same rule as set_member_role(): you can't manage someone with more access than you, or yourself.
           const editable = manage && !owner && !self && (!role || canGrant(mine, role.permissions));
+          // renameMemberAction() applies the same rule, and also lets a manager fix their own name here.
+          const renamable = editable || (manage && self);
           return (
             <li key={m.user_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-              <div className="min-w-0 flex-1 basis-56">
-                <PersonChip size="md" name={m.full_name || m.email || t("members.unnamed")} role={m.email ?? undefined} />
+              <div className="flex min-w-0 flex-1 basis-56 items-center gap-1">
+                {editing === m.user_id ? (
+                  <form
+                    className="flex min-w-0 flex-1 items-center gap-1"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      saveRename(m);
+                    }}
+                  >
+                    <Input
+                      autoFocus
+                      aria-label={t("members.nameLabel")}
+                      value={draft}
+                      maxLength={80}
+                      disabled={busy === m.user_id}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") setEditing(null);
+                      }}
+                      className="h-8 min-w-0 flex-1"
+                    />
+                    <Button type="submit" variant="ghost" size="icon-sm" aria-label={t("members.saveName")} disabled={busy === m.user_id || !draft.trim()}>
+                      <Check />
+                    </Button>
+                    <Button type="button" variant="ghost" size="icon-sm" aria-label={t("members.cancel")} onClick={() => setEditing(null)}>
+                      <X />
+                    </Button>
+                  </form>
+                ) : (
+                  <>
+                    <PersonChip size="md" name={m.full_name || m.email || t("members.unnamed")} role={m.email ?? undefined} />
+                    {renamable ? (
+                      <Button variant="ghost" size="icon-sm" aria-label={t("members.rename", { name: m.full_name || t("members.memberFallback") })} onClick={() => startRename(m)}>
+                        <Pencil />
+                      </Button>
+                    ) : null}
+                  </>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 {owner ? <Badge variant="default">{td("role.owner")}</Badge> : null}

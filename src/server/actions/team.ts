@@ -4,13 +4,14 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { ALL_PERMISSIONS, PRIORITIES, TASK_STATUSES, TASK_TYPES, type Permission } from "@/lib/permissions";
+import { ALL_PERMISSIONS, canGrant, PRIORITIES, TASK_STATUSES, TASK_TYPES, type Permission } from "@/lib/permissions";
 import { type ActionResult } from "@/lib/validation/common";
 import { zodErrorToResult } from "@/lib/validation/errors";
 import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
 import { ACTIVE_WORKSPACE_COOKIE, getActiveWorkspace } from "@/server/services/workspaces";
-import { assertPermission, isMissingTeamSchema, listItemTasks, type Task } from "@/server/services/team";
+import { assertPermission, getPermissions, isMissingTeamSchema, listItemTasks, listRoles, listTeam, type Task } from "@/server/services/team";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { appUrl } from "@/server/meta/config";
 import { getT } from "@/i18n/server";
 
@@ -96,6 +97,36 @@ export async function setMemberRoleAction(userId: string, roleId: string): Promi
     if (error) throw error;
     refreshTeam();
     return { ok: true, message: t("messages.roleUpdated") };
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+export async function renameMemberAction(userId: string, name: string): Promise<ActionResult> {
+  const t = await getT("team");
+  if (!z.uuid().safeParse(userId).success) return { ok: false, error: t("errors.invalidMember") };
+  const parsed = z.string().trim().min(1).max(80).safeParse(name);
+  if (!parsed.success) return { ok: false, error: t("errors.invalidName") };
+  try {
+    const user = await requireUser();
+    const ws = await workspace();
+    await assertPermission(ws.id, "team.manage", t("errors.onlyManagersRename"));
+    // Same rule as role changes: the person must be in this workspace, and you can't rename the owner
+    // or someone whose role holds permissions you don't have (your own name is changed in Settings).
+    const [team, roles, mine] = await Promise.all([listTeam(ws.id), listRoles(ws.id), getPermissions(ws.id)]);
+    const target = team.find((m) => m.user_id === userId);
+    if (!target) return { ok: false, error: t("errors.invalidMember") };
+    const role = roles.find((r) => r.id === target.role_id);
+    if (target.user_id !== user.id && (target.role === "owner" || (role && !canGrant(mine, role.permissions)))) {
+      return { ok: false, error: t("errors.noPermission") };
+    }
+    // profiles RLS only lets people update their own row, so the checked rename goes through the service client.
+    const admin = createAdminClient();
+    if (!admin) throw new Error(t("errors.generic"));
+    const { error } = await admin.from("profiles").update({ full_name: parsed.data }).eq("id", userId);
+    if (error) throw error;
+    refreshTeam();
+    return { ok: true, message: t("messages.memberRenamed") };
   } catch (e) {
     return failure(e);
   }
