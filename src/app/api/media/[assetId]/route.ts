@@ -29,6 +29,15 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/media/[a
   const body = data.body as Body;
 
   if (body.path) {
+    // Tiles get an 800 px copy resized by Supabase Storage (image transformations, Pro plan) instead of the full file.
+    if (thumb && /^image\/(jpeg|png|webp|avif)$/.test(body.mime ?? "")) {
+      const { data: small } = await db.storage
+        .from("production-media")
+        .createSignedUrl(body.path, 600, { transform: { width: 800, height: 800, resize: "contain", quality: 75 } });
+      // If resizing is off or fails, fall through to the original file rather than a broken tile.
+      const ok = small?.signedUrl ? await fetch(small.signedUrl, { method: "HEAD", cache: "no-store", signal: AbortSignal.timeout(8_000) }).then((r) => r.ok, () => false) : false;
+      if (ok) return NextResponse.redirect(small!.signedUrl, { headers: { "Cache-Control": "private, max-age=300" } });
+    }
     const { data: signed } = await db.storage.from("production-media").createSignedUrl(body.path, 600);
     if (!signed?.signedUrl) return new NextResponse(t("media.storedMissing"), { status: 404 });
     return NextResponse.redirect(signed.signedUrl, { headers: { "Cache-Control": "private, max-age=300" } });
