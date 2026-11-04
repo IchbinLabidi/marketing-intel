@@ -2,12 +2,13 @@
 
 import { parseAudience } from "@/lib/backlog/audience";
 import { revalidatePath } from "next/cache";
-import { canEdit, PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
+import { canEdit, type Platform } from "@/lib/domain/constants";
 import { upcomingWindows } from "@/lib/history/seasons";
 import { normalizeText, stripRefs } from "@/lib/history/text";
+import { platformLabel } from "@/lib/history/parse";
 import type { ActionResult } from "@/lib/validation/common";
 import { calendarRequestSchema, saveCalendarSchema, type CalendarRequest, type DraftItem } from "@/lib/validation/history";
-import { zodErrorToResult } from "@/lib/validation/common";
+import { zodErrorToResult } from "@/lib/validation/errors";
 import { describeAIError } from "@/server/ai/client";
 import { buildProjectContext } from "@/server/ai/context";
 import {
@@ -31,8 +32,9 @@ import { linkedPosts } from "@/server/services/opportunities";
 import { loadHistoryAnalysis } from "@/server/services/history-analysis";
 import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
+import { getT } from "@/i18n/server";
 
-const NO_EDIT: ActionResult<never> = { ok: false, error: "Your role in this workspace is read-only." };
+const noEdit = async (): Promise<ActionResult<never>> => ({ ok: false, error: (await getT("history"))("actions.readOnly") });
 const refresh = (projectId: string) => revalidatePath(`/p/${projectId}`, "layout");
 
 const byName = <T extends { id: string; name: string }>(list: T[], name: string | null) =>
@@ -55,8 +57,9 @@ async function load(projectId: string) {
  */
 export async function generateRecommendationsAction(projectId: string, instruction?: string): Promise<ActionResult<{ count: number }>> {
   const { user, project, items, bundle, channels, brand, stats, performance, citedIds, pillarName, allowed } = await load(projectId);
-  if (!allowed) return NO_EDIT;
-  if (!items.length) return { ok: false, error: "Connect Meta or import a calendar first: there is no historical content yet." };
+  if (!allowed) return noEdit();
+  const t = await getT("history");
+  if (!items.length) return { ok: false, error: t("intelligence.noHistory") };
   try {
     const digest = historyDigest(items, pillarName, citedIds);
     const refOf = new Map([...digest.refs.entries()].map(([ref, id]) => [id, ref]));
@@ -87,7 +90,7 @@ export async function generateRecommendationsAction(projectId: string, instructi
     const reportId = await saveAnalysisReport({
       project_id: projectId,
       kind: "historical",
-      title: `Historical analysis · ${new Date().toISOString().slice(0, 10)}`,
+      title: t("intelligence.reportTitle", { date: new Date().toISOString().slice(0, 10) }),
       scope: { import_job_ids: [...new Set(items.map((i) => i.import_job_id))], items: items.length, period: [stats.totals.start, stats.totals.end] },
       result: { stats, performance, recommendations, topic_gaps: out.topic_gaps, notes: out.notes, metrics_imported: metricsImported },
       model,
@@ -118,7 +121,7 @@ export async function generateRecommendationsAction(projectId: string, instructi
       })),
     );
     refresh(projectId);
-    return { ok: true, data: { count: recommendations.length }, message: `${recommendations.length} recommendations generated` };
+    return { ok: true, data: { count: recommendations.length }, message: t("intelligence.generated", { count: recommendations.length }) };
   } catch (e) {
     return { ok: false, error: describeAIError(e) };
   }
@@ -130,12 +133,13 @@ export async function generateRecommendationsAction(projectId: string, instructi
  */
 export async function classifyPillarsAction(projectId: string): Promise<ActionResult<{ assigned: number; unmatched: number; remaining: number }>> {
   const { user, project, items, bundle, allowed } = await load(projectId);
-  if (!allowed) return NO_EDIT;
-  if (!bundle.pillars.length) return { ok: false, error: "Add content pillars to the strategy first." };
+  if (!allowed) return noEdit();
+  const t = await getT("history");
+  if (!bundle.pillars.length) return { ok: false, error: t("intelligence.noPillars") };
   // pillar_assigned_by = 'ai' with no pillar means "AI checked it and no pillar fits": not sent again.
   const pending = items.filter((i) => !i.pillar_id && i.pillar_assigned_by !== "ai" && (i.caption || i.title || i.topic));
   const todo = pending.slice(0, 250);
-  if (!todo.length) return { ok: true, data: { assigned: 0, unmatched: 0, remaining: 0 }, message: "Every post with text already has a pillar." };
+  if (!todo.length) return { ok: true, data: { assigned: 0, unmatched: 0, remaining: 0 }, message: t("intelligence.allAssigned") };
   try {
     const refs = new Map(todo.map((i, k) => [`P${k + 1}`, i.id]));
     const out = await runStructured({
@@ -177,7 +181,7 @@ export async function classifyPillarsAction(projectId: string): Promise<ActionRe
     return {
       ok: true,
       data: { assigned, unmatched: unmatchedIds.length, remaining },
-      message: `${assigned} posts assigned to a pillar (AI); ${unmatchedIds.length} fit none${remaining ? `; ${remaining} left` : ""}`,
+      message: remaining ? t("intelligence.classifiedRemaining", { assigned, unmatched: unmatchedIds.length, remaining }) : t("intelligence.classified", { assigned, unmatched: unmatchedIds.length }),
     };
   } catch (e) {
     return { ok: false, error: describeAIError(e) };
@@ -185,13 +189,14 @@ export async function classifyPillarsAction(projectId: string): Promise<ActionRe
 }
 
 export async function setRecommendationStateAction(projectId: string, id: string, state: "new" | "in_progress" | "dismissed"): Promise<ActionResult> {
-  if (!(await canEditProject(projectId))) return NO_EDIT;
+  if (!(await canEditProject(projectId))) return noEdit();
   try {
     await setOpportunityState(projectId, [id], state);
     refresh(projectId);
-    return { ok: true, message: state === "dismissed" ? "Recommendation dismissed" : state === "in_progress" ? "Recommendation saved" : "Restored" };
+    const t = await getT("history");
+    return { ok: true, message: state === "dismissed" ? t("intelligence.dismissed") : state === "in_progress" ? t("intelligence.saved") : t("intelligence.restored") };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Could not update" };
+    return { ok: false, error: e instanceof Error ? e.message : (await getT("history"))("intelligence.updateFailed") };
   }
 }
 
@@ -208,8 +213,10 @@ export async function generateCalendarDraftAction(projectId: string, request: Ca
   const parsed = calendarRequestSchema.safeParse(request);
   if (!parsed.success) return zodErrorToResult(parsed.error);
   const { user, project, items, bundle, channels, brand, stats, performance, citedIds, pillarName, allowed } = await load(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const req = parsed.data;
+  const t = await getT("history");
+  const td = await getT("domain");
   try {
     const days = (Date.parse(req.end) - Date.parse(req.start)) / 86400000 + 1;
     const expectedItems = Math.min(120, Math.max(1, Math.round(req.platforms.reduce((s, p) => s + p.perWeek, 0) * (days / 7))));
@@ -248,16 +255,16 @@ export async function generateCalendarDraftAction(projectId: string, request: Ca
     for (const i of out.items) {
       // Out-of-scope items are reported to the user, never silently kept or removed.
       if (!/^\d{4}-\d{2}-\d{2}$/.test(i.date) || i.date < req.start || i.date > req.end) {
-        dropped.push({ title: i.title, reason: `date ${i.date} is outside the requested period` });
+        dropped.push({ title: i.title, reason: t("intelligence.dateOutside", { date: i.date }) });
         continue;
       }
       if (!allowedPlatforms.has(i.platform)) {
-        dropped.push({ title: i.title, reason: `${PLATFORM_LABELS[i.platform]} was not selected` });
+        dropped.push({ title: i.title, reason: t("intelligence.platformNotSelected", { platform: platformLabel(td, i.platform) }) });
         continue;
       }
       const pillar_id = byName(bundle.pillars, i.pillar);
       const issues: string[] = [];
-      if (i.pillar && !pillar_id) issues.push(`Pillar “${i.pillar}” is not in the strategy`);
+      if (i.pillar && !pillar_id) issues.push(t("intelligence.pillarNotInStrategy", { pillar: i.pillar }));
       draftItems.push({
         scheduled_date: i.date,
         platform: i.platform,
@@ -290,8 +297,9 @@ export async function saveCalendarAction(projectId: string, payload: unknown): P
   const parsed = saveCalendarSchema.safeParse(payload);
   if (!parsed.success) return zodErrorToResult(parsed.error);
   const { user, bundle, items: history, allowed } = await load(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const d = parsed.data;
+  const t = await getT("history");
   const pillarIds = new Set(bundle.pillars.map((p) => p.id));
   const campaignIds = new Set(bundle.campaigns.map((c) => c.id));
   const historyIds = new Set(history.map((h) => h.id));
@@ -300,8 +308,8 @@ export async function saveCalendarAction(projectId: string, payload: unknown): P
   // and opportunities that already have content are not linked again.
   const taken = new Set((await linkedPosts(projectId)).map((p) => p.opportunity_id));
   for (const i of d.items) {
-    if (i.scheduled_date < d.start || i.scheduled_date > d.end) return { ok: false, error: `“${i.title}” is dated outside the calendar period.` };
-    if ((i.pillar_id && !pillarIds.has(i.pillar_id)) || (i.campaign_id && !campaignIds.has(i.campaign_id))) return { ok: false, error: "Unknown pillar or campaign." };
+    if (i.scheduled_date < d.start || i.scheduled_date > d.end) return { ok: false, error: t("intelligence.itemOutside", { title: i.title }) };
+    if ((i.pillar_id && !pillarIds.has(i.pillar_id)) || (i.campaign_id && !campaignIds.has(i.campaign_id))) return { ok: false, error: t("intelligence.unknownRef") };
     if (i.historical_source_id && !historyIds.has(i.historical_source_id)) i.historical_source_id = null;
     if (i.opportunity_id && (!opportunityIds.has(i.opportunity_id) || taken.has(i.opportunity_id))) i.opportunity_id = null;
     if (i.opportunity_id) taken.add(i.opportunity_id);
@@ -316,19 +324,19 @@ export async function saveCalendarAction(projectId: string, payload: unknown): P
     // planned drafts, not scheduled posts: the opportunity is in progress until its content is scheduled
     await setOpportunityState(projectId, [...new Set(d.items.map((i) => i.opportunity_id).filter((x): x is string => Boolean(x)))], "in_progress");
     refresh(projectId);
-    return { ok: true, data: { calendarId }, message: `Calendar saved with ${d.items.length} items` };
+    return { ok: true, data: { calendarId }, message: t("intelligence.calendarSaved", { count: d.items.length }) };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Could not save the calendar" };
+    return { ok: false, error: e instanceof Error ? e.message : t("intelligence.calendarSaveFailed") };
   }
 }
 
 export async function deleteCalendarAction(projectId: string, calendarId: string): Promise<ActionResult> {
-  if (!(await canEditProject(projectId))) return NO_EDIT;
+  if (!(await canEditProject(projectId))) return noEdit();
   try {
     await deleteCalendar(projectId, calendarId);
     refresh(projectId);
-    return { ok: true, message: "Calendar deleted" };
+    return { ok: true, message: (await getT("history"))("intelligence.calendarDeleted") };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Could not delete" };
+    return { ok: false, error: e instanceof Error ? e.message : (await getT("history"))("actions.deleteFailed") };
   }
 }

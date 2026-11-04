@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { attachDriveFileAction, drivePickerAction, type DrivePickerState } from "@/server/actions/drive";
+import { useT } from "@/i18n/client";
 
 // Minimal typing of the official Google Picker (https://developers.google.com/drive/picker).
 type PickerDoc = { id: string; name: string; mimeType: string };
@@ -30,13 +31,13 @@ let pickerLib: Promise<void> | null = null;
 /** True while Google's Picker is on screen: dialogs underneath must not close on clicks that land in it. */
 export const isDrivePickerOpen = () => typeof document !== "undefined" && document.body.dataset.drivePicker === "open";
 const setPickerOpen = (open: boolean) => { if (open) document.body.dataset.drivePicker = "open"; else delete document.body.dataset.drivePicker; };
-function loadPicker() {
+function loadPicker(loadError: string) {
   pickerLib ??= new Promise<void>((resolve, reject) => {
     const s = document.createElement("script");
     s.src = "https://apis.google.com/js/api.js";
     s.async = true;
     s.onload = () => window.gapi!.load("picker", () => resolve());
-    s.onerror = () => { pickerLib = null; reject(new Error("Google Picker could not load. Check your connection or blockers.")); };
+    s.onerror = () => { pickerLib = null; reject(new Error(loadError)); };
     document.head.appendChild(s);
   });
   return pickerLib;
@@ -47,6 +48,7 @@ function loadPicker() {
  * and metadata are saved; the bytes are read through the Drive API when the post is published.
  */
 export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { projectId: string; itemId: string; onPicking: (open: boolean) => void; onAttached: (assetIds: string[]) => void }) {
+  const t = useT("calendar");
   const [state, setState] = React.useState<DrivePickerState | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -60,14 +62,14 @@ export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { proj
     if (!state?.picker) return;
     setBusy(true);
     try {
-      await loadPicker();
+      await loadPicker(t("drive.loadError"));
       const g = window.google!.picker;
       const view = new g.DocsView(g.ViewId.DOCS_IMAGES_AND_VIDEOS);
       view.setIncludeFolders(true);
       view.setMimeTypes("image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime");
       onPicking(true);
       setPickerOpen(true);
-      new g.PickerBuilder().addView(view).enableFeature(g.Feature.MULTISELECT_ENABLED).setOAuthToken(state.picker.accessToken).setDeveloperKey(state.picker.apiKey).setAppId(state.picker.appId).setTitle("Choose images or a video (Ctrl/Shift-click for several)")
+      new g.PickerBuilder().addView(view).enableFeature(g.Feature.MULTISELECT_ENABLED).setOAuthToken(state.picker.accessToken).setDeveloperKey(state.picker.apiKey).setAppId(state.picker.appId).setTitle(t("drive.pickerTitle"))
         .setCallback(async (data: PickerData) => {
           if (data.action === g.Action.CANCEL) { setPickerOpen(false); onPicking(false); setBusy(false); return; }
           if (data.action !== g.Action.PICKED || !data.docs?.[0]) return;
@@ -76,20 +78,20 @@ export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { proj
           const ids: string[] = [];
           for (const doc of data.docs.slice(0, 10)) {
             const r = await attachDriveFileAction(projectId, itemId, doc.id);
-            if (!r.ok) toast.error(`${doc.name}: ${r.error}`);
+            if (!r.ok) toast.error(t("drive.fileError", { name: doc.name, error: r.error }));
             else if (r.data) ids.push(r.data.id);
           }
           setBusy(false);
-          if (data.docs.length > 10) toast.info("Only the first 10 files were attached (the most one post can hold).");
+          if (data.docs.length > 10) toast.info(t("drive.onlyFirst"));
           if (!ids.length) return;
-          toast.success(ids.length === 1 ? "Attached from Google Drive" : `${ids.length} files attached from Google Drive`);
+          toast.success(t("drive.attached", { count: ids.length }));
           onAttached(ids);
         }).build().setVisible(true);
     } catch (e) {
       setPickerOpen(false);
       onPicking(false);
       setBusy(false);
-      toast.error(e instanceof Error ? e.message : "Google Picker failed");
+      toast.error(e instanceof Error ? e.message : t("drive.failed"));
     }
   };
 
@@ -97,25 +99,25 @@ export function DrivePicker({ projectId, itemId, onPicking, onAttached }: { proj
   if (!state) return <div className="h-16 animate-pulse rounded-lg bg-muted" />;
   if (!state.configured) {
     return (
-      <Alert title="Google Drive isn't set up on the server yet">
-        It needs a Google Cloud OAuth client with the Drive and Picker APIs. Missing settings: {state.missing.join(", ")}. Until then, download the file and choose it from your computer.
+      <Alert title={t("drive.notConfiguredTitle")}>
+        {t("drive.notConfiguredBody", { missing: state.missing.join(", ") })}
       </Alert>
     );
   }
   if (!state.picker) {
     return (
       <div className="space-y-2">
-        <p className="text-muted-foreground">Connect this project to Google Drive once. Orix Signals only gets access to the files you pick, never your whole Drive, and nothing is made public.</p>
-        <Button asChild size="sm"><a href={`/api/drive/connect?project=${projectId}&back=calendar`}><HardDrive /> Connect Google Drive</a></Button>
+        <p className="text-muted-foreground">{t("drive.connectIntro")}</p>
+        <Button asChild size="sm"><a href={`/api/drive/connect?project=${projectId}&back=calendar`}><HardDrive /> {t("drive.connect")}</a></Button>
       </div>
     );
   }
   return (
     <div className="space-y-2">
-      <p className="text-muted-foreground">Connected as {state.email ?? "your Google account"}. The file stays in Drive: only its reference is saved, and it&apos;s read from Drive when the post is published.</p>
+      <p className="text-muted-foreground">{t("drive.connectedAs", { email: state.email ?? t("drive.yourAccount") })}</p>
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={open} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <HardDrive />} Choose from Google Drive</Button>
-        <Button asChild size="sm" variant="ghost"><a href={`/api/drive/connect?project=${projectId}&back=calendar`} title="Files already attached from the current account will need to be picked again">Use another Google account</a></Button>
+        <Button size="sm" onClick={open} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <HardDrive />} {t("drive.choose")}</Button>
+        <Button asChild size="sm" variant="ghost"><a href={`/api/drive/connect?project=${projectId}&back=calendar`} title={t("drive.otherAccountHint")}>{t("drive.otherAccount")}</a></Button>
       </div>
     </div>
   );

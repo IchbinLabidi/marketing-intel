@@ -6,6 +6,7 @@ import {
   applyGenerated, AUTO_SETTINGS, composePlatformText, defaultYouTubeVariant, effectiveSettings, emptyCopy, hasCopy, publicationCopy, readCaptions, replacedBy, type PlatformCaptions,
 } from "@/lib/production/platform-copy";
 import { CAPTION_SYSTEM, captionPrompt, hasTimings, sanitizeDraft, type CaptionVariant } from "@/server/ai/captions";
+import { testT } from "@/i18n/testing";
 
 const base = { ...writingOf({ title: "Bac maths: 3 erreurs", hook: "3 erreurs qui coûtent des points", caption: "Old general caption", main_content: "Scene 1 (0:00) intro\nScene 2 (0:12) erreur 1" }), platform: "instagram" as const, format: "Instagram Reel", language: "fr" as const, pillar_id: null, funnel_stage: null, target_audience: "Bac students", assignee_id: null, due_date: null, language_variants: {} };
 const copy = (over: Partial<ReturnType<typeof emptyCopy>> = {}) => ({ ...emptyCopy(), ...over });
@@ -87,13 +88,13 @@ describe("caption AI", () => {
   });
   it("keeps only requested platforms and drops untrusted links and chapters without timings", () => {
     const out = sanitizeDraft({ rationale: "", assumptions: [], variants: [variant("tiktok", { link: "https://x.test", chapters: "0:00 a" }), variant("youtube"), variant("facebook", { link: "https://invented.example/promo" }), variant("facebook")] },
-      { operation: "generate_all", platforms: ["tiktok", "facebook"], current: {}, known: "Website: https://sosprof.net", script: "no timings here" });
+      { operation: "generate_all", platforms: ["tiktok", "facebook"], current: {}, known: "Website: https://sosprof.net", script: "no timings here", t: testT("production") });
     expect(out.variants.map((v) => v.platform)).toEqual(["tiktok", "facebook"]);
     expect(out.variants[0].link).toBe(""); // TikTok has no link field
     expect(out.variants[1].link).toBe("");
     expect(out.assumptions.join(" ")).toMatch(/isn't in your project data/);
     const yt = sanitizeDraft({ rationale: "", assumptions: [], variants: [variant("youtube", { chapters: "0:00 Intro", links: "https://sosprof.net\nhttps://fake.example" })] },
-      { operation: "generate_current", platforms: ["youtube"], current: {}, known: "https://sosprof.net", script: "no timings" });
+      { operation: "generate_current", platforms: ["youtube"], current: {}, known: "https://sosprof.net", script: "no timings", t: testT("production") });
     expect(yt.variants[0].chapters).toBe("");
     expect(yt.variants[0].links).toBe("https://sosprof.net");
     expect(hasTimings("Scene 2 (0:12)")).toBe(true);
@@ -101,10 +102,10 @@ describe("caption AI", () => {
   });
   it("changes only hashtags for the hashtag action, and returns three alternatives", () => {
     const h = sanitizeDraft({ rationale: "", assumptions: [], variants: [variant("instagram", { caption: "rewritten", hashtags: ["#bac", "bac", "#tunisie"] })] },
-      { operation: "hashtags", platforms: ["instagram"], current: { instagram: { caption: "keep me", cta: "keep cta" } }, known: "", script: "" });
+      { operation: "hashtags", platforms: ["instagram"], current: { instagram: { caption: "keep me", cta: "keep cta" } }, known: "", script: "", t: testT("production") });
     expect(h.variants[0]).toMatchObject({ caption: "keep me", cta: "keep cta", hashtags: ["bac", "tunisie"] });
     const alts = sanitizeDraft({ rationale: "", assumptions: [], variants: [1, 2, 3, 4].map((n) => variant("tiktok", { caption: `v${n}` })) },
-      { operation: "alternatives", platforms: ["tiktok"], current: {}, known: "", script: "" });
+      { operation: "alternatives", platforms: ["tiktok"], current: {}, known: "", script: "", t: testT("production") });
     expect(alts.variants.map((v) => v.caption)).toEqual(["v1", "v2", "v3"]);
   });
 });

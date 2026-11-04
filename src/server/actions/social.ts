@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/lib/validation/common";
+import { getT } from "@/i18n/server";
 import { youtubeApiKey } from "@/server/social/config";
 import { PROVIDERS } from "@/server/social/providers";
 import { findPublicChannel } from "@/server/social/providers/youtube";
@@ -13,7 +14,7 @@ import { requireUser } from "@/server/services/session";
 import { clearSocialTokens, getSocialConnection, readSocialTokens } from "@/server/services/social";
 import { hasPermission } from "@/server/services/team";
 
-const NO_EDIT: ActionResult<never> = { ok: false, error: "Your role can't manage integrations for this project." };
+const noEdit = async (): Promise<ActionResult<never>> => ({ ok: false, error: (await getT("integrations"))("actions.cannotManage") });
 const refresh = (projectId: string) => revalidatePath(`/p/${projectId}`, "layout");
 
 async function guard(projectId: string) {
@@ -25,14 +26,15 @@ async function guard(projectId: string) {
 /** Connects a YouTube channel's public data with the server's API key (no sign-in to Google needed). */
 export async function addYouTubeChannelAction(projectId: string, input: string): Promise<ActionResult> {
   const { user, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
-  if (!youtubeApiKey()) return { ok: false, error: "YOUTUBE_API_KEY is not configured on the server." };
+  if (!allowed) return noEdit();
+  const t = await getT("integrations");
+  if (!youtubeApiKey()) return { ok: false, error: t("actions.youtubeKeyMissing") };
   try {
     const channel = await findPublicChannel(input);
-    if (!channel) return { ok: false, error: "No channel found. Paste the channel URL (youtube.com/@name or /channel/UC…), an @handle or the channel id." };
+    if (!channel) return { ok: false, error: t("actions.channelNotFound") };
     const db = await createClient();
     const { data: existing } = await db.from("social_connections").select("id, auth_type, status").eq("project_id", projectId).eq("provider", "youtube").eq("external_account_id", channel.externalId).maybeSingle();
-    if (existing?.auth_type === "oauth" && existing.status !== "disconnected") return { ok: false, error: `${channel.name ?? "This channel"} is already connected with full access.` };
+    if (existing?.auth_type === "oauth" && existing.status !== "disconnected") return { ok: false, error: channel.name ? t("actions.channelAlreadyFull", { name: channel.name }) : t("actions.thisChannelAlreadyFull") };
     const { data, error } = await db.from("social_connections").upsert({
       project_id: projectId, provider: "youtube", auth_type: "api_key", external_account_id: channel.externalId, account_name: channel.name, account_handle: channel.handle,
       account_url: channel.url, avatar_url: channel.avatar, status: "connected", granted_scopes: [], declined_scopes: [], token_expires_at: null, last_error: null, connected_by: user.id,
@@ -40,7 +42,7 @@ export async function addYouTubeChannelAction(projectId: string, input: string):
     if (error) throw error;
     await startSocialSync(projectId, data.id, "connect");
     refresh(projectId);
-    return { ok: true, message: `${channel.name ?? "Channel"} added. Importing its videos…` };
+    return { ok: true, message: channel.name ? t("actions.channelAdded", { name: channel.name }) : t("actions.channelAddedUnnamed") };
   } catch (e) {
     return { ok: false, error: describeSocialError(e) };
   }
@@ -48,11 +50,11 @@ export async function addYouTubeChannelAction(projectId: string, input: string):
 
 export async function syncSocialAction(projectId: string, connectionId: string): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const r = await startSocialSync(projectId, connectionId, "manual");
   if (!r.ok) return r;
   refresh(projectId);
-  return { ok: true, message: "Synchronization started" };
+  return { ok: true, message: (await getT("integrations"))("actions.syncStarted") };
 }
 
 /**
@@ -61,10 +63,11 @@ export async function syncSocialAction(projectId: string, connectionId: string):
  */
 export async function disconnectSocialAction(projectId: string, connectionId: string, deletePosts: boolean): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   try {
+    const t = await getT("integrations");
     const conn = await getSocialConnection(projectId, connectionId);
-    if (!conn) return { ok: true, message: "Already removed" };
+    if (!conn) return { ok: true, message: t("actions.alreadyRemoved") };
     const db = await createClient();
     if (conn.auth_type === "oauth") {
       const tokens = await readSocialTokens(db, conn.id).catch(() => ({ access: null, refresh: null }));
@@ -83,7 +86,7 @@ export async function disconnectSocialAction(projectId: string, connectionId: st
       if (e2) throw e2;
     }
     refresh(projectId);
-    return { ok: true, message: deletePosts ? "Disconnected and imported posts deleted" : "Disconnected. Imported posts are kept." };
+    return { ok: true, message: deletePosts ? t("actions.disconnectedDeleted") : t("actions.disconnectedKept") };
   } catch (e) {
     return { ok: false, error: describeSocialError(e) };
   }
@@ -91,12 +94,13 @@ export async function disconnectSocialAction(projectId: string, connectionId: st
 
 export async function setSocialAutoSyncAction(projectId: string, connectionId: string, enabled: boolean): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const db = await createClient();
   const { error } = await db.from("social_connections").update({ auto_sync: enabled }).eq("project_id", projectId).eq("id", connectionId);
   if (error) return { ok: false, error: error.message };
   refresh(projectId);
-  return { ok: true, message: enabled ? "Daily synchronization on" : "Daily synchronization off" };
+  const t = await getT("integrations");
+  return { ok: true, message: enabled ? t("actions.dailyOn") : t("actions.dailyOff") };
 }
 
 export type PublishedPerformance = {
@@ -119,10 +123,11 @@ export async function publishedPerformanceAction(projectId: string, itemId: stri
   if (error || !h) return { ok: true, data: null };
   const row = h as Record<string, unknown>;
   const v = (k: string) => (typeof row[k] === "number" ? (row[k] as number) : row[k] == null ? null : Number(row[k]));
+  const [td, t] = await Promise.all([getT("domain"), getT("integrations")]);
   const metrics = [
-    { label: "Reach", value: v("reach") }, { label: "Impressions", value: v("impressions") }, { label: "Views", value: v("video_views") ?? v("views") },
-    { label: "Likes", value: v("likes") }, { label: "Comments", value: v("comments") }, { label: "Shares", value: v("shares") }, { label: "Saves", value: v("saves") },
-    { label: "Clicks", value: v("clicks") }, { label: "Watch time (min)", value: v("watch_time_minutes") },
+    { label: td("metric.reach"), value: v("reach") }, { label: td("metric.impressions"), value: v("impressions") }, { label: td("metric.views"), value: v("video_views") ?? v("views") },
+    { label: td("metric.likes"), value: v("likes") }, { label: td("metric.comments"), value: v("comments") }, { label: td("metric.shares"), value: v("shares") }, { label: td("metric.saves"), value: v("saves") },
+    { label: td("metric.clicks"), value: v("clicks") }, { label: t("performance.watchTime"), value: v("watch_time_minutes") },
   ];
   return { ok: true, data: { platform: row.platform as string | null, permalink: row.permalink as string | null, published_at: row.published_at as string | null, source: row.source as string, metrics_updated_at: row.metrics_updated_at as string | null, metrics } };
 }

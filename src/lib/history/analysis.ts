@@ -1,6 +1,7 @@
 import { METRICS, PLATFORM_LABELS, type Metric, type Platform } from "@/lib/domain/constants";
 import type { HistoricalItem } from "@/types/domain";
 import { normalizeFormat, statusGroup, type StatusGroup } from "./parse";
+import { DELETED_PILLAR } from "./performance";
 import { SEASONS, seasonWindows, schoolYearOf, type SeasonKey } from "./seasons";
 import { findRepetitions, type RepetitionCluster } from "./similarity";
 import { normalizeText } from "./text";
@@ -29,6 +30,10 @@ const DAY = 86400000;
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / DAY);
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+// Fallback labels (English: they also feed the AI digest); the UI recognises them and shows its own wording.
+export const NOT_SPECIFIED = "Not specified";
+export const NOT_LINKED_SUFFIX = " (not linked to strategy)";
+
 function countBy<T>(items: T[], keyOf: (i: T) => string | null, labelOf: (k: string) => string = (k) => k): CountRow[] {
   const map = new Map<string, number>();
   for (const i of items) {
@@ -37,7 +42,7 @@ function countBy<T>(items: T[], keyOf: (i: T) => string | null, labelOf: (k: str
   }
   const total = items.length || 1;
   return [...map.entries()]
-    .map(([key, count]) => ({ key, label: key === "__none" ? "Not specified" : labelOf(key), count, share: Math.round((count / total) * 1000) / 10 }))
+    .map(([key, count]) => ({ key, label: key === "__none" ? NOT_SPECIFIED : labelOf(key), count, share: Math.round((count / total) * 1000) / 10 }))
     .sort((a, b) => b.count - a.count);
 }
 
@@ -97,7 +102,7 @@ export function computeHistoricalStats(items: AnalysisItem[], ctx: AnalysisConte
   const byPillar = countBy(
     items,
     (i) => (i.pillar_id ? `id:${i.pillar_id}` : i.content_pillar ? `raw:${normalizeText(i.content_pillar)}` : null),
-    (k) => (k.startsWith("id:") ? pillarName.get(k.slice(3)) ?? "Deleted pillar" : `${items.find((i) => `raw:${normalizeText(i.content_pillar)}` === k)?.content_pillar} (not linked to strategy)`),
+    (k) => (k.startsWith("id:") ? pillarName.get(k.slice(3)) ?? DELETED_PILLAR : `${items.find((i) => `raw:${normalizeText(i.content_pillar)}` === k)?.content_pillar}${NOT_LINKED_SUFFIX}`),
   );
   const byCampaign = countBy(
     items.filter((i) => i.campaign || i.campaign_id),

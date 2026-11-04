@@ -11,8 +11,11 @@ import { canGrant } from "@/lib/permissions";
 import { removeMemberAction, setMemberRoleAction } from "@/server/actions/team";
 import type { TeamMember, TeamRole } from "@/server/services/team";
 import { PersonChip } from "./task-badges";
+import { useT } from "@/i18n/client";
 
 export function MembersTable({ members, roles, perms, userId }: { members: TeamMember[]; roles: TeamRole[]; perms: string[]; userId: string }) {
+  const t = useT("team");
+  const td = useT("domain");
   const mine = React.useMemo(() => new Set(perms), [perms]);
   const manage = mine.has("team.manage");
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -28,9 +31,9 @@ export function MembersTable({ members, roles, perms, userId }: { members: TeamM
   const remove = async (m: TeamMember) => {
     const self = m.user_id === userId;
     const ok = await confirm({
-      title: self ? "Leave this workspace?" : `Remove ${m.full_name || "this member"}?`,
-      description: self ? "You lose access to its projects. An admin can invite you again." : "They lose access immediately. Their open tasks go back to the backlog; history is kept.",
-      confirmLabel: self ? "Leave workspace" : "Remove member",
+      title: self ? t("members.confirmLeaveTitle") : t("members.confirmRemoveTitle", { name: m.full_name || t("members.thisMember") }),
+      description: self ? t("members.confirmLeaveBody") : t("members.confirmRemoveBody"),
+      confirmLabel: self ? t("members.leave") : t("members.remove"),
       destructive: true,
     });
     if (!ok) return;
@@ -53,15 +56,15 @@ export function MembersTable({ members, roles, perms, userId }: { members: TeamM
           return (
             <li key={m.user_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
               <div className="min-w-0 flex-1 basis-56">
-                <PersonChip size="md" name={m.full_name || m.email || "Unnamed member"} role={m.email ?? undefined} />
+                <PersonChip size="md" name={m.full_name || m.email || t("members.unnamed")} role={m.email ?? undefined} />
               </div>
               <div className="flex items-center gap-2">
-                {owner ? <Badge variant="default">Owner</Badge> : null}
-                {self ? <Badge variant="outline">You</Badge> : null}
+                {owner ? <Badge variant="default">{td("role.owner")}</Badge> : null}
+                {self ? <Badge variant="outline">{t("members.you")}</Badge> : null}
               </div>
               <div className="w-full sm:w-52">
                 {editable ? (
-                  <NativeSelect aria-label={`Role for ${m.full_name || "member"}`} value={m.role_id ?? ""} disabled={busy === m.user_id} onChange={(e) => change(m, e.target.value)}>
+                  <NativeSelect aria-label={t("members.roleFor", { name: m.full_name || t("members.memberFallback") })} value={m.role_id ?? ""} disabled={busy === m.user_id} onChange={(e) => change(m, e.target.value)}>
                     {roles.map((r) => (
                       <option key={r.id} value={r.id} disabled={!canGrant(mine, r.permissions)}>
                         {r.name}
@@ -69,12 +72,12 @@ export function MembersTable({ members, roles, perms, userId }: { members: TeamM
                     ))}
                   </NativeSelect>
                 ) : (
-                  <p className="text-[13px] font-medium">{role?.name ?? (owner ? "Admin" : m.role)}</p>
+                  <p className="text-[13px] font-medium">{role?.name ?? (owner ? td("role.admin") : td(`role.${m.role}`))}</p>
                 )}
               </div>
               <div className="w-8">
                 {editable || (self && !owner) ? (
-                  <Button variant="ghost" size="icon-sm" aria-label={self ? "Leave workspace" : "Remove member"} disabled={busy === m.user_id} onClick={() => remove(m)}>
+                  <Button variant="ghost" size="icon-sm" aria-label={self ? t("members.leave") : t("members.remove")} disabled={busy === m.user_id} onClick={() => remove(m)}>
                     {self ? <LogOut /> : <UserMinus />}
                   </Button>
                 ) : null}

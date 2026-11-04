@@ -3,6 +3,13 @@ import { appUrl } from "@/server/meta/config";
 import { socialTokenKey } from "@/server/social/config";
 import { form, requestJson, SocialApiError } from "@/server/social/http";
 import { expiresAt, type TokenSet } from "@/server/social/types";
+import { createTranslator, type MessageTree } from "@/i18n/core";
+import type { KeysOf, TFor } from "@/i18n/messages";
+import enCalendar from "@/i18n/locales/en/calendar";
+
+let english: TFor<"calendar"> | null = null;
+/** User-facing Drive errors use the "calendar" namespace: the caller's translator, else English (e.g. scheduled jobs). */
+export const driveT = (t?: TFor<"calendar">) => t ?? (english ??= createTranslator<KeysOf["calendar"]>("en", "calendar", enCalendar as unknown as MessageTree));
 
 // Google Drive (official Drive API v3 + Google Picker). Scope drive.file: the app only ever sees files the person
 // picks with the Picker (or that the app created). No access to the rest of the Drive, no public sharing.
@@ -67,8 +74,8 @@ export type DriveFile = {
 };
 
 /** Metadata through an authorized call: confirms the file exists, isn't trashed and can be downloaded with this access. */
-export async function driveFileMeta(accessToken: string, fileId: string): Promise<DriveFile> {
-  if (!/^[\w-]{10,200}$/.test(fileId)) throw new SocialApiError("Invalid Drive file id.", 400, "Google Drive", "other");
+export async function driveFileMeta(accessToken: string, fileId: string, t?: TFor<"calendar">): Promise<DriveFile> {
+  if (!/^[\w-]{10,200}$/.test(fileId)) throw new SocialApiError(driveT(t)("driveApi.invalidId"), 400, "Google Drive", "other");
   return requestJson<DriveFile>("Google Drive", `${API}/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,size,thumbnailLink,webViewLink,modifiedTime,trashed,capabilities(canDownload)&supportsAllDrives=true`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -78,14 +85,16 @@ export async function driveFileMeta(accessToken: string, fileId: string): Promis
  * Downloads a picked file's bytes through the Drive API (never through a sharing link). Refuses files larger than
  * `maxBytes` before and while reading, so a wrong file can't exhaust memory.
  */
-export async function downloadDriveFile(accessToken: string, fileId: string, maxBytes: number): Promise<Blob> {
+export async function downloadDriveFile(accessToken: string, fileId: string, maxBytes: number, translator?: TFor<"calendar">): Promise<Blob> {
+  const t = driveT(translator);
+  const tooLarge = () => t("driveApi.tooLarge", { size: Math.round(maxBytes / 1024 / 1024) });
   const res = await fetch(`${API}/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store", signal: AbortSignal.timeout(120_000) });
-  if (res.status === 401) throw new SocialApiError("Google Drive access expired. Reconnect Google Drive.", 401, "Google Drive", "auth");
-  if (res.status === 403) throw new SocialApiError("Google Drive refused the download (permission or quota).", 403, "Google Drive", "permission");
-  if (res.status === 404) throw new SocialApiError("The Drive file no longer exists or isn't shared with this app anymore.", 404, "Google Drive", "not_found");
-  if (!res.ok || !res.body) throw new SocialApiError(`Google Drive download failed (${res.status}).`, res.status, "Google Drive", res.status >= 500 ? "server" : "other");
+  if (res.status === 401) throw new SocialApiError(t("driveApi.expired"), 401, "Google Drive", "auth");
+  if (res.status === 403) throw new SocialApiError(t("driveApi.refused"), 403, "Google Drive", "permission");
+  if (res.status === 404) throw new SocialApiError(t("driveApi.gone"), 404, "Google Drive", "not_found");
+  if (!res.ok || !res.body) throw new SocialApiError(t("driveApi.failed", { status: String(res.status) }), res.status, "Google Drive", res.status >= 500 ? "server" : "other");
   const declared = Number(res.headers.get("content-length"));
-  if (declared && declared > maxBytes) throw new SocialApiError(`The Drive file is larger than ${Math.round(maxBytes / 1024 / 1024)} MB.`, 413, "Google Drive", "other");
+  if (declared && declared > maxBytes) throw new SocialApiError(tooLarge(), 413, "Google Drive", "other");
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -93,7 +102,7 @@ export async function downloadDriveFile(accessToken: string, fileId: string, max
     const { done, value } = await reader.read();
     if (done) break;
     total += value.byteLength;
-    if (total > maxBytes) { await reader.cancel(); throw new SocialApiError(`The Drive file is larger than ${Math.round(maxBytes / 1024 / 1024)} MB.`, 413, "Google Drive", "other"); }
+    if (total > maxBytes) { await reader.cancel(); throw new SocialApiError(tooLarge(), 413, "Google Drive", "other"); }
     chunks.push(value);
   }
   return new Blob(chunks as BlobPart[], { type: res.headers.get("content-type") ?? "application/octet-stream" });

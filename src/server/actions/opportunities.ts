@@ -18,8 +18,10 @@ import { opportunityRow, prepareOpportunities } from "@/server/services/opportun
 import { competitorPostsByIds } from "@/server/services/competitors";
 import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
+import { getT } from "@/i18n/server";
+import type { TFor } from "@/i18n/messages";
 
-const NO_EDIT: ActionResult<never> = { ok: false, error: "Your role in this workspace is read-only." };
+const noEdit = (t: TFor<"opportunities">): ActionResult<never> => ({ ok: false, error: t("errors.readOnly") });
 const refresh = (projectId: string) => revalidatePath(`/p/${projectId}`, "layout");
 
 const focusSchema = z.object({
@@ -35,12 +37,13 @@ const prepare = (projectId: string) => prepareOpportunities(projectId);
 const toRow = opportunityRow;
 
 export async function generateOpportunitiesAction(projectId: string, input: GenerateOpportunitiesInput): Promise<ActionResult<{ created: number; skipped: number }>> {
+  const t = await getT("opportunities");
   const parsed = focusSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: "Invalid request." };
+  if (!parsed.success) return { ok: false, error: t("errors.invalidRequest") };
   const f = parsed.data;
   const ctx = await prepare(projectId);
-  if (!ctx.allowed) return NO_EDIT;
-  if (!ctx.bundle.pillars.length) return { ok: false, error: "Add content pillars to the strategy first: opportunities are built on them." };
+  if (!ctx.allowed) return noEdit(t);
+  if (!ctx.bundle.pillars.length) return { ok: false, error: t("errors.noPillars") };
   try {
     const out = await runStructured({
       feature: "opportunities.generate",
@@ -69,7 +72,7 @@ export async function generateOpportunitiesAction(projectId: string, input: Gene
     }
     await insertOpportunities(projectId, kept.map((r) => ({ ...r, generation_id: generationId, state: "new", focus: { pillar_id: f.pillar_id ?? null, platform: f.platform ?? null, funnel_stage: f.funnel_stage ?? null, instruction: f.instruction ?? null } })));
     refresh(projectId);
-    return { ok: true, data: { created: kept.length, skipped }, message: `${kept.length} opportunities added${skipped ? ` (${skipped} near-duplicates skipped)` : ""}` };
+    return { ok: true, data: { created: kept.length, skipped }, message: skipped ? t("messages.addedSkipped", { count: kept.length, skipped }) : t("messages.added", { count: kept.length }) };
   } catch (e) {
     return { ok: false, error: describeAIError(e) };
   }
@@ -77,11 +80,12 @@ export async function generateOpportunitiesAction(projectId: string, input: Gene
 
 /** Regenerate (new angle) or refine (with an instruction) one opportunity, in place. */
 export async function regenerateOpportunityAction(projectId: string, id: string, instruction?: string | null): Promise<ActionResult<{ opportunity: Opportunity }>> {
+  const t = await getT("opportunities");
   const ctx = await prepare(projectId);
-  if (!ctx.allowed) return NO_EDIT;
+  if (!ctx.allowed) return noEdit(t);
   const current = ctx.existing.find((o) => o.id === id);
-  if (!current) return { ok: false, error: "Opportunity not found." };
-  if (current.state === "scheduled" || current.state === "published") return { ok: false, error: "It is already in the calendar: edit the post there instead." };
+  if (!current) return { ok: false, error: t("errors.notFound") };
+  if (current.state === "scheduled" || current.state === "published") return { ok: false, error: t("errors.inCalendar") };
   try {
     const out = await runStructured({
       feature: instruction ? "opportunities.refine" : "opportunities.regenerate",
@@ -102,10 +106,10 @@ export async function regenerateOpportunityAction(projectId: string, id: string,
       effort: "low",
     });
     const row = toRow(out.opportunity, ctx, {});
-    if (isDuplicate(row, ctx.existing.filter((o) => o.id !== id))) return { ok: false, error: "The new version is too close to another opportunity. Try again with a more specific instruction." };
+    if (isDuplicate(row, ctx.existing.filter((o) => o.id !== id))) return { ok: false, error: t("errors.tooClose") };
     const opportunity = await updateOpportunity(projectId, id, { ...row, state: "new", status_changed_at: new Date().toISOString() });
     refresh(projectId);
-    return { ok: true, data: { opportunity }, message: instruction ? "Opportunity refined" : "New angle generated" };
+    return { ok: true, data: { opportunity }, message: instruction ? t("messages.refined") : t("messages.newAngle") };
   } catch (e) {
     return { ok: false, error: describeAIError(e) };
   }
@@ -114,18 +118,18 @@ export async function regenerateOpportunityAction(projectId: string, id: string,
 /** Manual status changes. "Added to calendar" and "Published" follow the linked calendar post and can't be set here. */
 export async function setOpportunityStateAction(projectId: string, id: string, state: Extract<OpportunityState, "new" | "in_progress" | "dismissed">): Promise<ActionResult> {
   await requireUser();
-  const { role } = await getProjectContext(projectId);
-  if (!canEdit(role)) return NO_EDIT;
-  if (!["new", "in_progress", "dismissed"].includes(state)) return { ok: false, error: "Invalid status." };
+  const [{ role }, t] = await Promise.all([getProjectContext(projectId), getT("opportunities")]);
+  if (!canEdit(role)) return noEdit(t);
+  if (!["new", "in_progress", "dismissed"].includes(state)) return { ok: false, error: t("errors.invalidStatus") };
   try {
     const current = await getOpportunity(projectId, id);
-    if (!current) return { ok: false, error: "Opportunity not found." };
-    if ((current.state === "scheduled" || current.state === "published") && state !== "dismissed") return { ok: false, error: "Its status follows the calendar post." };
+    if (!current) return { ok: false, error: t("errors.notFound") };
+    if ((current.state === "scheduled" || current.state === "published") && state !== "dismissed") return { ok: false, error: t("errors.followsCalendar") };
     await setOpportunitiesState(projectId, [id], state);
     refresh(projectId);
-    return { ok: true, message: state === "dismissed" ? "Dismissed" : state === "in_progress" ? "Marked in progress" : "Restored" };
+    return { ok: true, message: state === "dismissed" ? t("messages.dismissed") : state === "in_progress" ? t("messages.inProgress") : t("messages.restored") };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Could not update" };
+    return { ok: false, error: e instanceof Error ? e.message : t("errors.update") };
   }
 }
 
@@ -137,28 +141,28 @@ const FEEDBACK_KINDS = ["useful", "not_relevant", "already_covered", "not_aligne
  */
 export async function opportunityFeedbackAction(projectId: string, id: string, kind: FeedbackKind, note?: string | null): Promise<ActionResult> {
   const user = await requireUser();
-  const { role } = await getProjectContext(projectId);
-  if (!canEdit(role)) return NO_EDIT;
-  if (!(FEEDBACK_KINDS as readonly string[]).includes(kind)) return { ok: false, error: "Invalid feedback." };
+  const [{ role }, t] = await Promise.all([getProjectContext(projectId), getT("opportunities")]);
+  if (!canEdit(role)) return noEdit(t);
+  if (!(FEEDBACK_KINDS as readonly string[]).includes(kind)) return { ok: false, error: t("errors.invalidFeedback") };
   try {
     const current = await getOpportunity(projectId, id);
-    if (!current) return { ok: false, error: "Opportunity not found." };
+    if (!current) return { ok: false, error: t("errors.notFound") };
     await insertFeedback(projectId, { opportunity_id: id, user_id: user.id, kind, note: note?.trim().slice(0, 1000) || null });
     if (["not_relevant", "already_covered", "not_aligned"].includes(kind) && current.state === "new") await setOpportunitiesState(projectId, [id], "dismissed");
     refresh(projectId);
-    return { ok: true, message: kind === "useful" ? "Thanks: similar ideas will rank higher" : kind === "different_angle" ? "Feedback saved" : "Feedback saved; the idea was dismissed" };
+    return { ok: true, message: kind === "useful" ? t("messages.feedbackUseful") : kind === "different_angle" ? t("messages.feedbackSaved") : t("messages.feedbackDismissed") };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Could not save feedback" };
+    return { ok: false, error: e instanceof Error ? e.message : t("errors.feedback") };
   }
 }
 
 /** Saves the project's weights and recomputes every stored score from its dimension scores. */
 export async function saveWeightsAction(projectId: string, raw: Partial<Weights>): Promise<ActionResult<{ rescored: number }>> {
   await requireUser();
-  const { role } = await getProjectContext(projectId);
-  if (!canEdit(role)) return NO_EDIT;
+  const [{ role }, t] = await Promise.all([getProjectContext(projectId), getT("opportunities")]);
+  if (!canEdit(role)) return noEdit(t);
   const weights = normalizeWeights(raw);
-  if (DIMENSIONS.every((d) => !weights[d])) return { ok: false, error: "At least one weight must be above 0." };
+  if (DIMENSIONS.every((d) => !weights[d])) return { ok: false, error: t("errors.weightsZero") };
   try {
     await setProjectWeights(projectId, weights);
     const all = await listOpportunities(projectId);
@@ -172,29 +176,29 @@ export async function saveWeightsAction(projectId: string, raw: Partial<Weights>
       }
     }
     refresh(projectId);
-    return { ok: true, data: { rescored }, message: `Weights saved${rescored ? `; ${rescored} scores updated` : ""}` };
+    return { ok: true, data: { rescored }, message: rescored ? t("messages.weightsRescored", { count: rescored }) : t("messages.weightsSaved") };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Could not save weights" };
+    return { ok: false, error: e instanceof Error ? e.message : t("errors.weights") };
   }
 }
 
 /** Supporting posts of an opportunity's evidence (project-scoped), and its calendar post if any. */
 export async function opportunityEvidenceAction(projectId: string, id: string) {
   await requireUser();
-  await getProjectContext(projectId); // 404 for non-members
+  const [, t] = await Promise.all([getProjectContext(projectId), getT("opportunities")]); // 404 for non-members
   const o = await getOpportunity(projectId, id);
-  if (!o) return { ok: false as const, error: "Opportunity not found." };
+  if (!o) return { ok: false as const, error: t("errors.notFound") };
   const idsOf = (pred: (type: string) => boolean) => o.evidence.filter((e) => pred(e.type)).flatMap((e) => e.ref_ids ?? (e.ref_id ? [e.ref_id] : []));
   const [own, competitor, linked] = await Promise.all([
-    evidencePosts(projectId, idsOf((t) => t !== "competitor")),
-    competitorPostsByIds(projectId, idsOf((t) => t === "competitor")),
+    evidencePosts(projectId, idsOf((type) => type !== "competitor")),
+    competitorPostsByIds(projectId, idsOf((type) => type === "competitor")),
     linkedPosts(projectId, [id]),
   ]);
   // competitor posts in the same shape as our own posts, with their original link and competitor name
   const posts = [
     ...own,
     ...competitor.map((p) => ({
-      id: p.id, platform: p.platform, title: `${(p.competitors as unknown as { name: string } | null)?.name ?? "Competitor"}: ${p.hook ?? p.caption?.slice(0, 80) ?? ""}`,
+      id: p.id, platform: p.platform, title: `${(p.competitors as unknown as { name: string } | null)?.name ?? t("evidence.competitor")}: ${p.hook ?? p.caption?.slice(0, 80) ?? ""}`,
       caption: p.caption, format: p.format, publication_date: null, actual_publication_date: null, published_at: p.published_at,
       permalink: p.url, likes: p.likes, comments: p.comments, shares: p.shares, saves: p.saves, reach: null, views: p.views, pillar_id: null, topic: null,
     })),

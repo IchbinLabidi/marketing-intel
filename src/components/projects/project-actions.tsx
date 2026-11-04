@@ -12,8 +12,11 @@ import { archiveProjectAction, updateProjectAction } from "@/server/actions/proj
 import type { Project } from "@/types/domain";
 import { ProjectFormFields } from "./project-form-fields";
 import { DeleteProjectDialog } from "./delete-project-dialog";
+import { useT } from "@/i18n/client";
 
 export function ProjectActions({ project, canEdit, canAdmin }: { project: Project; canEdit: boolean; canAdmin: boolean }) {
+  const t = useT("projects");
+  const tc = useT("common");
   const [dialog, setDialog] = React.useState<"edit" | "delete" | null>(null);
   const [pending, startTransition] = useTransition();
   const { state, pending: saving, formProps } = useFormAction(updateProjectAction.bind(null, project.id));
@@ -24,13 +27,13 @@ export function ProjectActions({ project, canEdit, canAdmin }: { project: Projec
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="icon-sm" aria-label="Project actions">
+          <Button variant="outline" size="icon-sm" aria-label={t("menu.label")}>
             <MoreHorizontal />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => setDialog("edit")}>
-            <Pencil /> Edit project details
+            <Pencil /> {t("menu.edit")}
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={pending}
@@ -43,13 +46,13 @@ export function ProjectActions({ project, canEdit, canAdmin }: { project: Projec
             }
           >
             {project.archived_at ? <ArchiveRestore /> : <Archive />}
-            {project.archived_at ? "Restore project" : "Archive project"}
+            {project.archived_at ? t("menu.restore") : t("menu.archive")}
           </DropdownMenuItem>
           {canAdmin ? (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => setDialog("delete")}>
-                <Trash2 /> Delete project
+                <Trash2 /> {t("menu.delete")}
               </DropdownMenuItem>
             </>
           ) : null}
@@ -59,12 +62,12 @@ export function ProjectActions({ project, canEdit, canAdmin }: { project: Projec
       <Dialog open={dialog === "edit"} onOpenChange={(o) => setDialog(o ? "edit" : null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit project</DialogTitle>
+            <DialogTitle>{t("menu.editTitle")}</DialogTitle>
           </DialogHeader>
           <form {...formProps} className="grid gap-5">
             <ProjectFormFields project={project} state={state} />
             <DialogFooter>
-              <SubmitButton pending={saving} pendingLabel="Saving…">Save</SubmitButton>
+              <SubmitButton pending={saving} pendingLabel={tc("actions.saving")}>{tc("actions.save")}</SubmitButton>
             </DialogFooter>
           </form>
         </DialogContent>

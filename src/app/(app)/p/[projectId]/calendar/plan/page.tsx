@@ -6,16 +6,21 @@ import { StartForm } from "@/components/editorial/start-form";
 import { Badge } from "@/components/ui/badge";
 import { canEdit, type Platform } from "@/lib/domain/constants";
 import { todayInZone } from "@/lib/calendar/time";
-import { OBJECTIVE_LABELS, type Objective } from "@/lib/editorial/plan";
+import { OBJECTIVES, type Objective } from "@/lib/editorial/plan";
 import { listEngineCalendars } from "@/server/services/editorial";
 import { getProjectContext, listChannels } from "@/server/services/projects";
+import { getT } from "@/i18n/server";
 
-export const metadata = { title: "Plan a month" };
+export async function generateMetadata() {
+  const t = await getT("editorial");
+  return { title: t("list.title") };
+}
 
-const STATUS_LABELS: Record<string, string> = { draft: "Opportunities", planned: "Content mix saved", generated: "Review", approved: "Approved", saved: "Saved" };
+const STATUSES = ["draft", "planned", "generated", "approved", "saved"] as const;
 
 export default async function Page({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
+  const t = await getT("editorial");
   const { project, role } = await getProjectContext(projectId);
   const [calendars, channels] = await Promise.all([listEngineCalendars(projectId), listChannels(projectId)]);
   const today = todayInZone(project.timezone || "Africa/Tunis");
@@ -28,21 +33,21 @@ export default async function Page({ params }: { params: Promise<{ projectId: st
 
   return (
     <div className="space-y-6">
-      <BackLink href={`/p/${projectId}/calendar`}>Editorial Calendar</BackLink>
-      <PageHeader title="Plan a month" description="Builds a month of posts from your strategy, past results and content ideas. You review and approve the plan before anything is scheduled." />
+      <BackLink href={`/p/${projectId}/calendar`}>{t("list.back")}</BackLink>
+      <PageHeader title={t("list.title")} description={t("list.description")} />
       <StartForm projectId={projectId} defaults={{ month: next, platforms: defaults }} readOnly={!canEdit(role)} />
       <section className="space-y-2">
-        <h2 className="text-[13px] font-semibold">Planned calendars</h2>
-        {!calendars.length ? <EmptyState icon={CalendarRange} title="No calendar planned with the engine yet" description="Start with a month above. Calendars created from Content history stay in the Editorial Calendar." /> : (
+        <h2 className="text-[13px] font-semibold">{t("list.planned")}</h2>
+        {!calendars.length ? <EmptyState icon={CalendarRange} title={t("list.emptyTitle")} description={t("list.emptyDescription")} /> : (
           <ul className="grid gap-2 md:grid-cols-2">
             {calendars.map((c) => (
               <li key={c.id}>
                 <Link href={`/p/${projectId}/calendar/plan/${c.id}`} className="flex items-center justify-between gap-3 rounded-xl border bg-card p-3 shadow-xs hover:shadow-sm">
                   <span className="min-w-0">
                     <span className="block truncate text-[13px] font-medium">{c.name}</span>
-                    <span className="text-xs text-muted-foreground">{c.starts_on} → {c.ends_on} · {c.objective ? OBJECTIVE_LABELS[c.objective as Objective] : "—"} · {c.item_count} posts</span>
+                    <span className="text-xs text-muted-foreground">{c.starts_on} → {c.ends_on} · {c.objective && (OBJECTIVES as readonly string[]).includes(c.objective) ? t(`objectives.${c.objective as Objective}`) : "—"} · {t("list.posts", { count: c.item_count })}</span>
                   </span>
-                  <Badge variant={c.status === "approved" ? "default" : "outline"}>{STATUS_LABELS[c.status] ?? c.status}</Badge>
+                  <Badge variant={c.status === "approved" ? "default" : "outline"}>{(STATUSES as readonly string[]).includes(c.status) ? t(`list.status.${c.status as (typeof STATUSES)[number]}`) : c.status}</Badge>
                 </Link>
               </li>
             ))}

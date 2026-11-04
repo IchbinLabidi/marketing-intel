@@ -6,15 +6,21 @@
 //   auth        key rejected                              → not retried, other provider tried
 
 import type { AIProvider } from "./models";
+import { createTranslator, type MessageTree } from "@/i18n/core";
+import type { KeysOf, TFor } from "@/i18n/messages";
+import enErrors from "@/i18n/locales/en/errors";
 
 export type FailureKind =
   | "not_configured" | "auth" | "billing" | "quota" | "rate_limit" | "overloaded" | "network" | "server" | "bad_request" | "refused" | "truncated" | "invalid_output";
 
-export const KIND_LABELS: Record<FailureKind, string> = {
-  not_configured: "not configured", auth: "API key rejected", billing: "no credit left", quota: "quota reached", rate_limit: "rate limited",
-  overloaded: "overloaded", network: "network error", server: "server error", bad_request: "request rejected", refused: "declined", truncated: "answer cut off",
-  invalid_output: "invalid answer",
-};
+/** English translator, used when no translator is passed (logs, stored messages, code running outside a request). */
+const EN_ERRORS: TFor<"errors"> = createTranslator<KeysOf["errors"]>("en", "errors", enErrors as unknown as MessageTree);
+
+/** English labels (kept for existing callers); use `kindLabel(kind, t)` to show one in the viewer's language. */
+export const KIND_LABELS: Record<FailureKind, string> = enErrors.ai.kind;
+
+/** Short label of a failure kind, in the language of `t` (English by default). */
+export const kindLabel = (kind: FailureKind, t: TFor<"errors"> = EN_ERRORS) => t(`ai.kind.${kind}`);
 
 export const PROVIDER_NAMES: Record<AIProvider, string> = { gemini: "Gemini", anthropic: "Claude" };
 
@@ -50,22 +56,29 @@ export function classifyNetwork(code: string | null | undefined): FailureKind {
   return code === "UND_ERR_HEADERS_TIMEOUT" || code === "UND_ERR_BODY_TIMEOUT" || code === "first_chunk_timeout" ? "overloaded" : "network";
 }
 
-export function failureMessage(provider: AIProvider, kind: FailureKind, detail: { status?: number | null; attempts?: number } = {}) {
+/** User-facing failure message, in the language of `t` (English by default, e.g. for logs and stored errors). */
+export function failureMessage(
+  provider: AIProvider,
+  kind: FailureKind,
+  detail: { status?: number | null; attempts?: number } = {},
+  t: TFor<"errors"> = EN_ERRORS,
+) {
   const name = PROVIDER_NAMES[provider];
-  const tries = detail.attempts && detail.attempts > 1 ? ` after ${detail.attempts} attempts` : "";
+  const envVar = provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY";
+  const tries = detail.attempts && detail.attempts > 1 ? t("ai.tries", { count: detail.attempts }) : "";
   switch (kind) {
-    case "not_configured": return `${name} is not configured (${provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY"} missing).`;
-    case "auth": return `${name} rejected the API key. Check ${provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY"}.`;
-    case "billing": return `${name} has no credit left${provider === "anthropic" ? " (Anthropic Console → Plans & Billing)" : ""}.`;
-    case "quota": return `${name} quota is reached${provider === "gemini" ? " (Google AI Studio → plan and billing)" : ""}.`;
-    case "rate_limit": return `${name} is rate limiting requests; wait a minute.`;
-    case "overloaded": return `${name} is overloaded (high demand${detail.status ? `, HTTP ${detail.status}` : ""})${tries}. This is temporary on the provider's side.`;
-    case "network": return `Could not reach ${name}${tries} (network error).`;
-    case "server": return `${name} returned an error${detail.status ? ` (HTTP ${detail.status})` : ""}${tries}.`;
-    case "bad_request": return `${name} rejected the request${detail.status ? ` (HTTP ${detail.status})` : ""}.`;
-    case "refused": return `${name} declined this request.`;
-    case "truncated": return `${name}'s answer was too long and got cut off; try a narrower request.`;
-    case "invalid_output": return `${name}'s answer did not match the expected format.`;
+    case "not_configured": return t("ai.failure.not_configured", { name, envVar });
+    case "auth": return t("ai.failure.auth", { name, envVar });
+    case "billing": return t(provider === "anthropic" ? "ai.failure.billingAnthropic" : "ai.failure.billing", { name });
+    case "quota": return t(provider === "gemini" ? "ai.failure.quotaGemini" : "ai.failure.quota", { name });
+    case "rate_limit": return t("ai.failure.rate_limit", { name });
+    case "overloaded": return t("ai.failure.overloaded", { name, status: detail.status ? `, HTTP ${detail.status}` : "", tries });
+    case "network": return t("ai.failure.network", { name, tries });
+    case "server": return t("ai.failure.server", { name, status: detail.status ? ` (HTTP ${detail.status})` : "", tries });
+    case "bad_request": return t("ai.failure.bad_request", { name, status: detail.status ? ` (HTTP ${detail.status})` : "" });
+    case "refused": return t("ai.failure.refused", { name });
+    case "truncated": return t("ai.failure.truncated", { name });
+    case "invalid_output": return t("ai.failure.invalid_output", { name });
   }
 }
 

@@ -5,6 +5,8 @@ import { FormSection } from "@/components/app/form-section";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ThemeSwitcher } from "@/components/app/theme-switcher";
+import { LanguageSwitcher } from "@/components/app/language-switcher";
+import { getT } from "@/i18n/server";
 import { CreateWorkspaceForm, RenameWorkspaceForm } from "@/components/settings/workspace-forms";
 import { canAdmin } from "@/lib/domain/constants";
 import { requireUser } from "@/server/services/session";
@@ -13,64 +15,72 @@ import { PROVIDER_LABELS } from "@/lib/ai/models";
 import { isAIConfigured } from "@/server/ai/client";
 import { providerConfigured } from "@/server/ai/providers";
 
-export const metadata = { title: "Settings" };
+export async function generateMetadata() {
+  const t = await getT("settings");
+  return { title: t("metaTitle") };
+}
 
 export default async function SettingsPage() {
   const user = await requireUser();
   const workspace = (await getActiveWorkspace())!;
   const members = await listMembers(workspace.id);
   const ai = isAIConfigured();
+  const [t, td] = await Promise.all([getT("settings"), getT("domain")]);
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow={workspace.name} title="Settings" description="Appearance, workspace details, members and integrations." />
+      <PageHeader eyebrow={workspace.name} title={t("title")} description={t("description")} />
 
       <div className="divide-y">
         <FormSection
           id="appearance"
-          title="Appearance"
-          description="Light, dark, or follow your device. Saved on this browser and applied on every page."
+          title={t("appearance.title")}
+          description={t("appearance.description")}
         >
           <ThemeSwitcher />
         </FormSection>
 
+        <FormSection id="language" title={t("language.title")} description={t("language.description")}>
+          <LanguageSwitcher />
+        </FormSection>
+
         <FormSection
-          title="Workspace"
-          description="Projects, members and AI usage belong to a workspace. Agencies typically use one workspace per client."
+          title={t("workspace.title")}
+          description={t("workspace.description")}
         >
           <RenameWorkspaceForm workspaceId={workspace.id} name={workspace.name} disabled={!canAdmin(workspace.role)} />
         </FormSection>
 
         <FormSection
-          title="Members"
-          description="Who is in this workspace. Invite people and manage roles and permissions on the Team page."
+          title={t("members.title")}
+          description={t("members.description")}
         >
           <ul className="-my-2 divide-y">
             {members.map((m) => (
               <li key={m.user_id} className="flex items-center gap-3 py-2.5 text-[13px]">
                 <Avatar name={m.full_name || "?"} className="size-8" />
                 <span className="min-w-0 flex-1 truncate font-medium">
-                  {m.full_name || "Unnamed member"}
-                  {m.user_id === user.id ? <span className="font-normal text-muted-foreground"> · you</span> : null}
+                  {m.full_name || t("members.unnamed")}
+                  {m.user_id === user.id ? <span className="font-normal text-muted-foreground">{t("members.you")}</span> : null}
                 </span>
-                <Badge variant={m.role === "owner" || m.role === "admin" ? "default" : "outline"} className="capitalize">
-                  {m.role}
+                <Badge variant={m.role === "owner" || m.role === "admin" ? "default" : "outline"}>
+                  {td(`role.${m.role}`)}
                 </Badge>
               </li>
             ))}
           </ul>
-          <Link href="/team" className="mt-4 inline-flex text-[13px] font-medium text-primary hover:underline">Manage team and roles →</Link>
+          <Link href="/team" className="mt-4 inline-flex text-[13px] font-medium text-primary hover:underline">{t("members.manage")}</Link>
         </FormSection>
 
         <FormSection
           id="workspaces"
-          title="New workspace"
-          description="Create a separate workspace. You become its owner and can switch between workspaces from the sidebar."
+          title={t("newWorkspace.title")}
+          description={t("newWorkspace.description")}
         >
           <CreateWorkspaceForm />
         </FormSection>
 
-        <FormSection title="Integrations" description="Server-side credentials. Keys are never sent to the browser.">
+        <FormSection title={t("integrations.title")} description={t("integrations.description")}>
           <ul className="-my-2 divide-y text-[13px]">
             {(["gemini", "anthropic"] as const).map((p) => {
               const ok = providerConfigured(p);
@@ -79,14 +89,14 @@ export default async function SettingsPage() {
                   {ok ? <CheckCircle2 className="size-4 text-success" aria-hidden /> : <CircleDashed className="size-4 text-subtle-foreground" aria-hidden />}
                   <span className="min-w-0 flex-1">
                     <span className="font-medium">{PROVIDER_LABELS[p]}</span>{" "}
-                    <span className="text-muted-foreground">{p === "gemini" ? "Default AI engine" : "Premium tasks, optional"}</span>
+                    <span className="text-muted-foreground">{p === "gemini" ? t("integrations.geminiRole") : t("integrations.anthropicRole")}</span>
                   </span>
                   {ok ? (
                     <Badge variant="success" dot>
-                      Connected
+                      {t("integrations.connected")}
                     </Badge>
                   ) : (
-                    <code className="font-mono text-xs text-muted-foreground">Set {p === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY"}</code>
+                    <code className="font-mono text-xs text-muted-foreground">{t("integrations.setKey", { key: p === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY" })}</code>
                   )}
                 </li>
               );
@@ -94,23 +104,23 @@ export default async function SettingsPage() {
             <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
               <CircleDashed className="size-4 text-subtle-foreground" aria-hidden />
               <span className="min-w-0 flex-1">
-                <span className="font-medium">Social media data</span>{" "}
-                <span className="text-muted-foreground">Meta, YouTube, LinkedIn, TikTok, connected per project</span>
+                <span className="font-medium">{t("integrations.social")}</span>{" "}
+                <span className="text-muted-foreground">{t("integrations.socialDetail")}</span>
               </span>
-              <span className="text-xs text-muted-foreground">Open a project → Integrations</span>
+              <span className="text-xs text-muted-foreground">{t("integrations.socialWhere")}</span>
             </li>
           </ul>
           <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">
             {ai ? (
-              <>
-                Models per task and spend are on the{" "}
-                <Link href="/ai-usage" className="font-medium text-primary hover:underline">
-                  AI usage
-                </Link>{" "}
-                page.
-              </>
+              t.rich("integrations.aiUsageLink", {
+                link: (c) => (
+                  <Link href="/ai-usage" className="font-medium text-primary hover:underline">
+                    {c}
+                  </Link>
+                ),
+              })
             ) : (
-              "Add at least one AI key to enable AI features."
+              t("integrations.addKey")
             )}
           </p>
         </FormSection>

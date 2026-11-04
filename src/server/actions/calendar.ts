@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { canEdit, type Platform } from "@/lib/domain/constants";
 import { bestPublicationTimes } from "@/lib/calendar/insights";
 import { isIsoDate, isTime, isValidTimeZone, utcToZoned, weekdayOf, zonedToUtc } from "@/lib/calendar/time";
-import { zodErrorToResult, type ActionResult } from "@/lib/validation/common";
+import { type ActionResult } from "@/lib/validation/common";
+import { zodErrorToResult } from "@/lib/validation/errors";
 import { generatePostSchema, postSchema, type GeneratePostInput } from "@/lib/validation/calendar";
 import { createClient } from "@/lib/supabase/server";
 import type { ContentItem } from "@/types/domain";
@@ -23,8 +24,10 @@ import { getMetaConnection, readMetaTokens } from "@/server/services/meta";
 import { graphGet } from "@/server/meta/graph";
 import { hasPermission } from "@/server/services/team";
 import { externalIdFromUrl } from "@/lib/social/normalize";
+import { getT } from "@/i18n/server";
+import type { TFor } from "@/i18n/messages";
 
-const NO_EDIT: ActionResult<never> = { ok: false, error: "Your role can't plan or edit the calendar." };
+const noEdit = (t: TFor<"calendar">): ActionResult<never> => ({ ok: false, error: t("actions.noEdit") });
 const fail = (e: unknown, fallback: string): ActionResult<never> => ({ ok: false, error: e instanceof Error ? e.message : fallback });
 
 async function guard(projectId: string) {
@@ -61,25 +64,26 @@ async function conflictsFor(projectId: string, tz: string, id: string | null, pl
  */
 export async function savePostAction(projectId: string, id: string | null, input: unknown, force = false): Promise<ActionResult<SaveResult>> {
   const { user, allowed, tz } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const t = await getT("calendar");
+  if (!allowed) return noEdit(t);
   const parsed = postSchema.safeParse(input);
   if (!parsed.success) return zodErrorToResult(parsed.error);
   const { date, time, opportunity_id, ...p } = parsed.data;
   try {
     const current = id ? await getPost(projectId, id) : null;
-    if (id && !current) return { ok: false, error: "Post not found." };
-    if (p.status === "approved" && current?.status !== "approved") return { ok: false, error: "Use Content Production to record manager approval." };
-    if (p.status === "scheduled" && current?.status !== "approved" && current?.status !== "scheduled") return { ok: false, error: "Content needs final production approval before scheduling." };
+    if (id && !current) return { ok: false, error: t("actions.notFound") };
+    if (p.status === "approved" && current?.status !== "approved") return { ok: false, error: t("actions.useProduction") };
+    if (p.status === "scheduled" && current?.status !== "approved" && current?.status !== "scheduled") return { ok: false, error: t("actions.needsApproval") };
     // one calendar post per opportunity: a second "Add to calendar" opens the existing post instead
     if (!id && opportunity_id) {
       const [already] = await linkedPosts(projectId, [opportunity_id]);
-      if (already) return { ok: false, error: `This opportunity is already in the calendar: “${already.title}”${already.scheduled_date ? ` on ${already.scheduled_date}` : ""}.` };
+      if (already) return { ok: false, error: already.scheduled_date ? t("actions.alreadyInCalendarOn", { title: already.title, date: already.scheduled_date }) : t("actions.alreadyInCalendar", { title: already.title }) };
     }
     const locked = current?.status === "published" || current?.status === "failed";
     const schedule: Partial<ReturnType<typeof scheduleFields>> = locked ? {} : scheduleFields(date, time, tz);
     const status = locked ? current!.status : p.status;
     if (!locked && status === "scheduled" && schedule.scheduled_at && Date.parse(schedule.scheduled_at) < Date.now()) {
-      return { ok: false, error: "This time is in the past. Pick a future time to schedule, or keep it as a draft.", fieldErrors: { time: "In the past" } };
+      return { ok: false, error: t("actions.inPast"), fieldErrors: { time: t("actions.inPastField") } };
     }
     if (!force && !locked) {
       const conflicts = await conflictsFor(projectId, tz, id, p.platform, schedule.scheduled_at ?? null);
@@ -94,27 +98,28 @@ export async function savePostAction(projectId: string, id: string | null, input
     // the production_guard trigger sends approved content back to production when its text changes
     const lostApproval = (current?.status === "approved" || current?.status === "scheduled") && post.status !== "approved" && post.status !== "scheduled";
     if (lostApproval) {
-      return { ok: true, data: { post }, message: "Saved. The text changed after approval, so the post went back to Content Production and needs approval again before it can be scheduled." };
+      return { ok: true, data: { post }, message: t("actions.lostApproval") };
     }
-    return { ok: true, data: { post }, message: id ? "Post saved" : status === "scheduled" ? "Post scheduled" : "Draft saved" };
+    return { ok: true, data: { post }, message: id ? t("actions.postSaved") : status === "scheduled" ? t("actions.postScheduled") : t("actions.draftSaved") };
   } catch (e) {
-    return fail(e, "Could not save the post");
+    return fail(e, t("actions.couldNotSave"));
   }
 }
 
 /** Drag-and-drop: moves a post to another day (keeping its time) or to a specific time slot. */
 export async function reschedulePostAction(projectId: string, id: string, date: string, time: string | null, force = false): Promise<ActionResult<SaveResult>> {
   const { allowed, tz } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
-  if (!isIsoDate(date) || (time !== null && !isTime(time))) return { ok: false, error: "Invalid date or time." };
+  const t = await getT("calendar");
+  if (!allowed) return noEdit(t);
+  if (!isIsoDate(date) || (time !== null && !isTime(time))) return { ok: false, error: t("actions.invalidDateTime") };
   try {
     const post = await getPost(projectId, id);
-    if (!post) return { ok: false, error: "Post not found." };
-    if (post.status === "published") return { ok: false, error: "Published posts can't be moved." };
+    if (!post) return { ok: false, error: t("actions.notFound") };
+    if (post.status === "published") return { ok: false, error: t("actions.publishedCantMove") };
     const keepTime = time ?? post.scheduled_time?.slice(0, 5) ?? null;
     const schedule = scheduleFields(date, keepTime, tz);
     if (post.status === "scheduled" && schedule.scheduled_at && Date.parse(schedule.scheduled_at) < Date.now()) {
-      return { ok: false, error: "A scheduled post can't be moved into the past." };
+      return { ok: false, error: t("actions.scheduledPast") };
     }
     if (!force) {
       const conflicts = await conflictsFor(projectId, tz, id, post.platform, schedule.scheduled_at);
@@ -123,46 +128,48 @@ export async function reschedulePostAction(projectId: string, id: string, date: 
     const updated = await updatePost(projectId, id, schedule);
     await syncOpportunityState(projectId, updated.opportunity_id);
     refresh(projectId);
-    return { ok: true, data: { post: updated }, message: `Moved to ${date}${keepTime ? ` ${keepTime}` : ""}` };
+    return { ok: true, data: { post: updated }, message: t("actions.movedTo", { when: `${date}${keepTime ? ` ${keepTime}` : ""}` }) };
   } catch (e) {
-    return fail(e, "Could not move the post");
+    return fail(e, t("actions.couldNotMove"));
   }
 }
 
 export async function duplicatePostAction(projectId: string, id: string): Promise<ActionResult<SaveResult>> {
   const { user, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const t = await getT("calendar");
+  if (!allowed) return noEdit(t);
   try {
     const post = await getPost(projectId, id);
-    if (!post) return { ok: false, error: "Post not found." };
+    if (!post) return { ok: false, error: t("actions.notFound") };
     // the copy is a draft on the same day, without a time, so it never silently doubles a scheduled slot
     // the copy is not linked to the opportunity: one calendar post per opportunity
     const copy = await insertPost(projectId, user.id, {
       calendar_id: post.calendar_id, opportunity_id: null, historical_source_id: post.historical_source_id,
-      platform: post.platform, title: `${post.title} (copy)`.slice(0, 300), format: post.format, pillar_id: post.pillar_id,
+      platform: post.platform, title: t("actions.copyTitle", { title: post.title }).slice(0, 300), format: post.format, pillar_id: post.pillar_id,
       campaign_id: post.campaign_id, marketing_objective: post.marketing_objective, funnel_stage: post.funnel_stage, hook: post.hook,
       caption: post.caption, cta: post.cta, creative_brief: post.creative_brief, hashtags: post.hashtags, media_url: post.media_url,
       scheduled_date: post.scheduled_date, scheduled_time: null, scheduled_at: null, status: "planned",
       audience: post.audience, audience_segment: post.audience_segment,
     });
     refresh(projectId);
-    return { ok: true, data: { post: copy }, message: "Post duplicated as a draft" };
+    return { ok: true, data: { post: copy }, message: t("actions.duplicated") };
   } catch (e) {
-    return fail(e, "Could not duplicate");
+    return fail(e, t("actions.couldNotDuplicate"));
   }
 }
 
 export async function deletePostAction(projectId: string, id: string): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const t = await getT("calendar");
+  if (!allowed) return noEdit(t);
   try {
     const post = await getPost(projectId, id);
     await deletePost(projectId, id);
     await syncOpportunityState(projectId, post?.opportunity_id);
     refresh(projectId);
-    return { ok: true, message: "Post deleted" };
+    return { ok: true, message: t("actions.deleted") };
   } catch (e) {
-    return fail(e, "Could not delete");
+    return fail(e, t("actions.couldNotDelete"));
   }
 }
 
@@ -171,32 +178,33 @@ export async function deletePostAction(projectId: string, id: string): Promise<A
  */
 export async function confirmPublishedAction(projectId: string, id: string, input: { date: string; time: string; url: string | null }): Promise<ActionResult<SaveResult>> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
-  if (!input.url || !/^https:\/\/\S+$/i.test(input.url)) return { ok: false, error: "Provide the HTTPS link to the live post." };
+  const t = await getT("calendar");
+  if (!allowed) return noEdit(t);
+  if (!input.url || !/^https:\/\/\S+$/i.test(input.url)) return { ok: false, error: t("actions.provideLink") };
   try {
     const current = await getPost(projectId, id);
     if (current && ["youtube", "linkedin", "tiktok"].includes(current.platform || "")) {
       // YouTube, LinkedIn, TikTok: the link must point to a post the connected account's sync already imported.
       // Matching is by the provider's own post id taken from the link, never by title or date.
       const ref = externalIdFromUrl(input.url);
-      if (!ref || ref.provider !== current.platform) throw new Error("This link isn't a recognised post or video link for this platform.");
+      if (!ref || ref.provider !== current.platform) throw new Error(t("actions.notRecognised"));
       const db = await createClient();
       const { data: synced, error } = await db.from("historical_content_items").select("id, published_at, permalink, social_connection_id")
         .eq("project_id", projectId).eq("source", `${ref.provider}_api`).eq("external_id", ref.id).maybeSingle();
       if (error) throw error;
-      if (!synced?.published_at) throw new Error("This post isn't in the synced data yet. Sync the account on the Integrations page, then try again.");
+      if (!synced?.published_at) throw new Error(t("actions.notSyncedYet"));
       const { data: conn } = await db.from("social_connections").select("status").eq("id", synced.social_connection_id).maybeSingle();
-      if (!conn || conn.status === "disconnected") throw new Error("The account that published this post is no longer connected.");
+      if (!conn || conn.status === "disconnected") throw new Error(t("actions.accountGone"));
       const { data: taken } = await db.from("content_items").select("id").eq("project_id", projectId).eq("historical_source_id", synced.id).neq("id", id).eq("status", "published").limit(1);
-      if (taken?.length) throw new Error("Another calendar item is already verified against this post.");
+      if (taken?.length) throw new Error(t("actions.alreadyVerified"));
       const post = await updatePost(projectId, id, { status: "published", historical_source_id: synced.id, published_at: synced.published_at, published_url: synced.permalink ?? input.url, publish_error: null });
       await syncOpportunityState(projectId, post.opportunity_id);
       refresh(projectId);
-      return { ok: true, data: { post }, message: "Publication verified with the connected account's synced data" };
+      return { ok: true, data: { post }, message: t("actions.verifiedSynced") };
     }
-    if (!current || !["facebook", "instagram"].includes(current.platform || "")) throw new Error("Publication verification supports connected Facebook, Instagram, YouTube, LinkedIn and TikTok accounts.");
+    if (!current || !["facebook", "instagram"].includes(current.platform || "")) throw new Error(t("actions.verifySupports"));
     const connection = await getMetaConnection(projectId);
-    if (!connection || connection.status !== "active") throw new Error("Connect or reconnect Meta in Content history first.");
+    if (!connection || connection.status !== "active") throw new Error(t("actions.connectMeta"));
     const canonical = (value: string) => { const url = new URL(value); return `${url.origin}${url.pathname.replace(/\/$/, "")}`; };
     const link = canonical(input.url);
     const db = await createClient();
@@ -204,30 +212,31 @@ export async function confirmPublishedAction(projectId: string, id: string, inpu
       .eq("project_id", projectId).eq("source", "meta_api").eq("platform", current.platform!).eq("meta_connection_id", connection.id)
       .in("permalink", [input.url, link, `${link}/`]).limit(1).maybeSingle();
     if (error) throw error;
-    if (!synced?.external_id) throw new Error("This link is not in the connected account's synced posts. Run Sync now in Content history, then try again.");
+    if (!synced?.external_id) throw new Error(t("actions.notInSynced"));
     const token = (await readMetaTokens(connection.id)).page;
-    if (!token) throw new Error("Reconnect Meta to verify this post.");
+    if (!token) throw new Error(t("actions.reconnectMeta"));
     const live = await graphGet<{ id: string; created_time?: string; timestamp?: string; permalink_url?: string; permalink?: string }>(synced.external_id, { fields: current.platform === "facebook" ? "id,created_time,permalink_url" : "id,timestamp,permalink" }, token);
     const liveUrl = live.permalink_url || live.permalink;
     const liveTime = live.created_time || live.timestamp;
-    if (!liveUrl || !liveTime || canonical(liveUrl) !== link) throw new Error("The connected platform could not confirm this publication.");
+    if (!liveUrl || !liveTime || canonical(liveUrl) !== link) throw new Error(t("actions.couldNotConfirm"));
     const publishedAt = new Date(liveTime).toISOString();
-    if (Date.parse(publishedAt) > Date.now()) throw new Error("The platform publication time is in the future.");
+    if (Date.parse(publishedAt) > Date.now()) throw new Error(t("actions.futureTime"));
     const verified = await db.from("historical_content_items").update({ published_at: publishedAt, permalink: liveUrl }).eq("project_id", projectId).eq("id", synced.id);
     if (verified.error) throw verified.error;
     const post = await updatePost(projectId, id, { status: "published", historical_source_id: synced.id, published_at: publishedAt, published_url: liveUrl, publish_error: null });
     await syncOpportunityState(projectId, post.opportunity_id);
     refresh(projectId);
-    return { ok: true, data: { post }, message: "Publication verified with the connected platform" };
+    return { ok: true, data: { post }, message: t("actions.verifiedPlatform") };
   } catch (e) {
-    return fail(e, "Could not update");
+    return fail(e, t("actions.couldNotUpdate"));
   }
 }
 
 export async function setProjectTimezoneAction(projectId: string, timezone: string): Promise<ActionResult> {
   const { allowed, tz: previous } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
-  if (!isValidTimeZone(timezone)) return { ok: false, error: "Unknown time zone." };
+  const t = await getT("calendar");
+  if (!allowed) return noEdit(t);
+  if (!isValidTimeZone(timezone)) return { ok: false, error: t("actions.unknownTimeZone") };
   if (timezone === previous) return { ok: true };
   try {
     const supabase = await createClient();
@@ -240,9 +249,9 @@ export async function setProjectTimezoneAction(projectId: string, timezone: stri
       await supabase.from("content_items").update({ scheduled_date: z.date, scheduled_time: z.time }).eq("id", t.id).eq("project_id", projectId);
     }
     refresh(projectId);
-    return { ok: true, message: `Times are now shown in ${timezone}` };
+    return { ok: true, message: t("actions.timeZoneChanged", { tz: timezone }) };
   } catch (e) {
-    return fail(e, "Could not change the time zone");
+    return fail(e, t("actions.couldNotChangeTimeZone"));
   }
 }
 
@@ -251,7 +260,7 @@ export async function generatePostAction(projectId: string, input: GeneratePostI
   const parsed = generatePostSchema.safeParse(input);
   if (!parsed.success) return zodErrorToResult(parsed.error);
   const { user, project, allowed, tz } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit(await getT("calendar"));
   const g = parsed.data;
   try {
     const { items, bundle, channels, brand, performance, citedIds, pillarName } = await loadHistoryAnalysis(projectId);
@@ -307,28 +316,29 @@ export async function updatePlanningAction(
   input: { due_date?: string | null; priority?: string; assignee_id?: string | null },
 ): Promise<ActionResult<SaveResult>> {
   const { project, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const t = await getT("calendar");
+  if (!allowed) return noEdit(t);
   const values: Partial<ContentItem> = {};
   if ("due_date" in input) {
-    if (input.due_date !== null && !isIsoDate(input.due_date)) return { ok: false, error: "Invalid deadline." };
+    if (input.due_date !== null && !isIsoDate(input.due_date)) return { ok: false, error: t("actions.invalidDeadline") };
     values.due_date = input.due_date ?? null;
   }
   if ("priority" in input) {
-    if (!["low", "medium", "high", "urgent"].includes(input.priority ?? "")) return { ok: false, error: "Invalid priority." };
+    if (!["low", "medium", "high", "urgent"].includes(input.priority ?? "")) return { ok: false, error: t("actions.invalidPriority") };
     values.priority = input.priority as ContentItem["priority"];
   }
   if ("assignee_id" in input) {
-    if (input.assignee_id !== null && !/^[0-9a-f-]{36}$/i.test(input.assignee_id ?? "")) return { ok: false, error: "Invalid assignee." };
+    if (input.assignee_id !== null && !/^[0-9a-f-]{36}$/i.test(input.assignee_id ?? "")) return { ok: false, error: t("actions.invalidAssignee") };
     values.assignee_id = input.assignee_id ?? null;
   }
   try {
     if (("priority" in input || "assignee_id" in input) && !(await hasPermission(project.workspace_id, "content.assign"))) {
-      return { ok: false, error: "Only managers can change the priority or the assignee." };
+      return { ok: false, error: t("actions.managersOnly") };
     }
     const post = await updatePost(projectId, id, values);
     refresh(projectId);
-    return { ok: true, data: { post }, message: "Planning updated" };
+    return { ok: true, data: { post }, message: t("actions.planningUpdated") };
   } catch (e) {
-    return fail(e, "Could not update planning");
+    return fail(e, t("actions.couldNotUpdatePlanning"));
   }
 }

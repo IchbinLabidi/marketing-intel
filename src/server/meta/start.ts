@@ -1,6 +1,7 @@
 import "server-only";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getT } from "@/i18n/server";
 import type { MetaConnection, MetaSyncRun } from "@/types/domain";
 import { getMetaConnection, readMetaTokens } from "@/server/services/meta";
 import { describeMetaError, runMetaSync, SyncBusyError } from "./sync";
@@ -24,10 +25,11 @@ export async function maybeAutoSync(projectId: string, conn: MetaConnection | nu
  * Callers must have checked that the user may edit the project. Not a Server Action.
  */
 export async function startMetaSync(projectId: string, kind: MetaSyncRun["kind"], trigger: MetaSyncRun["trigger"]) {
+  const t = await getT("integrations");
   const conn = await getMetaConnection(projectId);
-  if (!conn || conn.status !== "active" || !conn.page_id) return { ok: false as const, error: "Connect a Facebook Page first." };
+  if (!conn || conn.status !== "active" || !conn.page_id) return { ok: false as const, error: t("actions.metaPageFirst") };
   const { page } = await readMetaTokens(conn.id);
-  if (!page) return { ok: false as const, error: "The Page access token is missing. Reconnect Meta." };
+  if (!page) return { ok: false as const, error: t("actions.metaPageTokenMissing") };
   const db = await createClient();
   // quick pre-check for a friendly message; the database's unique index is the real lock
   const busy = await db
@@ -37,7 +39,7 @@ export async function startMetaSync(projectId: string, kind: MetaSyncRun["kind"]
     .eq("status", "running")
     .gte("heartbeat_at", new Date(Date.now() - 3 * 60000).toISOString())
     .limit(1);
-  if (busy.data?.length) return { ok: false as const, error: new SyncBusyError().message };
+  if (busy.data?.length) return { ok: false as const, error: t("actions.metaBusy") };
   after(async () => {
     try {
       await runMetaSync(db, conn, page, { kind, trigger });

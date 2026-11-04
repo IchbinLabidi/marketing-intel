@@ -4,11 +4,12 @@ import * as React from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { applyTheme, readPreference, THEME_KEY, type ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/client";
 
-const OPTIONS: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
-  { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Moon },
-  { value: "system", label: "System", icon: Monitor },
+const OPTIONS: { value: ThemePreference; icon: typeof Sun }[] = [
+  { value: "light", icon: Sun },
+  { value: "dark", icon: Moon },
+  { value: "system", icon: Monitor },
 ];
 
 // The preference lives in localStorage (read before paint by THEME_SCRIPT); this store keeps every switcher in sync.
@@ -39,6 +40,7 @@ export function useThemePreference() {
 /** Light / Dark / System. `size="sm"` is the compact icon-only version for the sidebar. */
 export function ThemeSwitcher({ size = "default", className }: { size?: "default" | "sm"; className?: string }) {
   const pref = useThemePreference();
+  const t = useT("common");
 
   // Follow the OS while "System" is selected, and other tabs' changes.
   React.useEffect(() => {
@@ -51,15 +53,17 @@ export function ThemeSwitcher({ size = "default", className }: { size?: "default
   }, [pref]);
 
   return (
-    <div role="radiogroup" aria-label="Theme" className={cn("inline-flex items-center gap-0.5 rounded-md bg-secondary p-0.5", className)}>
-      {OPTIONS.map(({ value, label, icon: Icon }) => (
+    <div role="radiogroup" aria-label={t("theme.label")} className={cn("inline-flex items-center gap-0.5 rounded-md bg-secondary p-0.5", className)}>
+      {OPTIONS.map(({ value, icon: Icon }) => {
+        const label = t(`theme.${value}`);
+        return (
         <button
           key={value}
           type="button"
           role="radio"
           aria-checked={pref === value}
-          aria-label={size === "sm" ? `${label} theme` : undefined}
-          title={size === "sm" ? `${label} theme` : undefined}
+          aria-label={size === "sm" ? t("theme.named", { theme: label }) : undefined}
+          title={size === "sm" ? t("theme.named", { theme: label }) : undefined}
           onClick={() => setPreference(value)}
           className={cn(
             "inline-flex items-center justify-center gap-1.5 rounded-[5px] font-medium transition-colors",
@@ -70,7 +74,8 @@ export function ThemeSwitcher({ size = "default", className }: { size?: "default
           <Icon className="size-3.5" aria-hidden />
           {size === "sm" ? null : label}
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 }

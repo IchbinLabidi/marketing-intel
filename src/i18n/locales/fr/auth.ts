@@ -1,0 +1,76 @@
+import type en from "../en/auth";
+import type { Translation } from "../../core";
+
+const auth: Translation<typeof en> = {
+  panel: {
+    eyebrow: "Intelligence marketing",
+    title: "Arrêtez de publier au hasard.",
+    body: "Transformez votre stratégie, les calendriers de l’an dernier et ce que font vos concurrents en un plan où chaque publication a sa raison d’être.",
+    stages: {
+      strategy: { title: "Définir la stratégie", body: "Identité de marque, piliers, publics et objectifs partagés par votre équipe et l’IA." },
+      learn: { title: "Apprendre du passé et du marché", body: "Importez vos anciens calendriers depuis Excel, CSV ou PDF, suivez vos concurrents et les résultats de recherche." },
+      opportunities: { title: "Trouver les opportunités", body: "Chacune s’accompagne d’une justification, des données qui l’étayent et d’un niveau de confiance." },
+      plan: { title: "Planifier et produire", body: "Un calendrier éditorial en français, anglais, arabe ou derja tunisienne où chaque publication a une raison d’être." },
+    },
+  },
+  login: {
+    metaTitle: "Connexion",
+    title: "Bon retour parmi nous",
+    subtitle: "Connectez-vous à votre espace de travail.",
+    noAccount: "Pas encore de compte ?",
+    createOne: "Créez-en un",
+    submit: "Se connecter",
+    submitting: "Connexion…",
+  },
+  signup: {
+    metaTitle: "Créer un compte",
+    title: "Créez votre espace de travail",
+    titleJoining: "Créez votre compte pour rejoindre l’équipe",
+    subtitle: "Gratuit pendant la bêta. Sans carte bancaire.",
+    subtitleJoining: "Utilisez l’adresse e-mail à laquelle l’invitation a été envoyée. Vous rejoindrez l’équipe juste après.",
+    haveAccount: "Vous avez déjà un compte ?",
+    signIn: "Se connecter",
+    submit: "Créer le compte",
+    submitting: "Création du compte…",
+    checkInbox: "Consultez votre boîte de réception",
+    confirmEmail: "Consultez votre boîte de réception pour confirmer votre adresse e-mail, puis connectez-vous.",
+  },
+  fields: {
+    email: "E-mail",
+    workEmail: "E-mail professionnel",
+    password: "Mot de passe",
+    passwordHint: "Au moins 8 caractères.",
+    fullName: "Nom complet",
+    company: "Entreprise ou agence",
+    companyHint: "Devient le nom de votre espace de travail. Vous pourrez le modifier plus tard.",
+  },
+  errors: {
+    unreachable: "Le service de connexion est injoignable pour le moment. Vérifiez votre connexion Internet et réessayez.",
+    invalidCredentials: "E-mail ou mot de passe incorrect.",
+    emailNotConfirmed: "Confirmez d’abord votre adresse e-mail : le lien de confirmation vous attend dans votre boîte de réception.",
+    alreadyRegistered: "Un compte existe déjà avec cette adresse e-mail. Connectez-vous plutôt.",
+    rateLimited: "Trop de tentatives. Patientez un instant, puis réessayez.",
+    weakPassword: "Ce mot de passe est trop faible. Choisissez-en un plus long ou moins courant.",
+    missingCode: "Code de confirmation manquant",
+    linkExpired: "Ce lien de confirmation n’est pas valide ou a expiré. Connectez-vous pour en recevoir un nouveau.",
+  },
+  invite: {
+    metaTitle: "Rejoindre l’espace de travail",
+    invalidTitle: "Ce lien d’invitation n’est pas valide",
+    invalidBody: "Demandez un nouveau lien à la personne qui vous a invité.",
+    usedTitle: "Cette invitation a déjà été utilisée",
+    expiredTitle: "Cette invitation a expiré",
+    revokedTitle: "Cette invitation a été révoquée",
+    usedBody: "Si c’était vous, <link>ouvrez l’application</link>.",
+    askAdmin: "Demandez une nouvelle invitation à un administrateur de l’espace de travail.",
+    eyebrow: "Invitation",
+    join: "Rejoindre {workspace}",
+    invitedAs: "Vous avez été invité en tant que <b>{role}</b>. L’invitation est destinée à <b>{email}</b>.",
+    otherEmailTitle: "Connecté avec une autre adresse e-mail",
+    otherEmailBody: "Vous êtes connecté en tant que {current}. Déconnectez-vous, puis connectez-vous ou créez un compte avec {email} et ouvrez de nouveau ce lien.",
+    createAccount: "Créer un compte",
+    haveAccount: "J’ai déjà un compte",
+  },
+};
+
+export default auth;

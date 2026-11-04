@@ -18,6 +18,7 @@ import type { StrategySection } from "@/server/ai/strategy";
 import { cn } from "@/lib/utils";
 import { AISuggest, type SuggestionNotes } from "./ai-suggest";
 import { confirm } from "@/components/ui/confirm";
+import { useT } from "@/i18n/client";
 
 export type EntityField = {
   name: string;
@@ -34,9 +35,7 @@ type Item = { id: string } & Record<string, unknown>;
 export function EntityList<T extends Item>({
   projectId,
   entity,
-  noun,
   icon,
-  emptyText,
   fields,
   items,
   readOnly,
@@ -45,21 +44,21 @@ export function EntityList<T extends Item>({
 }: {
   projectId: string;
   entity: StrategyEntity;
-  noun: string;
   icon: LucideIcon;
-  emptyText: string;
   fields: EntityField[];
   items: T[];
   readOnly: boolean;
   aiEnabled: boolean;
   renderItem: (item: T) => React.ReactNode;
 }) {
+  const t = useT("strategy");
+  const tc = useT("common");
   const [editing, setEditing] = React.useState<T | "new" | null>(null);
   const [pending, startTransition] = useTransition();
 
   const remove = (item: T) =>
     startTransition(async () => {
-      if (!(await confirm({ title: `Delete this ${noun}?`, description: "This cannot be undone.", confirmLabel: "Delete", destructive: true }))) return;
+      if (!(await confirm({ title: t(`entities.${entity}.deleteTitle`), description: t("entityList.deleteDescription"), confirmLabel: tc("actions.delete"), destructive: true }))) return;
       const r = await deleteEntityAction(entity, projectId, item.id);
       if (r.ok) toast.success(r.message);
       else toast.error(r.error);
@@ -73,8 +72,8 @@ export function EntityList<T extends Item>({
             projectId={projectId}
             section={entity as StrategySection}
             aiEnabled={aiEnabled}
-            label={`Suggest ${noun}s`}
-            applyLabel="Add selected"
+            label={t(`entities.${entity}.suggest`)}
+            applyLabel={t("entityList.addSelected")}
             renderPreview={(d, { selected, toggle }) => (
               <ul className="grid gap-2">
                 {d.items.map((item, i) => (
@@ -95,7 +94,7 @@ export function EntityList<T extends Item>({
             onApply={async (d, selected) => {
               const chosen = d.items.filter((_, i) => selected.has(i));
               if (!chosen.length) {
-                toast.error("Select at least one item");
+                toast.error(t("entityList.selectOne"));
                 return false;
               }
               const r = await addEntitiesAction(entity, projectId, chosen);
@@ -105,13 +104,13 @@ export function EntityList<T extends Item>({
             }}
           />
           <Button size="sm" onClick={() => setEditing("new")}>
-            <Plus /> Add {noun}
+            <Plus /> {t(`entities.${entity}.add`)}
           </Button>
         </div>
       ) : null}
 
       {items.length === 0 ? (
-        <EmptyState icon={icon} title={`No ${noun}s yet`} description={emptyText} />
+        <EmptyState icon={icon} title={t(`entities.${entity}.empty`)} description={t(`entities.${entity}.emptyText`)} />
       ) : (
         <ul className="grid gap-3 md:grid-cols-2">
           {items.map((item) => (
@@ -119,10 +118,10 @@ export function EntityList<T extends Item>({
               {renderItem(item)}
               {!readOnly ? (
                 <div className="absolute right-2.5 top-2.5 flex gap-0.5 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
-                  <Button variant="ghost" size="icon-sm" aria-label={`Edit ${noun}`} onClick={() => setEditing(item)}>
+                  <Button variant="ghost" size="icon-sm" aria-label={t(`entities.${entity}.edit`)} onClick={() => setEditing(item)}>
                     <Pencil />
                   </Button>
-                  <Button variant="ghost" size="icon-sm" aria-label={`Delete ${noun}`} disabled={pending} onClick={() => remove(item)}>
+                  <Button variant="ghost" size="icon-sm" aria-label={t(`entities.${entity}.delete`)} disabled={pending} onClick={() => remove(item)}>
                     <Trash2 />
                   </Button>
                 </div>
@@ -135,7 +134,7 @@ export function EntityList<T extends Item>({
       <Dialog open={editing !== null} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>{editing === "new" ? `Add ${noun}` : `Edit ${noun}`}</DialogTitle>
+            <DialogTitle>{editing === "new" ? t(`entities.${entity}.add`) : t(`entities.${entity}.edit`)}</DialogTitle>
           </DialogHeader>
           {editing !== null ? (
             <EntityForm
@@ -166,6 +165,7 @@ function EntityForm({
   item: Item | null;
   onDone: () => void;
 }) {
+  const tc = useT("common");
   const { state, pending, formProps } = useFormAction(upsertEntityAction.bind(null, entity, projectId, item?.id ?? null));
   useResultToast(state, onDone);
   return (
@@ -216,9 +216,9 @@ function EntityForm({
       </div>
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone}>
-          Cancel
+          {tc("actions.cancel")}
         </Button>
-        <SubmitButton pending={pending} pendingLabel="Saving…">Save</SubmitButton>
+        <SubmitButton pending={pending} pendingLabel={tc("actions.saving")}>{tc("actions.save")}</SubmitButton>
       </DialogFooter>
     </form>
   );

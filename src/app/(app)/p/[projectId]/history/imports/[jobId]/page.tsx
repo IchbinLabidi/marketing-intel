@@ -10,6 +10,7 @@ import { getImportJob, signedImportFileUrl } from "@/server/services/history";
 import { getProjectContext } from "@/server/services/projects";
 import { getStrategyBundle } from "@/server/services/strategy";
 import { formatDateTime } from "@/lib/format";
+import { getT } from "@/i18n/server";
 
 export const metadata = { title: "Review import" };
 
@@ -20,10 +21,11 @@ export default async function ImportJobPage({ params }: PageProps<"/p/[projectId
   if (!job) notFound();
   const bundle = await getStrategyBundle(projectId);
   const raw = (job.raw_rows ?? []) as RawRow[];
+  const t = await getT("history");
   const result = buildRows(raw, job.column_mapping ?? {}, {
     pillars: bundle.pillars.map((p) => ({ id: p.id, name: p.name })),
     campaigns: bundle.campaigns.map((c) => ({ id: c.id, name: c.name })),
-  }, { excluded: job.excluded_rows });
+  }, { excluded: job.excluded_rows }, t);
 
   const samples = Object.fromEntries(
     job.raw_columns.map((c) => [c, raw.map((r) => r[c]).filter(Boolean).slice(0, 3).map((v) => String(v).slice(0, 40))]),

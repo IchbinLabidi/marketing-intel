@@ -3,8 +3,8 @@
 import { AudienceBadge } from "@/components/app/audience-badge";
 import * as React from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, Flag } from "lucide-react";
-import { PRIORITY_LABELS, type Priority } from "@/lib/permissions";
-import { STAGE_LABELS } from "@/lib/production/model";
+import type { Priority } from "@/lib/permissions";
+import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 import type { ContentItem } from "@/types/domain";
 import { PlatformIcon } from "./platform-icon";
@@ -20,6 +20,8 @@ const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, l
 type Selection = { selected: Set<string>; toggle: (id: string) => void; setAll: (ids: string[], on: boolean) => void; canSelect: (post: ContentItem) => boolean };
 
 export function ListView({ rows, today, onOpen, selection }: { rows: Row[]; today: string; onOpen: (post: ContentItem) => void; selection?: Selection }) {
+  const t = useT("calendar");
+  const td = useT("domain");
   const [sort, setSort] = React.useState<{ key: Key; dir: 1 | -1 }>({ key: "publish", dir: 1 });
   const value = (r: Row, k: Key): string | number => {
     switch (k) {
@@ -50,13 +52,13 @@ export function ListView({ rows, today, onOpen, selection }: { rows: Row[]; toda
       <table className="w-full min-w-[820px] text-[13px]">
         <thead>
           <tr className="border-b text-left">
-            {selection ? <th className="w-8 pl-4"><SelectAllBox ids={rows.filter((r) => selection.canSelect(r.post)).map((r) => r.post.id)} selected={selection.selected} onChange={(on) => selection.setAll(rows.filter((r) => selection.canSelect(r.post)).map((r) => r.post.id), on)} label="Select all shown" /></th> : null}
-            {head("title", "Content", cn("w-[34%]", !selection && "pl-4"))}
-            {head("status", "Status")}
-            {head("owner", "Owner")}
-            {head("priority", "Priority")}
-            {head("publish", "Publication")}
-            {head("deadline", "Deadline", "pr-4")}
+            {selection ? <th className="w-8 pl-4"><SelectAllBox ids={rows.filter((r) => selection.canSelect(r.post)).map((r) => r.post.id)} selected={selection.selected} onChange={(on) => selection.setAll(rows.filter((r) => selection.canSelect(r.post)).map((r) => r.post.id), on)} label={t("list.selectAll")} /></th> : null}
+            {head("title", t("list.content"), cn("w-[34%]", !selection && "pl-4"))}
+            {head("status", t("list.status"))}
+            {head("owner", t("list.owner"))}
+            {head("priority", t("list.priority"))}
+            {head("publish", t("list.publication"))}
+            {head("deadline", t("list.deadline"), "pr-4")}
           </tr>
         </thead>
         <tbody>
@@ -64,13 +66,13 @@ export function ListView({ rows, today, onOpen, selection }: { rows: Row[]; toda
             const overdue = isOverdue(post, today);
             return (
               <tr key={post.id} className={cn("cursor-pointer border-b last:border-0", selection?.selected.has(post.id) && "bg-primary-soft/40")} onClick={() => onOpen(post)}>
-                {selection ? <td className="w-8 pl-4" onClick={(e) => e.stopPropagation()}>{selection.canSelect(post) ? <input type="checkbox" aria-label={`Select ${post.title}`} checked={selection.selected.has(post.id)} onChange={() => selection.toggle(post.id)} /> : null}</td> : null}
+                {selection ? <td className="w-8 pl-4" onClick={(e) => e.stopPropagation()}>{selection.canSelect(post) ? <input type="checkbox" aria-label={t("list.select", { title: post.title })} checked={selection.selected.has(post.id)} onChange={() => selection.toggle(post.id)} /> : null}</td> : null}
                 <td className={cn("py-2.5", !selection && "pl-4")}>
                   <button type="button" className="flex min-w-0 items-center gap-2 text-left" onClick={(e) => { e.stopPropagation(); onOpen(post); }}>
                     <PlatformIcon platform={post.platform} className="size-3.5 text-muted-foreground" />
                     <span className="min-w-0">
                       <span className="block truncate font-medium" dir="auto">{post.title}</span>
-                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><AudienceBadge audience={post.audience} />{contentType(post.format)}{post.production_stage ? ` · ${STAGE_LABELS[post.production_stage]}` : ""}</span>
+                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><AudienceBadge audience={post.audience} />{contentType(post.format, t)}{post.production_stage ? ` · ${t(`stage.${post.production_stage}`)}` : ""}</span>
                     </span>
                   </button>
                 </td>
@@ -82,12 +84,12 @@ export function ListView({ rows, today, onOpen, selection }: { rows: Row[]; toda
                       <span className="max-w-28 truncate">{people[0].name}</span>
                       {people.length > 1 ? <span className="text-xs text-muted-foreground">+{people.length - 1}</span> : null}
                     </span>
-                  ) : <span className="text-xs text-muted-foreground">Unassigned</span>}
+                  ) : <span className="text-xs text-muted-foreground">{t("people.unassigned")}</span>}
                 </td>
                 <td className={cn("text-xs", post.priority === "urgent" ? "font-medium text-destructive" : post.priority === "high" ? "font-medium" : "text-muted-foreground")}>
-                  {PRIORITY_LABELS[(post.priority ?? "medium") as Priority]}
+                  {td(`priority.${(post.priority ?? "medium") as Priority}`)}
                 </td>
-                <td className="tabular-nums">{post.scheduled_date ? `${post.scheduled_date}${time ? ` ${time}` : ""}` : <span className="text-xs text-muted-foreground">Not scheduled</span>}</td>
+                <td className="tabular-nums">{post.scheduled_date ? `${post.scheduled_date}${time ? ` ${time}` : ""}` : <span className="text-xs text-muted-foreground">{t("list.notScheduled")}</span>}</td>
                 <td className={cn("pr-4 tabular-nums", overdue && "font-medium text-destructive")}>
                   {post.due_date ? <span className="inline-flex items-center gap-1">{overdue ? <Flag className="size-3" /> : null}{post.due_date}</span> : <span className="text-xs text-muted-foreground">—</span>}
                 </td>

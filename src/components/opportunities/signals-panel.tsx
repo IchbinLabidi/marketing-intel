@@ -8,17 +8,16 @@ import type { Platform } from "@/lib/domain/constants";
 import type { Signal } from "@/lib/opportunities/signals";
 import { cn } from "@/lib/utils";
 import { GenerateDialog } from "./opportunity-dialogs";
+import { useFormatter, useT } from "@/i18n/client";
 
-const GROUPS: { key: Signal["category"]; label: string }[] = [
-  { key: "historical", label: "What your posts show" },
-  { key: "strategy", label: "Gaps against your strategy" },
-  { key: "competitor", label: "Competitors" },
-];
+const GROUPS = ["historical", "strategy", "competitor"] as const satisfies readonly Signal["category"][];
 
 /** The calculated facts the engine may cite, shown as-is so anyone can check what ideas are built on. */
 export function SignalsPanel({ projectId, signals, posts, pillars, canGenerate }: {
   projectId: string; signals: Signal[]; posts: number; pillars: { id: string; name: string }[]; canGenerate: boolean;
 }) {
+  const t = useT("opportunities");
+  const fmt = useFormatter();
   const [open, setOpen] = React.useState(false);
   const [from, setFrom] = React.useState<Signal | null>(null);
   const shown = open ? signals : signals.slice(0, 0);
@@ -26,22 +25,22 @@ export function SignalsPanel({ projectId, signals, posts, pillars, canGenerate }
     <section className="rounded-xl border bg-card shadow-xs">
       <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex w-full items-center justify-between gap-3 p-4 text-left">
         <span className="min-w-0">
-          <span className="flex items-center gap-2 text-[14px] font-semibold"><BarChart3 className="size-4" /> What your data shows</span>
+          <span className="flex items-center gap-2 text-[14px] font-semibold"><BarChart3 className="size-4" /> {t("signals.panel.title")}</span>
           <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-            {signals.length} calculated signals from {posts} posts and your strategy. Opportunities may only cite these; nothing else counts as evidence.
+            {t("signals.panel.summary", { signals: t("signals.panel.signals", { count: signals.length }), posts: t("signals.panel.posts", { count: posts }) })}
           </span>
         </span>
         <ChevronDown className={cn("size-4 shrink-0 transition-transform", open && "rotate-180")} />
       </button>
       {open ? (
         <div className="space-y-4 border-t p-4">
-          {!signals.length ? <p className="text-[13px] text-muted-foreground">Not enough data yet: connect Meta or import past content with metrics, and set pillar targets in the strategy.</p> : null}
+          {!signals.length ? <p className="text-[13px] text-muted-foreground">{t("signals.panel.empty")}</p> : null}
           {GROUPS.map((g) => {
-            const list = shown.filter((s) => s.category === g.key);
+            const list = shown.filter((s) => s.category === g);
             if (!list.length) return null;
             return (
-              <div key={g.key}>
-                <p className="mb-2 text-xs font-semibold text-muted-foreground">{g.label}</p>
+              <div key={g}>
+                <p className="mb-2 text-xs font-semibold text-muted-foreground">{t(`signals.panel.groups.${g}`)}</p>
                 <ul className="divide-y rounded-lg border">
                   {list.map((s) => (
                     <li key={s.key} className="flex items-start gap-3 p-2.5 text-[13px]">
@@ -50,9 +49,9 @@ export function SignalsPanel({ projectId, signals, posts, pillars, canGenerate }
                         {s.statement}
                         <span className="mt-0.5 block text-[11px] text-muted-foreground">{s.method}</span>
                       </span>
-                      {s.lift != null ? <span className={cn("shrink-0 text-xs tabular-nums", s.lift >= 1.25 ? "text-success" : s.lift <= 0.8 ? "text-warning" : "text-muted-foreground")}>×{s.lift}</span> : null}
+                      {s.lift != null ? <span className={cn("shrink-0 text-xs tabular-nums", s.lift >= 1.25 ? "text-success" : s.lift <= 0.8 ? "text-warning" : "text-muted-foreground")}>×{fmt.number(s.lift)}</span> : null}
                       {canGenerate ? (
-                        <Button size="sm" variant="ghost" className="shrink-0" onClick={() => setFrom(s)} title="Generate ideas that build on this signal"><Sparkles /> Ideas</Button>
+                        <Button size="sm" variant="ghost" className="shrink-0" onClick={() => setFrom(s)} title={t("signals.panel.ideasHelp")}><Sparkles /> {t("signals.panel.ideas")}</Button>
                       ) : null}
                     </li>
                   ))}
@@ -66,7 +65,7 @@ export function SignalsPanel({ projectId, signals, posts, pillars, canGenerate }
         <GenerateDialog
           projectId={projectId}
           pillars={pillars}
-          initial={{ platform: (from.platform ?? undefined) as Platform | undefined, pillar_id: from.pillar_id ?? undefined, instruction: `Build on this finding: ${from.statement}` }}
+          initial={{ platform: (from.platform ?? undefined) as Platform | undefined, pillar_id: from.pillar_id ?? undefined, instruction: t("signals.panel.buildOn", { statement: from.statement }) }}
           onClose={() => setFrom(null)}
         />
       ) : null}

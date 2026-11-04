@@ -1,0 +1,41 @@
+import type en from "../en/validation";
+import type { Translation } from "../../core";
+
+const validation: Translation<typeof en> = {
+  fixFields: "Veuillez corriger les champs signalés.",
+  required: "Obligatoire",
+  between: "Doit être compris entre {min} et {max}",
+  invalidUrl: "URL invalide",
+  invalidDate: "Date invalide",
+  postTitle: "Donnez un titre à la publication",
+  choosePlatform: "Choisissez une plateforme",
+  httpsMedia: "Utilisez un lien https:// vers l’image ou la vidéo",
+  timeFormat: "Utilisez le format HH:MM",
+  scheduledNeedsDateTime: "Une publication programmée doit avoir une date et une heure",
+  dateForTime: "Choisissez une date pour cette heure",
+  competitorName: "Saisissez le nom du concurrent",
+  choosePeriod: "Choisissez une période",
+  postLink: "Collez le lien de la publication",
+  httpsLink: "Utilisez un lien https://",
+  publicationDate: "Saisissez la date de publication",
+  pickPlatform: "Choisissez au moins une plateforme",
+  endAfterStart: "La date de fin doit être postérieure à la date de début",
+  maxThreeMonths: "Générez au maximum 3 mois à la fois",
+  titleRequired: "Titre obligatoire",
+  nameRequired: "Nom obligatoire",
+  keepOneItem: "Conservez au moins un élément",
+  invalidEmailEntry: "Saisissez une adresse e-mail valide",
+  passwordLength: "Au moins 8 caractères",
+  contentTitle: "Donnez un titre à ce contenu",
+  tooLong: { one: "{count} caractère maximum", other: "{count} caractères maximum" },
+  tooShort: { one: "Au moins {count} caractère", other: "Au moins {count} caractères" },
+  tooBig: "Doit être inférieur ou égal à {max}",
+  tooSmall: "Doit être supérieur ou égal à {min}",
+  tooManyItems: { one: "{count} élément maximum", other: "{count} éléments maximum" },
+  tooFewItems: { one: "Ajoutez au moins {count} élément", other: "Ajoutez au moins {count} éléments" },
+  invalidEmail: "Adresse e-mail invalide",
+  invalidOption: "Choisissez l’une des options",
+  invalidValue: "Valeur invalide",
+};
+
+export default validation;

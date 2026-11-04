@@ -44,7 +44,7 @@ export const youtubeProvider: DataProvider = {
   platform: "youtube",
   source: "youtube_api",
   availability(creds) {
-    return creds.youtubeKey ? { ok: true } : { ok: false, status: "needs_config", reason: "Add YOUTUBE_API_KEY (Google Cloud → APIs & Services → YouTube Data API v3 → Credentials) to .env.local." };
+    return creds.youtubeKey ? { ok: true } : { ok: false, status: "needs_config", reason: "Add YOUTUBE_API_KEY (Google Cloud → APIs & Services → YouTube Data API v3 → Credentials) to .env.local.", reasonKey: "youtubeKey" };
   },
   async collect(channel, { since, max }, creds) {
     const key = creds.youtubeKey!;

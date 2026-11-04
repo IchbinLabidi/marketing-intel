@@ -1,0 +1,60 @@
+// English messages for the "errors" namespace (source language: every other locale mirrors these keys).
+// AI provider failures (shown wherever an AI feature fails) and the manual AI test.
+const errors = {
+  ai: {
+    kind: {
+      not_configured: "not configured",
+      auth: "API key rejected",
+      billing: "no credit left",
+      quota: "quota reached",
+      rate_limit: "rate limited",
+      overloaded: "overloaded",
+      network: "network error",
+      server: "server error",
+      bad_request: "request rejected",
+      refused: "declined",
+      truncated: "answer cut off",
+      invalid_output: "invalid answer",
+    },
+    // {status} and {tries} are built by failureMessage (", HTTP 503" / " (HTTP 503)" and the "tries" message below).
+    failure: {
+      not_configured: "{name} is not configured ({envVar} missing).",
+      auth: "{name} rejected the API key. Check {envVar}.",
+      billing: "{name} has no credit left.",
+      billingAnthropic: "{name} has no credit left (Anthropic Console → Plans & Billing).",
+      quota: "{name} quota is reached.",
+      quotaGemini: "{name} quota is reached (Google AI Studio → plan and billing).",
+      rate_limit: "{name} is rate limiting requests; wait a minute.",
+      overloaded: "{name} is overloaded (high demand{status}){tries}. This is temporary on the provider's side.",
+      network: "Could not reach {name}{tries} (network error).",
+      server: "{name} returned an error{status}{tries}.",
+      bad_request: "{name} rejected the request{status}.",
+      refused: "{name} declined this request.",
+      truncated: "{name}'s answer was too long and got cut off; try a narrower request.",
+      invalid_output: "{name}'s answer did not match the expected format.",
+    },
+    tries: { one: " after {count} attempt", other: " after {count} attempts" },
+  },
+  aiTest: {
+    readOnly: "Your role in this workspace is read-only.",
+    notSet: "{envVar} is not set.",
+    working: "working",
+    validAnswer: "Valid answer in {seconds} s.",
+    invalidJson: "The model answered, but not with the expected JSON code: not counted as working.",
+    unexpected: "Unexpected error",
+    summary: "{working} of {total} provider(s) working",
+    noneWorking: "No AI provider is working right now",
+    finished: "Test finished",
+    title: "AI test",
+    subtitle: "· one tiny request per provider (fractions of a cent); retries temporary errors twice",
+    testing: "Testing… (up to a few minutes if a provider is overloaded)",
+    retry: "Retry AI test",
+    run: "Run AI test",
+    health: "{provider}: {label}; requests skip it until {until} unless the test passes.",
+    attemptsWord: "attempts",
+    attempts: " {count} attempts.",
+    seconds: " {seconds} s.",
+  },
+};
+
+export default errors;

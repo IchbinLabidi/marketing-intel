@@ -11,6 +11,8 @@
 import { utcToZoned, addDays } from "@/lib/calendar/time";
 import { engagementOf, engagementRate } from "@/lib/history/performance";
 import type { FunnelStage, Platform } from "@/lib/domain/constants";
+import { createFormatter } from "@/i18n/format";
+import type { TFor } from "@/i18n/messages";
 
 export type Period = { from: string; to: string };
 
@@ -69,6 +71,21 @@ export function contentType(format: string | null) {
   if (f.includes("image") || f.includes("photo") || f.includes("caption") || f.includes("post")) return "Post";
   return "Other";
 }
+
+/** Dictionary key (analytics `contentType.*`) of each content type bucket. */
+export const CONTENT_TYPE_KEYS = { Post: "post", Carousel: "carousel", Reel: "reel", Story: "story", Video: "video", Article: "article", Other: "otherType" } as const;
+export const CONTENT_TYPES = Object.keys(CONTENT_TYPE_KEYS) as (keyof typeof CONTENT_TYPE_KEYS)[];
+/** Translated label of a content type bucket (unknown values are shown as they are). */
+export const contentTypeLabel = (t: TFor<"analytics">, type: string) =>
+  type in CONTENT_TYPE_KEYS ? t(`contentType.${CONTENT_TYPE_KEYS[type as keyof typeof CONTENT_TYPE_KEYS]}`) : type;
+/** Translated label of a production stage (unknown values are shown as they are). */
+export const stageLabelOf = (t: TFor<"analytics">, stage: string) => (t.has(`stage.${stage}`) ? t(`stage.${stage}` as "stage.idea") : stage);
+/**
+ * Translated platform name from the shared `domain` dictionary. Looked up untyped: `domain.platform` has an
+ * "other" key, which the dictionary typing reads as plural forms.
+ */
+export const platformLabelOf = (td: TFor<"domain">, platform: string) =>
+  td.has(`platform.${platform}`) ? (td as unknown as (key: string) => string)(`platform.${platform}`) : platform;
 
 /** Applies the shared filters. Collaborator matches the lead or anyone with a task on the item. */
 export function filterItems(items: AnalyticsItem[], tasks: AnalyticsTask[], f: Filters) {
@@ -148,9 +165,13 @@ export function strategyBalance(
     funnelTargets: Map<string, number>;
     platforms: { platform: Platform; label: string; postsPerWeek: number | null }[];
     periodDays: number;
+    /** Display label of the "none" pillar row (translated by the caller). */
+    noPillarLabel?: string;
+    /** Display label of a content type key (translated by the caller). */
+    typeLabel?: (type: string) => string;
   },
 ) {
-  const pillarRows = [...opts.pillars.map((p) => ({ key: p.id, label: p.name })), { key: "none", label: "No pillar" }];
+  const pillarRows = [...opts.pillars.map((p) => ({ key: p.id, label: p.name })), { key: "none", label: opts.noPillarLabel ?? "No pillar" }];
   const pillarTargets = new Map(opts.pillars.filter((p) => p.target_share != null).map((p) => [p.id, Number(p.target_share)]));
   const pillars = shares(pillarRows, countBy(planned, (i) => i.pillar_id ?? "none"), pillarTargets).filter((s) => s.key !== "none" || s.count);
   const funnel = shares(opts.funnel.map((f) => ({ key: f.stage, label: f.label })), countBy(planned.filter((i) => i.funnel_stage), (i) => i.funnel_stage!), opts.funnelTargets);
@@ -162,7 +183,7 @@ export function strategyBalance(
     return { key: pl.platform as string, label: pl.label, count, target, diff: target == null ? null : count - target };
   });
   for (const [k, count] of platformCounts) if (k !== "none" && !platforms.some((p) => p.key === k)) platforms.push({ key: k, label: k, count, target: null, diff: null });
-  const typeRows = ["Post", "Carousel", "Reel", "Story", "Video", "Article", "Other"].map((t) => ({ key: t, label: t }));
+  const typeRows = CONTENT_TYPES.map((t) => ({ key: t, label: opts.typeLabel ? opts.typeLabel(t) : t }));
   const types = shares(typeRows, countBy(planned, (i) => contentType(i.format)), new Map()).filter((s) => s.count);
   // Planned vs published mix by pillar
   const pubShares = shares(pillarRows, countBy(published, (i) => i.pillar_id ?? "none"), new Map());
@@ -355,39 +376,43 @@ export function insights(input: {
   social: { now: ReturnType<typeof social>; prev: ReturnType<typeof social> } | null;
   links: { strategy: string; production: string; calendar: string; team: string; history: string };
   stageLabel: (s: string) => string;
-}): Insight[] {
+}, t: TFor<"analytics">): Insight[] {
   const out: Insight[] = [];
   const { balance, overview: o, production: pr, links } = input;
-  const range = `${input.period.from} – ${input.period.to}`;
+  const fmt = createFormatter(t.locale);
+  const pctOf = (v: number, digits = 0) => fmt.percent(v / 100, digits);
+  const fixed = (v: number, digits: number) => fmt.number(v, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const rate = (v: number) => fmt.number(v / 100, { style: "percent", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const range = t("labels.range", { from: input.period.from, to: input.period.to });
   if (balance.total >= 5) {
     for (const s of balance.pillars.filter((x) => x.status === "under")) {
-      out.push({ id: `pillar-${s.key}`, tone: "warning", fact: `“${s.label}” is below its target share of planned content.`, figures: `${s.share.toFixed(0)}% planned vs ${s.target}% target (${s.count} of ${balance.total} items, ${range}).`, action: "Plan more content for this pillar, or revisit the target in the strategy.", href: links.strategy });
+      out.push({ id: `pillar-${s.key}`, tone: "warning", fact: t("insights.pillar.fact", { label: s.label }), figures: t("insights.pillar.figures", { share: pctOf(s.share), target: pctOf(s.target!, 2), count: s.count, total: balance.total, range }), action: t("insights.pillar.action"), href: links.strategy });
     }
     const topFunnel = [...balance.funnel].sort((a, b) => b.share - a.share)[0];
     if (topFunnel && balance.funnelTagged >= 5 && topFunnel.share >= 60 && balance.funnel.filter((x) => x.count).length > 1) {
-      out.push({ id: "funnel-concentration", tone: "info", fact: `Most planned content with a funnel stage targets ${topFunnel.label}.`, figures: `${topFunnel.share.toFixed(0)}% of ${balance.funnelTagged} tagged items (${range}).`, action: "Check that the other stages of the funnel get enough content.", href: links.calendar });
+      out.push({ id: "funnel-concentration", tone: "info", fact: t("insights.funnel.fact", { label: topFunnel.label }), figures: t("insights.funnel.figures", { share: pctOf(topFunnel.share), tagged: balance.funnelTagged, range }), action: t("insights.funnel.action"), href: links.calendar });
     }
     for (const pl of balance.platforms.filter((x) => x.target != null && x.target >= 2 && x.count < x.target * 0.7)) {
-      out.push({ id: `platform-${pl.key}`, tone: "warning", fact: `${pl.label} has fewer planned posts than its target rhythm.`, figures: `${pl.count} planned vs ${pl.target} expected from the channel target (${range}).`, action: "Add posts for this channel in the calendar.", href: links.calendar });
+      out.push({ id: `platform-${pl.key}`, tone: "warning", fact: t("insights.platform.fact", { label: pl.label }), figures: t("insights.platform.figures", { count: pl.count, target: pl.target, range }), action: t("insights.platform.action"), href: links.calendar });
     }
   }
   if (o.overdueContent > 0) {
-    out.push({ id: "overdue", tone: "warning", fact: `${o.overdueContent} item${o.overdueContent === 1 ? " is" : "s are"} past the internal deadline and not yet approved.`, figures: `${o.overdueTasks} open task${o.overdueTasks === 1 ? "" : "s"} are also past due (as of today).`, action: "Review overdue work in the calendar.", href: `${links.calendar}&overdue=1` });
+    out.push({ id: "overdue", tone: "warning", fact: t("insights.overdue.fact", { count: o.overdueContent }), figures: t("insights.overdue.figures", { count: o.overdueTasks }), action: t("insights.overdue.action"), href: `${links.calendar}&overdue=1` });
   }
   if (pr.bottleneck && pr.bottleneck.count >= 3) {
-    out.push({ id: "bottleneck", tone: REVIEW_STAGES.has(pr.bottleneck.stage) ? "warning" : "info", fact: `Content waits longest in ${input.stageLabel(pr.bottleneck.stage)}.`, figures: `${pr.bottleneck.count} items there now, median ${pr.bottleneck.medianDays?.toFixed(1) ?? "?"} days since they arrived.`, action: REVIEW_STAGES.has(pr.bottleneck.stage) ? "Schedule review time, or add a reviewer." : "Check what blocks these items.", href: links.production });
+    out.push({ id: "bottleneck", tone: REVIEW_STAGES.has(pr.bottleneck.stage) ? "warning" : "info", fact: t("insights.bottleneck.fact", { stage: input.stageLabel(pr.bottleneck.stage) }), figures: t("insights.bottleneck.figures", { count: pr.bottleneck.count, days: pr.bottleneck.medianDays != null ? fixed(pr.bottleneck.medianDays, 1) : "?" }), action: REVIEW_STAGES.has(pr.bottleneck.stage) ? t("insights.bottleneck.actionReview") : t("insights.bottleneck.actionOther"), href: links.production });
   }
   if (o.completionBase >= 5 && o.completionRate != null && o.completionRate < 70) {
-    out.push({ id: "completion", tone: "warning", fact: "Fewer posts were published than planned for dates that have passed.", figures: `${o.completionRate.toFixed(0)}% published (${Math.round((o.completionRate / 100) * o.completionBase)} of ${o.completionBase}, ${range}). Only publications verified from a connected platform count.`, action: "Verify publications in the calendar, or reschedule what slipped.", href: links.calendar });
+    out.push({ id: "completion", tone: "warning", fact: t("insights.completion.fact"), figures: t("insights.completion.figures", { rate: pctOf(o.completionRate), done: Math.round((o.completionRate / 100) * o.completionBase), base: o.completionBase, range }), action: t("insights.completion.action"), href: links.calendar });
   }
-  for (const m of input.team?.filter((t) => t.overlappingDeadlines) ?? []) {
-    out.push({ id: `team-${m.user_id}`, tone: "info", fact: `${m.name} has several task deadlines on the same day in the next week.`, figures: `${m.dueNext7} deadlines in the next 7 days, ${m.open + m.inReview} open tasks.`, action: "Consider spreading these deadlines.", href: links.team });
+  for (const m of input.team?.filter((x) => x.overlappingDeadlines) ?? []) {
+    out.push({ id: `team-${m.user_id}`, tone: "info", fact: t("insights.team.fact", { name: m.name }), figures: t("insights.team.figures", { due: m.dueNext7, open: m.open + m.inReview }), action: t("insights.team.action"), href: links.team });
   }
   if (input.social && input.social.now.rateSample >= 5 && input.social.prev.rateSample >= 5) {
     const a = input.social.now.medianEngagementRate!, b = input.social.prev.medianEngagementRate!;
     const change = b ? ((a - b) / b) * 100 : null;
     if (change != null && Math.abs(change) >= 15) {
-      out.push({ id: "social-trend", tone: change > 0 ? "positive" : "warning", fact: `Median engagement rate is ${change > 0 ? "up" : "down"} versus the previous period.`, figures: `${a.toFixed(2)}% (${input.social.now.rateSample} posts) vs ${b.toFixed(2)}% (${input.social.prev.rateSample} posts). A change in rate doesn't say why it changed.`, href: links.history });
+      out.push({ id: "social-trend", tone: change > 0 ? "positive" : "warning", fact: change > 0 ? t("insights.social.factUp") : t("insights.social.factDown"), figures: t("insights.social.figures", { now: rate(a), nowCount: input.social.now.rateSample, prev: rate(b), prevCount: input.social.prev.rateSample }), href: links.history });
     }
   }
   return out;

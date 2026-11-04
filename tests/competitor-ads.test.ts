@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { adsDigest, libraryIdFrom, parseAdLines, parsePlatforms, runningDays } from "@/lib/competitors/ads";
+import { testT } from "@/i18n/testing";
 
 describe("competitor ads from Meta's Ad Library", () => {
   it("reads the Library ID from an ad link, a bare ID or a copied label", () => {
@@ -22,7 +23,7 @@ describe("competitor ads from Meta's Ad Library", () => {
       "not an id, 2026-09-01, active",
       "1111122222333334, 2026-10-01, 2026-09-01, fb",
       "5555566666777778, 2026-11-15, active",
-    ].join("\n"), "2026-10-29");
+    ].join("\n"), "2026-10-29", testT("competitors"));
     expect(rows[0]).toMatchObject({ library_id: "1234567890123456", started_on: "2026-10-20", ended_on: null, platforms: ["facebook", "instagram"], body: "Inscriptions ouvertes, Bac 2027", error: null });
     expect(rows[0].url).toBe("https://www.facebook.com/ads/library/?id=1234567890123456");
     expect(rows[1]).toMatchObject({ ended_on: "2026-09-30", platforms: ["facebook"], body: "Promo rentrée -20%", error: null });

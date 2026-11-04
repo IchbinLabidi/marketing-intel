@@ -14,5 +14,5 @@ export async function GET(request: NextRequest) {
     if (!error) return NextResponse.redirect(`${origin}${dest}`);
     return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`);
   }
-  return NextResponse.redirect(`${origin}/login?error=Missing+confirmation+code`);
+  return NextResponse.redirect(`${origin}/login?error=missing_code`);
 }

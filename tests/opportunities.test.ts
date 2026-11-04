@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { testT } from "@/i18n/testing";
 import { computePerformance, usableReach } from "@/lib/history/performance";
 import { buildSignals, type Signal, type SignalItem } from "@/lib/opportunities/signals";
 import { classify, computeScore, DEFAULT_WEIGHTS, isDuplicate, liftToScore, normalizeWeights, relevanceOf, rescore, UNSUPPORTED_CAP } from "@/lib/opportunities/scoring";
@@ -134,7 +135,7 @@ describe("signals", () => {
   const signals = buildSignals({
     items, performance, timing: [], strategyFunnel: [], activePlatforms: ["instagram"], competitorItems: [], today: "2026-10-25",
     pillars: [{ id: "edu", name: "Education", target_share: 50 }, { id: "promo", name: "Promo", target_share: 10 }, { id: "fun", name: "Community", target_share: 30 }],
-  });
+  }, testT("opportunities"), testT("domain"));
 
   it("computes format performance with numbers and supporting posts from the rows", () => {
     const s = signals.find((x) => x.kind === "format_performance" && x.format === "Carousel")!;

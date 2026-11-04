@@ -11,7 +11,7 @@ export const writingSchema = z.object({
   creative_brief: z.string().max(10000), visual_direction: z.string().max(10000),
 });
 export const productionSchema = writingSchema.extend({
-  title: z.string().trim().min(1, "Give this content a title").max(300),
+  title: z.string().trim().min(1, "v:contentTitle").max(300),
   platform: z.enum(PLATFORMS), format: z.string().trim().min(1).max(120), language: z.enum(LANGUAGES),
   target_audience: optionalText(3000), pillar_id: uuid, funnel_stage: optionalEnum(FUNNEL_STAGES),
   assignee_id: uuid, due_date: optionalDate,
@@ -20,13 +20,11 @@ export const productionSchema = writingSchema.extend({
 });
 export type ProductionInput = z.infer<typeof productionSchema>;
 export const AI_OPERATIONS = ["generate", "rewrite", "improve_hook", "alternative_hooks", "tone", "shorten", "expand", "improve_cta", "hashtags", "translate", "adapt_platform", "reel", "carousel", "stories"] as const;
-export const AI_LABELS: Record<typeof AI_OPERATIONS[number], string> = { generate: "Generate content", rewrite: "Rewrite content", improve_hook: "Improve the hook", alternative_hooks: "Alternative hooks", tone: "Change tone", shorten: "Shorten", expand: "Expand", improve_cta: "Improve the CTA", hashtags: "Generate hashtags", translate: "Translate", adapt_platform: "Adapt to another platform", reel: "Caption → Reel script", carousel: "Idea → Carousel", stories: "Post → Story sequence" };
 export const productionAISchema = z.object({ operation: z.enum(AI_OPERATIONS), content: productionSchema, instruction: z.string().max(2000), target_language: z.enum(LANGUAGES), target_platform: z.enum(PLATFORMS) });
 export const stageSchema = z.enum(STAGES);
 export const workflowSchema = z.object({ require_internal_review: z.boolean(), labels: z.object(Object.fromEntries(STAGES.map((s) => [s, z.string().trim().min(1).max(45).optional()])) as Record<typeof STAGES[number], z.ZodOptional<z.ZodString>>) });
 export const CAPTION_OPERATIONS = ["generate_all", "generate_current", "improve", "shorten", "engaging", "professional", "seo", "stronger_cta", "hashtags", "youtube_title", "alternatives"] as const;
 export type CaptionOperation = typeof CAPTION_OPERATIONS[number];
-export const CAPTION_LABELS: Record<CaptionOperation, string> = { generate_all: "Generate all platform captions", generate_current: "Generate current platform caption", improve: "Improve existing caption", shorten: "Make shorter", engaging: "Make more engaging", professional: "Make more professional", seo: "Optimize for SEO", stronger_cta: "Rewrite with stronger CTA", hashtags: "Generate hashtags", youtube_title: "Generate YouTube title", alternatives: "Generate alternative versions" };
 export const captionAISchema = z.object({
   operation: z.enum(CAPTION_OPERATIONS), platforms: z.array(z.enum(COPY_PLATFORMS)).min(1).max(COPY_PLATFORMS.length), content: productionSchema,
   instruction: z.string().max(2000), settings: z.partialRecord(z.enum(["default", ...COPY_PLATFORMS]), copySettingsSchema),

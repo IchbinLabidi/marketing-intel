@@ -35,7 +35,7 @@ export const xProvider: DataProvider = {
   platform: "x",
   source: "x_api",
   availability(creds) {
-    return creds.xBearer ? { ok: true } : { ok: false, status: "needs_config", reason: "Add X_BEARER_TOKEN (X developer portal, paid Basic plan or higher) to .env.local." };
+    return creds.xBearer ? { ok: true } : { ok: false, status: "needs_config", reason: "Add X_BEARER_TOKEN (X developer portal, paid Basic plan or higher) to .env.local.", reasonKey: "xToken" };
   },
   async collect(channel, { since, max }, creds) {
     const token = creds.xBearer!;

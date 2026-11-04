@@ -5,13 +5,13 @@ import * as React from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { ContextMenu } from "radix-ui";
 import { ArrowUp, CalendarClock, CheckCircle2, ChevronsUp, CircleAlert, Clock, Copy, ExternalLink, Flag, Hourglass, PanelRight, Pencil } from "lucide-react";
-import { FUNNEL_LABELS, STATUS_TO_WORKFLOW, WORKFLOW_LABELS, type FunnelStage, type WorkflowState } from "@/lib/domain/constants";
+import { STATUS_TO_WORKFLOW, type FunnelStage, type WorkflowState } from "@/lib/domain/constants";
 import type { ContentItem } from "@/types/domain";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "./platform-icon";
 import { STATE_STYLE } from "./styles";
-import { STAGE_LABELS } from "@/lib/production/model";
 import { contentType, initials, type Person } from "./planning";
+import { useT } from "@/i18n/client";
 
 export type PillarRef = { id: string; name: string; color: string | null; dot: string | null };
 export type CardAction = "open" | "brief" | "duplicate" | "tomorrow" | "next-week";
@@ -25,27 +25,30 @@ export function stateOf(p: Pick<ContentItem, "status">) {
 }
 
 export function StatePill({ state, className }: { state: WorkflowState; className?: string }) {
+  const td = useT("domain");
   const Icon = STATE_ICON[state];
   return (
     <span className={cn("inline-flex items-center gap-1 text-[11px] font-medium", className)}>
       <span className={cn("size-1.5 rounded-full", STATE_STYLE[state].dot)} />
       <Icon className="size-3 text-muted-foreground" />
-      {WORKFLOW_LABELS[state]}
+      {td(`workflow.${state}`)}
     </span>
   );
 }
 
 function PriorityMark({ priority }: { priority?: string }) {
-  if (priority === "urgent") return <ChevronsUp className="size-3 shrink-0 text-destructive" aria-label="Urgent" />;
-  if (priority === "high") return <ArrowUp className="size-3 shrink-0 text-warning-foreground" aria-label="High priority" />;
+  const t = useT("calendar");
+  if (priority === "urgent") return <ChevronsUp className="size-3 shrink-0 text-destructive" aria-label={t("card.urgent")} />;
+  if (priority === "high") return <ArrowUp className="size-3 shrink-0 text-warning-foreground" aria-label={t("card.high")} />;
   return null;
 }
 
 function Faces({ people, size = "sm" }: { people: Person[]; size?: "sm" | "xs" }) {
+  const t = useT("calendar");
   if (!people.length) return null;
   const shown = people.slice(0, 2);
   return (
-    <span className="flex shrink-0 -space-x-1" aria-label={`Assigned: ${people.map((p) => p.name).join(", ")}`}>
+    <span className="flex shrink-0 -space-x-1" aria-label={t("card.assigned", { names: people.map((p) => p.name).join(", ") })}>
       {shown.map((p) => (
         <span
           key={p.user_id}
@@ -80,14 +83,17 @@ export function PostCard({
   onOpen: (post: ContentItem) => void;
   onAction?: (action: CardAction, post: ContentItem) => void;
 }) {
+  const t = useT("calendar");
+  const tc = useT("common");
+  const td = useT("domain");
   const state = stateOf(post);
   const locked = readOnly || state === "published";
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: post.id, disabled: locked, data: { post } });
-  const type = contentType(post.format);
+  const type = contentType(post.format, t);
   const tooltip = [
-    post.title, `${type}${post.platform ? ` · ${post.platform}` : ""}`, time ? `Publishes ${post.scheduled_date} ${time}` : post.scheduled_date ? `Publishes ${post.scheduled_date}` : "No publication date",
-    post.due_date ? `Deadline ${post.due_date}${overdue ? " (overdue)" : ""}` : null, WORKFLOW_LABELS[state], post.production_stage ? STAGE_LABELS[post.production_stage] : null,
-    people.length ? `Team: ${people.map((p) => p.name).join(", ")}` : "Unassigned",
+    post.title, `${type}${post.platform ? ` · ${post.platform}` : ""}`, time ? t("card.publishesAt", { date: post.scheduled_date, time }) : post.scheduled_date ? t("card.publishes", { date: post.scheduled_date }) : t("card.noDate"),
+    post.due_date ? t(overdue ? "card.deadlineOverdue" : "card.deadline", { date: post.due_date }) : null, td(`workflow.${state}`), post.production_stage ? t(`stage.${post.production_stage}`) : null,
+    people.length ? t("card.team", { names: people.map((p) => p.name).join(", ") }) : t("people.unassigned"),
   ].filter(Boolean).join("\n");
 
   const button = (
@@ -110,13 +116,13 @@ export function PostCard({
     >
       {compact ? (
         <span className="flex items-center gap-1 text-[11px] leading-tight">
-          <span className={cn("size-1.5 shrink-0 rounded-full", STATE_STYLE[state].dot)} aria-label={WORKFLOW_LABELS[state]} />
+          <span className={cn("size-1.5 shrink-0 rounded-full", STATE_STYLE[state].dot)} aria-label={td(`workflow.${state}`)} />
           <PlatformIcon platform={post.platform} className="size-3 shrink-0 text-muted-foreground" />
           {time ? <span className="tabular-nums text-muted-foreground">{time}</span> : null}
           <span className="min-w-0 flex-1 truncate font-medium">{post.title}</span>
           <AudienceMark audience={post.audience} />
           <PriorityMark priority={post.priority} />
-          {overdue ? <Flag className="size-3 shrink-0 text-destructive" aria-label="Deadline passed" /> : null}
+          {overdue ? <Flag className="size-3 shrink-0 text-destructive" aria-label={t("card.deadlinePassed")} /> : null}
           <Faces people={people} size="xs" />
         </span>
       ) : (
@@ -124,14 +130,14 @@ export function PostCard({
           <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <PlatformIcon platform={post.platform} />
             <span className="font-medium text-foreground/80">{type}</span>
-            <span className="tabular-nums">· {time ?? "no time"}</span>
+            <span className="tabular-nums">· {time ?? t("card.noTime")}</span>
             <span className="ml-auto flex items-center gap-1"><PriorityMark priority={post.priority} /><Faces people={people} /></span>
           </span>
           <span className="line-clamp-2 text-[12.5px] font-medium leading-snug" dir="auto">{post.title}</span>
           <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <StatePill state={state} />
             <AudienceBadge audience={post.audience} />
-            {post.production_stage ? <span className="text-[11px] text-muted-foreground">{STAGE_LABELS[post.production_stage]}</span> : null}
+            {post.production_stage ? <span className="text-[11px] text-muted-foreground">{t(`stage.${post.production_stage}`)}</span> : null}
             {post.due_date ? (
               <span className={cn("inline-flex items-center gap-0.5 text-[11px] tabular-nums", overdue ? "font-medium text-destructive" : "text-muted-foreground")}>
                 <Flag className="size-3" aria-hidden /> {post.due_date.slice(5).replace("-", "/")}
@@ -143,7 +149,7 @@ export function PostCard({
                 <span className="truncate">{pillar.name}</span>
               </span>
             ) : null}
-            {post.funnel_stage ? <span className="text-[11px] text-muted-foreground">{FUNNEL_LABELS[post.funnel_stage as FunnelStage]}</span> : null}
+            {post.funnel_stage ? <span className="text-[11px] text-muted-foreground">{td(`funnel.${post.funnel_stage as FunnelStage}`)}</span> : null}
           </span>
         </span>
       )}
@@ -156,14 +162,14 @@ export function PostCard({
       <ContextMenu.Trigger asChild>{button}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className="z-50 min-w-52 rounded-lg border bg-popover p-1 text-popover-foreground shadow-md data-[state=open]:animate-fade-in">
-          <MenuItem icon={PanelRight} onSelect={() => onAction("open", post)}>Open details</MenuItem>
-          <MenuItem icon={ExternalLink} onSelect={() => onAction("brief", post)}>Open full brief</MenuItem>
+          <MenuItem icon={PanelRight} onSelect={() => onAction("open", post)}>{t("card.openDetails")}</MenuItem>
+          <MenuItem icon={ExternalLink} onSelect={() => onAction("brief", post)}>{t("card.openBrief")}</MenuItem>
           {!locked ? (
             <>
               <ContextMenu.Separator className="-mx-1 my-1 h-px bg-border" />
-              <MenuItem icon={CalendarClock} onSelect={() => onAction("tomorrow", post)}>Move to next day</MenuItem>
-              <MenuItem icon={CalendarClock} onSelect={() => onAction("next-week", post)}>Move one week later</MenuItem>
-              <MenuItem icon={Copy} onSelect={() => onAction("duplicate", post)}>Duplicate</MenuItem>
+              <MenuItem icon={CalendarClock} onSelect={() => onAction("tomorrow", post)}>{t("card.nextDay")}</MenuItem>
+              <MenuItem icon={CalendarClock} onSelect={() => onAction("next-week", post)}>{t("card.nextWeek")}</MenuItem>
+              <MenuItem icon={Copy} onSelect={() => onAction("duplicate", post)}>{tc("actions.duplicate")}</MenuItem>
             </>
           ) : null}
         </ContextMenu.Content>

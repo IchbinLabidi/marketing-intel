@@ -19,9 +19,10 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { PlatformIcon } from "@/components/calendar/platform-icon";
 import { PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
 import { CRITERIA, impactEffort, normalizeWeights, scoreBand, type Weights } from "@/lib/backlog/score";
-import { ALL_CONVERSIONS, AUDIENCES, AUDIENCE_LABELS, goalsFor, SEGMENTS, SEGMENT_LABELS, SIDE_LABELS, type Audience, type AudienceMix, type Side } from "@/lib/backlog/audience";
+import { ALL_CONVERSIONS, AUDIENCES, goalsFor, SEGMENTS, type Audience, type AudienceMix, type Side } from "@/lib/backlog/audience";
+import { useFormatter, useT } from "@/i18n/client";
 import { AudienceFilter, AudienceSelect } from "@/components/app/audience-badge";
-import { FORMATS, STAGE_LABELS, type ProductionStage } from "@/lib/production/model";
+import { FORMATS, type ProductionStage } from "@/lib/production/model";
 import { cn } from "@/lib/utils";
 import {
   archiveIdeasAction, createIdeaAction, deleteIdeasAction, deletePresetAction, duplicateIdeaAction, listIdeasAction, refreshSuggestionsAction,
@@ -36,7 +37,10 @@ import { PlannerDialog } from "./planner-dialog";
 type View = "list" | "cards" | "kanban";
 const PRIORITIES = ["urgent", "high", "medium", "low"] as const;
 const BRIEF_STAGES = ["brief", "in_production", "internal_review", "approval", "ready"] as const;
-const PRIORITY_LABEL: Record<string, string> = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low" };
+type Priority = (typeof PRIORITIES)[number];
+const prio = (p: string | null | undefined): Priority => ((PRIORITIES as readonly string[]).includes(p ?? "") ? (p as Priority) : "medium");
+type ConversionKey = "forum_participation" | "teacher_profile_visits" | "lesson_requests" | "completed_bookings" | "teacher_registration" | "profile_completion" | "teacher_activation" | "lesson_requests_received" | "completed_sessions";
+const goalKey = (k: string) => `conversion.${k as ConversionKey}` as const;
 const PLATFORM_CHOICES = ["facebook", "instagram", "tiktok", "linkedin", "youtube"] as const;
 const scoreTone = (s: number | null) => ({ high: "success", good: "info", fair: "warning", low: "destructive", unscored: "outline" } as const)[scoreBand(s)];
 
@@ -46,6 +50,10 @@ export function BacklogApp(props: {
   weights: Weights; aiEnabled: boolean; today: string; defaultSort?: BacklogFilters["sort"];
 }) {
   const { projectId, tz, canEdit } = props;
+  const t = useT("backlog");
+  const tc = useT("common");
+  const td = useT("domain");
+  const fmt = useFormatter();
   const DEFAULT_FILTERS: BacklogFilters = { planning: "backlog", sort: props.defaultSort ?? "score" };
   const router = useRouter();
   const [view, setView] = React.useState<View>(() => { try { return (localStorage.getItem("backlog.view") as View) || "cards"; } catch { return "cards"; } });
@@ -96,7 +104,7 @@ export function BacklogApp(props: {
     const r = await fn();
     setBusy(null);
     if (!r.ok) return void toast.error(r.error);
-    toast.success(r.message ?? "Done");
+    toast.success(r.message ?? tc("actions.done"));
     setSelected(new Set());
     await reload();
   };
@@ -129,7 +137,7 @@ export function BacklogApp(props: {
     duplicate: () => bulk("dup", () => duplicateIdeaAction(projectId, i.id)),
     archive: () => bulk("archive", () => archiveIdeasAction(projectId, [i.id], !i.archived_at)),
     unplan: () => bulk("unplan", () => unplanIdeasAction(projectId, [i.id])),
-    remove: async () => { if (await confirm({ title: `Delete “${i.title}”?`, description: "The idea and its stored files are deleted permanently. This can't be undone.", confirmLabel: "Delete permanently", destructive: true })) await bulk("delete", () => deleteIdeasAction(projectId, [i.id])); },
+    remove: async () => { if (await confirm({ title: t("row.deleteConfirmTitle", { title: i.title }), description: t("row.deleteConfirmBody"), confirmLabel: t("bulk.deletePermanently"), destructive: true })) await bulk("delete", () => deleteIdeasAction(projectId, [i.id])); },
   });
 
   const onDragEnd = (e: DragEndEvent) => {
@@ -143,78 +151,78 @@ export function BacklogApp(props: {
 
   return (
     <div className="min-w-0 space-y-5">
-      <PageHeader title="Ideas Backlog" description={`Every ${props.projectName} idea lands here first: scored, filtered and waiting for you to give it a date. Nothing reaches the calendar or gets published on its own.`}
+      <PageHeader title={t("page.title")} description={t("page.description", { project: props.projectName })}
         actions={<>
-          {props.canAdmin ? <Button variant="outline" onClick={() => setWeightsOpen(true)}><SlidersHorizontal /> Scoring weights</Button> : null}
-          {canEdit ? <Button variant="outline" onClick={() => setPlanning(true)}><Sparkles /> Calendar Planner</Button> : null}
-          {canEdit ? <Button onClick={() => setCreating(true)}><Plus /> New idea</Button> : null}
+          {props.canAdmin ? <Button variant="outline" onClick={() => setWeightsOpen(true)}><SlidersHorizontal /> {t("page.scoringWeights")}</Button> : null}
+          {canEdit ? <Button variant="outline" onClick={() => setPlanning(true)}><Sparkles /> {t("page.planner")}</Button> : null}
+          {canEdit ? <Button onClick={() => setCreating(true)}><Plus /> {t("page.newIdea")}</Button> : null}
         </>} />
 
       {/* Search, quick filters, views */}
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-52 flex-1"><Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input className="pl-9" placeholder="Search titles and descriptions…" value={filters.q ?? ""} onChange={(e) => setF({ q: e.target.value })} aria-label="Search ideas" /></div>
-          <NativeSelect aria-label="Planning status" className="w-40" value={filters.archived ? "archived" : filters.planning} onChange={(e) => e.target.value === "archived" ? setF({ archived: true, planning: "all" }) : setF({ archived: false, planning: e.target.value as BacklogFilters["planning"] })}>
-            <option value="backlog">In the Backlog</option><option value="planned">On the calendar</option><option value="all">Backlog + calendar</option><option value="published">Published</option><option value="archived">Archived</option>
+          <div className="relative min-w-52 flex-1"><Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input className="pl-9" placeholder={t("toolbar.searchPlaceholder")} value={filters.q ?? ""} onChange={(e) => setF({ q: e.target.value })} aria-label={t("toolbar.searchLabel")} /></div>
+          <NativeSelect aria-label={t("toolbar.planningLabel")} className="w-40" value={filters.archived ? "archived" : filters.planning} onChange={(e) => e.target.value === "archived" ? setF({ archived: true, planning: "all" }) : setF({ archived: false, planning: e.target.value as BacklogFilters["planning"] })}>
+            <option value="backlog">{t("toolbar.planning.backlog")}</option><option value="planned">{t("toolbar.planning.planned")}</option><option value="all">{t("toolbar.planning.all")}</option><option value="published">{t("toolbar.planning.published")}</option><option value="archived">{t("toolbar.planning.archived")}</option>
           </NativeSelect>
           <AudienceFilter className="w-40" value={filters.audiences?.[0] ?? ""} onChange={(v) => setF({ audiences: v ? [v] : [] })} />
-          <NativeSelect aria-label="Type" className="w-40" value={!filters.stages?.length ? "" : filters.stages.length === 1 && filters.stages[0] === "idea" ? "ideas" : "briefs"} onChange={(e) => setF({ stages: e.target.value === "ideas" ? ["idea"] : e.target.value === "briefs" ? [...BRIEF_STAGES] : [] })}>
-            <option value="">Ideas + briefs</option><option value="ideas">Ideas only</option><option value="briefs">Briefs &amp; in production</option>
+          <NativeSelect aria-label={t("toolbar.typeLabel")} className="w-40" value={!filters.stages?.length ? "" : filters.stages.length === 1 && filters.stages[0] === "idea" ? "ideas" : "briefs"} onChange={(e) => setF({ stages: e.target.value === "ideas" ? ["idea"] : e.target.value === "briefs" ? [...BRIEF_STAGES] : [] })}>
+            <option value="">{t("toolbar.type.all")}</option><option value="ideas">{t("toolbar.type.ideas")}</option><option value="briefs">{t("toolbar.type.briefs")}</option>
           </NativeSelect>
-          <NativeSelect aria-label="Sort" className="w-40" value={filters.sort} onChange={(e) => setF({ sort: e.target.value as BacklogFilters["sort"] })}>
-            <option value="score">Highest score</option><option value="audience">Audience</option><option value="priority">Highest priority</option><option value="suggested">Suggested date</option><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="title">Title</option>
+          <NativeSelect aria-label={t("toolbar.sortLabel")} className="w-40" value={filters.sort} onChange={(e) => setF({ sort: e.target.value as BacklogFilters["sort"] })}>
+            {(["score", "audience", "priority", "suggested", "newest", "oldest", "title"] as const).map((k) => <option key={k} value={k}>{t(`toolbar.sort.${k}`)}</option>)}
           </NativeSelect>
-          <Button variant={more || activeCount ? "secondary" : "outline"} onClick={() => setMore(!more)}><Filter /> Filters{activeCount ? ` (${activeCount})` : ""}</Button>
+          <Button variant={more || activeCount ? "secondary" : "outline"} onClick={() => setMore(!more)}><Filter /> {activeCount ? t("toolbar.filtersCount", { count: activeCount }) : t("toolbar.filters")}</Button>
           <DropdownMenu>
-            <DropdownMenuTrigger asChild><Button variant="outline"><Bookmark /> Saved</Button></DropdownMenuTrigger>
+            <DropdownMenuTrigger asChild><Button variant="outline"><Bookmark /> {t("toolbar.saved")}</Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {presets.map((p) => (
                 <DropdownMenuItem key={p.id} onSelect={() => setFilters({ ...DEFAULT_FILTERS, ...p.filters })} className="justify-between gap-4">
-                  {p.name}<button type="button" aria-label={`Delete ${p.name}`} onClick={async (e) => { e.stopPropagation(); await deletePresetAction(projectId, p.id); setPresets((l) => l.filter((x) => x.id !== p.id)); }}><X className="size-3.5" /></button>
+                  {p.name}<button type="button" aria-label={t("toolbar.deletePreset", { name: p.name })} onClick={async (e) => { e.stopPropagation(); await deletePresetAction(projectId, p.id); setPresets((l) => l.filter((x) => x.id !== p.id)); }}><X className="size-3.5" /></button>
                 </DropdownMenuItem>
               ))}
               {presets.length ? <DropdownMenuSeparator /> : null}
               <DropdownMenuItem onSelect={async () => {
-                const name = window.prompt("Name this filter (e.g. “SOSProf reels above 85”)");
+                const name = window.prompt(t("toolbar.presetPrompt"));
                 if (!name) return;
                 const r = await savePresetAction(projectId, name, filters);
-                if (r.ok && r.data) { setPresets((l) => [...l.filter((x) => x.name !== r.data!.name), r.data!].sort((a, b) => a.name.localeCompare(b.name))); toast.success(r.message ?? "Saved"); } else if (!r.ok) toast.error(r.error);
-              }}><Plus /> Save current filters</DropdownMenuItem>
+                if (r.ok && r.data) { setPresets((l) => [...l.filter((x) => x.name !== r.data!.name), r.data!].sort((a, b) => a.name.localeCompare(b.name))); toast.success(r.message ?? t("savedToast")); } else if (!r.ok) toast.error(r.error);
+              }}><Plus /> {t("toolbar.saveFilters")}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <div role="tablist" aria-label="View" className="inline-flex rounded-md bg-secondary p-0.5">
-            {([["cards", LayoutGrid, "Cards"], ["list", List, "List"], ["kanban", Columns3, "Kanban"]] as const).map(([k, Icon, label]) => (
+          <div role="tablist" aria-label={t("toolbar.viewLabel")} className="inline-flex rounded-md bg-secondary p-0.5">
+            {([["cards", LayoutGrid, t("toolbar.view.cards")], ["list", List, t("toolbar.view.list")], ["kanban", Columns3, t("toolbar.view.kanban")]] as const).map(([k, Icon, label]) => (
               <button key={k} role="tab" aria-selected={view === k} title={label} onClick={() => chooseView(k)} className={cn("inline-flex h-8 items-center gap-1.5 rounded-[5px] px-2.5 text-[13px]", view === k ? "bg-card shadow-xs" : "text-muted-foreground")}><Icon className="size-4" /><span className="hidden sm:inline">{label}</span></button>
             ))}
           </div>
         </div>
         {more ? (
           <div className="grid gap-2 rounded-lg border bg-card p-3 sm:grid-cols-2 lg:grid-cols-4">
-            <FilterSelect label="Content pillar" value={filters.pillars?.[0] ?? ""} onChange={(v) => setF({ pillars: v ? [v] : [] })} options={[["none", "No pillar"], ...props.pillars.map((p) => [p.id, `${p.name}${p.segment === "teachers" ? " · Teachers" : ""}`])]} />
-            <FilterSelect label="Segment" value={filters.segments?.[0] ?? ""} onChange={(v) => setF({ segments: v ? [v] : [] })} options={[...SEGMENTS.map((x) => [x, SEGMENT_LABELS[x]]), ["none", "Segment not set"]]} />
-            <FilterSelect label="Conversion goal" value={filters.goals?.[0] ?? ""} onChange={(v) => setF({ goals: v ? [v] : [] })} options={(filters.segments?.[0] && filters.segments[0] !== "none" ? goalsFor(filters.segments[0]) : ALL_CONVERSIONS).map((g) => [g.key, g.label])} />
-            <FilterSelect label="Format" value={filters.formats?.[0] ?? ""} onChange={(v) => setF({ formats: v ? [v] : [] })} options={FORMATS.map((f) => [f, f])} />
-            <FilterSelect label="Platform" value={filters.platforms?.[0] ?? ""} onChange={(v) => setF({ platforms: v ? [v] : [] })} options={PLATFORM_CHOICES.map((p) => [p, PLATFORM_LABELS[p as Platform]])} />
-            <label className="space-y-1 text-xs text-muted-foreground"><span>Audience contains</span><Input value={filters.audience ?? ""} placeholder="e.g. parents" onChange={(e) => setF({ audience: e.target.value })} /></label>
-            <div className="space-y-1 text-xs text-muted-foreground"><span>Score</span><div className="flex gap-1.5"><Input type="number" min={0} max={100} placeholder="min" value={filters.scoreMin ?? ""} onChange={(e) => setF({ scoreMin: e.target.value === "" ? undefined : Number(e.target.value) })} /><Input type="number" min={0} max={100} placeholder="max" value={filters.scoreMax ?? ""} onChange={(e) => setF({ scoreMax: e.target.value === "" ? undefined : Number(e.target.value) })} /></div></div>
-            <FilterSelect label="Priority" value={filters.priorities?.[0] ?? ""} onChange={(v) => setF({ priorities: v ? [v] : [] })} options={PRIORITIES.map((p) => [p, PRIORITY_LABEL[p]])} />
-            <FilterSelect label="Production status" value={filters.stages?.[0] ?? ""} onChange={(v) => setF({ stages: v ? [v] : [] })} options={(["idea", "brief", "in_production", "internal_review", "ready"] as ProductionStage[]).map((s) => [s, STAGE_LABELS[s]])} />
-            <FilterSelect label="AI confidence" value={filters.confidence?.[0] ?? ""} onChange={(v) => setF({ confidence: v ? [v] : [] })} options={[["high", "High"], ["medium", "Medium"], ["low", "Low"]]} />
-            <FilterSelect label="Tag" value={filters.tags?.[0] ?? ""} onChange={(v) => setF({ tags: v ? [v] : [] })} options={props.tags.map((t) => [t, t])} />
-            <label className="space-y-1 text-xs text-muted-foreground"><span>Recommended time</span><Input type="time" value={filters.slotTime ?? ""} onChange={(e) => setF({ slotTime: e.target.value || undefined })} /></label>
-            <div className="space-y-1 text-xs text-muted-foreground"><span>Created between</span><div className="flex gap-1.5"><Input type="date" value={filters.createdFrom ?? ""} onChange={(e) => setF({ createdFrom: e.target.value || undefined })} /><Input type="date" value={filters.createdTo ?? ""} onChange={(e) => setF({ createdTo: e.target.value || undefined })} /></div></div>
-            <div className="space-y-1 text-xs text-muted-foreground"><span>Publication date between</span><div className="flex gap-1.5"><Input type="date" value={filters.scheduledFrom ?? ""} onChange={(e) => setF({ scheduledFrom: e.target.value || undefined, ...(filters.planning === "backlog" && e.target.value ? { planning: "all" } : {}) })} /><Input type="date" value={filters.scheduledTo ?? ""} onChange={(e) => setF({ scheduledTo: e.target.value || undefined, ...(filters.planning === "backlog" && e.target.value ? { planning: "all" } : {}) })} /></div></div>
-            <div className="space-y-1 text-xs text-muted-foreground"><span>Suggested date between</span><div className="flex gap-1.5"><Input type="date" value={filters.suggestedFrom ?? ""} onChange={(e) => setF({ suggestedFrom: e.target.value || undefined })} /><Input type="date" value={filters.suggestedTo ?? ""} onChange={(e) => setF({ suggestedTo: e.target.value || undefined })} /></div></div>
-            <div className="flex items-end"><Button variant="ghost" size="sm" onClick={() => setFilters({ ...DEFAULT_FILTERS, planning: filters.planning, sort: filters.sort })}>Clear filters</Button></div>
+            <FilterSelect label={t("filters.pillar")} value={filters.pillars?.[0] ?? ""} onChange={(v) => setF({ pillars: v ? [v] : [] })} options={[["none", t("filters.noPillar")], ...props.pillars.map((p) => [p.id, `${p.name}${p.segment === "teachers" ? t("filters.teachersSuffix") : ""}`])]} />
+            <FilterSelect label={t("filters.segment")} value={filters.segments?.[0] ?? ""} onChange={(v) => setF({ segments: v ? [v] : [] })} options={[...SEGMENTS.map((x) => [x, td(`segment.${x}`)]), ["none", t("filters.segmentNotSet")]]} />
+            <FilterSelect label={t("filters.goal")} value={filters.goals?.[0] ?? ""} onChange={(v) => setF({ goals: v ? [v] : [] })} options={(filters.segments?.[0] && filters.segments[0] !== "none" ? goalsFor(filters.segments[0]) : ALL_CONVERSIONS).map((g) => [g.key, td(goalKey(g.key))])} />
+            <FilterSelect label={t("filters.format")} value={filters.formats?.[0] ?? ""} onChange={(v) => setF({ formats: v ? [v] : [] })} options={FORMATS.map((f) => [f, f])} />
+            <FilterSelect label={t("filters.platform")} value={filters.platforms?.[0] ?? ""} onChange={(v) => setF({ platforms: v ? [v] : [] })} options={PLATFORM_CHOICES.map((p) => [p, PLATFORM_LABELS[p as Platform]])} />
+            <label className="space-y-1 text-xs text-muted-foreground"><span>{t("filters.audienceContains")}</span><Input value={filters.audience ?? ""} placeholder={t("filters.audiencePlaceholder")} onChange={(e) => setF({ audience: e.target.value })} /></label>
+            <div className="space-y-1 text-xs text-muted-foreground"><span>{t("filters.score")}</span><div className="flex gap-1.5"><Input type="number" min={0} max={100} placeholder={t("filters.min")} value={filters.scoreMin ?? ""} onChange={(e) => setF({ scoreMin: e.target.value === "" ? undefined : Number(e.target.value) })} /><Input type="number" min={0} max={100} placeholder={t("filters.max")} value={filters.scoreMax ?? ""} onChange={(e) => setF({ scoreMax: e.target.value === "" ? undefined : Number(e.target.value) })} /></div></div>
+            <FilterSelect label={t("filters.priority")} value={filters.priorities?.[0] ?? ""} onChange={(v) => setF({ priorities: v ? [v] : [] })} options={PRIORITIES.map((p) => [p, td(`priority.${p}`)])} />
+            <FilterSelect label={t("filters.productionStatus")} value={filters.stages?.[0] ?? ""} onChange={(v) => setF({ stages: v ? [v] : [] })} options={(["idea", "brief", "in_production", "internal_review", "ready"] as const satisfies readonly ProductionStage[]).map((s) => [s, t(`stage.${s}`)])} />
+            <FilterSelect label={t("filters.aiConfidence")} value={filters.confidence?.[0] ?? ""} onChange={(v) => setF({ confidence: v ? [v] : [] })} options={[["high", t("confidence.high")], ["medium", t("confidence.medium")], ["low", t("confidence.low")]]} />
+            <FilterSelect label={t("filters.tag")} value={filters.tags?.[0] ?? ""} onChange={(v) => setF({ tags: v ? [v] : [] })} options={props.tags.map((x) => [x, x])} />
+            <label className="space-y-1 text-xs text-muted-foreground"><span>{t("filters.recommendedTime")}</span><Input type="time" value={filters.slotTime ?? ""} onChange={(e) => setF({ slotTime: e.target.value || undefined })} /></label>
+            <div className="space-y-1 text-xs text-muted-foreground"><span>{t("filters.createdBetween")}</span><div className="flex gap-1.5"><Input type="date" value={filters.createdFrom ?? ""} onChange={(e) => setF({ createdFrom: e.target.value || undefined })} /><Input type="date" value={filters.createdTo ?? ""} onChange={(e) => setF({ createdTo: e.target.value || undefined })} /></div></div>
+            <div className="space-y-1 text-xs text-muted-foreground"><span>{t("filters.publicationBetween")}</span><div className="flex gap-1.5"><Input type="date" value={filters.scheduledFrom ?? ""} onChange={(e) => setF({ scheduledFrom: e.target.value || undefined, ...(filters.planning === "backlog" && e.target.value ? { planning: "all" } : {}) })} /><Input type="date" value={filters.scheduledTo ?? ""} onChange={(e) => setF({ scheduledTo: e.target.value || undefined, ...(filters.planning === "backlog" && e.target.value ? { planning: "all" } : {}) })} /></div></div>
+            <div className="space-y-1 text-xs text-muted-foreground"><span>{t("filters.suggestedBetween")}</span><div className="flex gap-1.5"><Input type="date" value={filters.suggestedFrom ?? ""} onChange={(e) => setF({ suggestedFrom: e.target.value || undefined })} /><Input type="date" value={filters.suggestedTo ?? ""} onChange={(e) => setF({ suggestedTo: e.target.value || undefined })} /></div></div>
+            <div className="flex items-end"><Button variant="ghost" size="sm" onClick={() => setFilters({ ...DEFAULT_FILTERS, planning: filters.planning, sort: filters.sort })}>{t("filters.clear")}</Button></div>
           </div>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span>{loading ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : null}{data.total} idea{data.total === 1 ? "" : "s"} · times in {tz}
-            {canEdit && props.aiEnabled && filters.audiences?.[0] === "none" && data.total ? <button type="button" className="ml-3 text-primary hover:underline disabled:opacity-50" disabled={busy !== null} onClick={() => bulk("backfill", () => tagUntaggedAction(projectId))}>{busy === "backfill" ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : <Sparkles className="mr-1 inline size-3" />}Tag untagged items with AI</button> : null}
+          <span>{loading ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : null}{t("summary.count", { count: data.total, tz })}
+            {canEdit && props.aiEnabled && filters.audiences?.[0] === "none" && data.total ? <button type="button" className="ml-3 text-primary hover:underline disabled:opacity-50" disabled={busy !== null} onClick={() => bulk("backfill", () => tagUntaggedAction(projectId))}>{busy === "backfill" ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : <Sparkles className="mr-1 inline size-3" />}{t("summary.tagUntagged")}</button> : null}
           </span>
           {canEdit && data.ideas.length ? <span className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5"><input type="checkbox" checked={selected.size > 0 && selected.size === data.ideas.length} onChange={(e) => setSelected(e.target.checked ? new Set(data.ideas.map((i) => i.id)) : new Set())} /> Select all shown</label>
-            {data.total > data.ideas.length ? <button type="button" className="text-primary hover:underline disabled:opacity-50" disabled={busy !== null} onClick={() => void selectAllMatching()}>{busy === "selectall" ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : null}Select all {data.total}</button> : null}
+            <label className="flex items-center gap-1.5"><input type="checkbox" checked={selected.size > 0 && selected.size === data.ideas.length} onChange={(e) => setSelected(e.target.checked ? new Set(data.ideas.map((i) => i.id)) : new Set())} /> {t("summary.selectShown")}</label>
+            {data.total > data.ideas.length ? <button type="button" className="text-primary hover:underline disabled:opacity-50" disabled={busy !== null} onClick={() => void selectAllMatching()}>{busy === "selectall" ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : null}{t("summary.selectAllCount", { count: data.total })}</button> : null}
           </span> : null}
         </div>
       </div>
@@ -222,40 +230,40 @@ export function BacklogApp(props: {
       {/* Bulk actions */}
       {canEdit && selected.size ? (
         <div className="sticky top-2 z-20 flex flex-wrap items-center gap-1.5 rounded-lg border bg-card p-2 shadow-sm">
-          <span className="px-1 text-[13px] font-medium">{selected.size} selected</span>
-          {props.aiEnabled ? <Button size="sm" variant="outline" disabled={busy !== null} title={selected.size > 200 ? "Scores the first 200; run it again for the rest" : undefined} onClick={() => bulk("score", () => scoreIdeasAction(projectId, ids))}>{busy === "score" ? <Loader2 className="animate-spin" /> : <Sparkles />} Score with AI</Button> : null}
-          <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("suggest", () => refreshSuggestionsAction(projectId, ids))}>{busy === "suggest" ? <Loader2 className="animate-spin" /> : <CalendarPlus />} Suggest times</Button>
-          <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("production", () => sendToProductionAction(projectId, ids))}><Send /> Send to Production</Button>
-          <NativeSelect aria-label="Set audience" className="h-8 w-36" value="" onChange={(e) => e.target.value && bulk("audience", () => setAudienceTagAction(projectId, ids, e.target.value as Audience))}><option value="">Set audience…</option>{AUDIENCES.map((a) => <option key={a} value={a}>{AUDIENCE_LABELS[a]}</option>)}</NativeSelect>
-          {props.aiEnabled ? <Button size="sm" variant="outline" disabled={busy !== null} title={selected.size > 200 ? "Tags the first 200; run it again for the rest" : undefined} onClick={() => bulk("aiaudience", () => suggestAudienceAction(projectId, ids))}>{busy === "aiaudience" ? <Loader2 className="animate-spin" /> : <Sparkles />} AI: suggest audience</Button> : null}
-          <NativeSelect aria-label="Set priority" className="h-8 w-32" value="" onChange={(e) => e.target.value && bulk("priority", () => setPriorityAction(projectId, ids, e.target.value as "low"))}><option value="">Priority…</option>{PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}</NativeSelect>
-          <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => { const t = window.prompt("Tag to add"); if (t) void bulk("tag", () => tagIdeasAction(projectId, ids, t)); }}><Tag /> Tag</Button>
-          {filters.planning !== "backlog" || filters.scheduledFrom || filters.scheduledTo ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={async () => { if (ids.length > 20 && !(await confirm({ title: `Move ${ids.length} items back to the Backlog?`, description: "They leave the Calendar and Production and show only in the Backlog. Their writing, files and history are kept; approvals restart if you send them to Production again. Scheduled and published posts are left as they are.", confirmLabel: "Back to Backlog" }))) return; await bulk("unplan", () => unplanIdeasAction(projectId, ids)); }}><Undo2 /> Back to Backlog</Button> : null}
-          <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("archive", () => archiveIdeasAction(projectId, ids, !filters.archived))}>{filters.archived ? <ArchiveRestore /> : <Archive />} {filters.archived ? "Restore" : "Archive"}</Button>
-          <Button size="sm" variant="ghost" className="text-destructive" disabled={busy !== null} onClick={async () => { if (await confirm({ title: `Delete ${selected.size} idea${selected.size > 1 ? "s" : ""}?`, description: "They are deleted permanently with their stored files. Scheduled and published posts are skipped.", confirmLabel: "Delete permanently", destructive: true })) await bulk("delete", () => deleteIdeasAction(projectId, ids)); }}><Trash2 /> Delete</Button>
-          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear</Button>
+          <span className="px-1 text-[13px] font-medium">{t("bulk.selected", { count: selected.size })}</span>
+          {props.aiEnabled ? <Button size="sm" variant="outline" disabled={busy !== null} title={selected.size > 200 ? t("bulk.scoreLimit") : undefined} onClick={() => bulk("score", () => scoreIdeasAction(projectId, ids))}>{busy === "score" ? <Loader2 className="animate-spin" /> : <Sparkles />} {t("bulk.score")}</Button> : null}
+          <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("suggest", () => refreshSuggestionsAction(projectId, ids))}>{busy === "suggest" ? <Loader2 className="animate-spin" /> : <CalendarPlus />} {t("bulk.suggestTimes")}</Button>
+          <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("production", () => sendToProductionAction(projectId, ids))}><Send /> {t("bulk.sendToProduction")}</Button>
+          <NativeSelect aria-label={t("bulk.setAudience")} className="h-8 w-36" value="" onChange={(e) => e.target.value && bulk("audience", () => setAudienceTagAction(projectId, ids, e.target.value as Audience))}><option value="">{t("bulk.setAudiencePlaceholder")}</option>{AUDIENCES.map((a) => <option key={a} value={a}>{td(`audience.${a}`)}</option>)}</NativeSelect>
+          {props.aiEnabled ? <Button size="sm" variant="outline" disabled={busy !== null} title={selected.size > 200 ? t("bulk.audienceLimit") : undefined} onClick={() => bulk("aiaudience", () => suggestAudienceAction(projectId, ids))}>{busy === "aiaudience" ? <Loader2 className="animate-spin" /> : <Sparkles />} {t("bulk.suggestAudience")}</Button> : null}
+          <NativeSelect aria-label={t("bulk.setPriority")} className="h-8 w-32" value="" onChange={(e) => e.target.value && bulk("priority", () => setPriorityAction(projectId, ids, e.target.value as "low"))}><option value="">{t("bulk.priorityPlaceholder")}</option>{PRIORITIES.map((p) => <option key={p} value={p}>{td(`priority.${p}`)}</option>)}</NativeSelect>
+          <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => { const tag = window.prompt(t("bulk.tagPrompt")); if (tag) void bulk("tag", () => tagIdeasAction(projectId, ids, tag)); }}><Tag /> {t("bulk.tag")}</Button>
+          {filters.planning !== "backlog" || filters.scheduledFrom || filters.scheduledTo ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={async () => { if (ids.length > 20 && !(await confirm({ title: t("bulk.unplanConfirmTitle", { count: ids.length }), description: t("bulk.unplanConfirmBody"), confirmLabel: t("bulk.backToBacklog") }))) return; await bulk("unplan", () => unplanIdeasAction(projectId, ids)); }}><Undo2 /> {t("bulk.backToBacklog")}</Button> : null}
+          <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => bulk("archive", () => archiveIdeasAction(projectId, ids, !filters.archived))}>{filters.archived ? <ArchiveRestore /> : <Archive />} {filters.archived ? tc("actions.restore") : tc("actions.archive")}</Button>
+          <Button size="sm" variant="ghost" className="text-destructive" disabled={busy !== null} onClick={async () => { if (await confirm({ title: t("bulk.deleteConfirmTitle", { count: selected.size }), description: t("bulk.deleteConfirmBody"), confirmLabel: t("bulk.deletePermanently"), destructive: true })) await bulk("delete", () => deleteIdeasAction(projectId, ids)); }}><Trash2 /> {tc("actions.delete")}</Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>{tc("actions.clear")}</Button>
         </div>
       ) : null}
 
       {/* Views */}
       {!data.ideas.length ? (
         <div className="rounded-xl border border-dashed p-10 text-center text-[13px] text-muted-foreground">
-          {activeCount || filters.q ? "No idea matches these filters." : filters.archived ? "No archived ideas." : "The Backlog is empty. Add your first idea, or create ideas from Opportunities."}
+          {activeCount || filters.q ? t("empty.filtered") : filters.archived ? t("empty.archived") : t("empty.backlog")}
         </div>
       ) : view === "list" ? (
         <div className="overflow-x-auto rounded-xl border bg-card">
           <table className="w-full min-w-[760px] text-[13px]">
             <thead className="border-b text-left text-xs text-muted-foreground"><tr>
-              {canEdit ? <th className="w-8 p-2" /> : null}<th className="p-2">Idea</th><th className="p-2">Score</th><th className="p-2">Suggested</th><th className="p-2">Priority</th><th className="p-2">Status</th><th className="w-10 p-2" />
+              {canEdit ? <th className="w-8 p-2" /> : null}<th className="p-2">{t("table.idea")}</th><th className="p-2">{t("table.score")}</th><th className="p-2">{t("table.suggested")}</th><th className="p-2">{t("table.priority")}</th><th className="p-2">{t("table.status")}</th><th className="w-10 p-2" />
             </tr></thead>
             <tbody>{data.ideas.map((i) => (
               <tr key={i.id} className="border-b last:border-0 hover:bg-muted/40">
-                {canEdit ? <td className="p-2"><input type="checkbox" aria-label={`Select ${i.title}`} checked={selected.has(i.id)} onChange={() => toggle(i.id)} /></td> : null}
+                {canEdit ? <td className="p-2"><input type="checkbox" aria-label={t("row.select", { title: i.title })} checked={selected.has(i.id)} onChange={() => toggle(i.id)} /></td> : null}
                 <td className="max-w-md p-2"><button className="text-left font-medium hover:text-primary" onClick={() => setOpen(i)}>{i.title}</button><Meta idea={i} pillar={pillarName(i.pillar_id)} canEdit={canEdit} onAudience={(a) => void setTag(i, a)} /></td>
                 <td className="p-2"><ScoreBadge s={i.idea_score} /> <ImpactEffort idea={i} /></td>
-                <td className="p-2 text-xs">{i.suggested_slot ? <>{slotLabel(i.suggested_slot.date, i.suggested_slot.time)}<br /><span className="text-muted-foreground">{i.suggested_slot.confidence}</span></> : "—"}</td>
-                <td className="p-2 text-xs">{PRIORITY_LABEL[i.priority ?? "medium"]}</td>
-                <td className="p-2"><Badge variant="outline">{lifecycleOf(i)}</Badge></td>
+                <td className="p-2 text-xs">{i.suggested_slot ? <>{slotLabel(fmt, t, i.suggested_slot.date, i.suggested_slot.time)}<br /><span className="text-muted-foreground">{t(`confidence.${i.suggested_slot.confidence}`).toLowerCase()}</span></> : "—"}</td>
+                <td className="p-2 text-xs">{td(`priority.${prio(i.priority)}`)}</td>
+                <td className="p-2"><Badge variant="outline">{t(`lifecycle.${lifecycleOf(i)}`)}</Badge></td>
                 <td className="p-2"><RowMenu idea={i} canEdit={canEdit} a={actions(i)} /></td>
               </tr>
             ))}</tbody>
@@ -271,16 +279,16 @@ export function BacklogApp(props: {
             {PRIORITIES.map((p) => {
               const col = data.ideas.filter((i) => (i.priority ?? "medium") === p);
               return (
-                <KanbanColumn key={p} id={p} label={`${PRIORITY_LABEL[p]} priority`} count={col.length}>
+                <KanbanColumn key={p} id={p} label={t(`kanban.column.${p}`)} count={col.length}>
                   {col.map((i) => <DraggableCard key={i.id} id={i.id} disabled={!canEdit}><IdeaCard idea={i} pillar={pillarName(i.pillar_id)} canEdit={canEdit} selected={selected.has(i.id)} onToggle={() => toggle(i.id)} a={actions(i)} onAudience={(a) => void setTag(i, a)} compact /></DraggableCard>)}
                 </KanbanColumn>
               );
             })}
           </div>
-          <p className="text-xs text-muted-foreground">Drag a card to another column to change its priority.</p>
+          <p className="text-xs text-muted-foreground">{t("kanban.hint")}</p>
         </DndContext>
       )}
-      {data.ideas.length < data.total ? <div className="text-center"><Button variant="outline" disabled={loading} onClick={() => load(filters, page + 1)}>{loading ? <Loader2 className="animate-spin" /> : null} Load more ({data.total - data.ideas.length} left)</Button></div> : null}
+      {data.ideas.length < data.total ? <div className="text-center"><Button variant="outline" disabled={loading} onClick={() => load(filters, page + 1)}>{loading ? <Loader2 className="animate-spin" /> : null} {t("loadMore", { count: data.total - data.ideas.length })}</Button></div> : null}
 
       {current ? <IdeaDetail key={current.id + current.updated_at} projectId={projectId} idea={current} pillars={props.pillars} tz={tz} canEdit={canEdit} onClose={() => setOpen(null)} onChanged={changed} onPlace={(idea, date, time) => setPlace({ idea, date, time })} /> : null}
       {place ? <ScheduleDialog projectId={projectId} tz={tz} idea={place.time ? { ...place.idea, suggested_slot: place.idea.suggested_slot && { ...place.idea.suggested_slot, date: place.date!, time: place.time } } : place.idea} date={place.date ?? null} onClose={() => setPlace(null)} onPlaced={async () => { setPlace(null); setOpen(null); await reload(); }} /> : null}
@@ -292,24 +300,31 @@ export function BacklogApp(props: {
 }
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[][] }) {
-  return <label className="space-y-1 text-xs text-muted-foreground"><span>{label}</span><NativeSelect value={value} onChange={(e) => onChange(e.target.value)} className="text-foreground"><option value="">All</option>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</NativeSelect></label>;
+  const tc = useT("common");
+  return <label className="space-y-1 text-xs text-muted-foreground"><span>{label}</span><NativeSelect value={value} onChange={(e) => onChange(e.target.value)} className="text-foreground"><option value="">{tc("states.all")}</option>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</NativeSelect></label>;
 }
-const ScoreBadge = ({ s }: { s: number | null }) => <Badge variant={scoreTone(s)} className="tabular-nums">{s == null ? "Not scored" : `${s}/100`}</Badge>;
+function ScoreBadge({ s }: { s: number | null }) {
+  const t = useT("backlog");
+  return <Badge variant={scoreTone(s)} className="tabular-nums">{s == null ? t("score.notScored") : t("score.outOf", { score: s })}</Badge>;
+}
 
 function ImpactEffort({ idea }: { idea: Idea }) {
+  const t = useT("backlog");
   const ie = impactEffort(idea.score_details);
-  return ie ? <span className="whitespace-nowrap text-xs text-muted-foreground" title="Impact = business value, Effort = production complexity (0–100, from the score criteria)">Impact {ie.impact} · Effort {ie.effort}</span> : null;
+  return ie ? <span className="whitespace-nowrap text-xs text-muted-foreground" title={t("score.impactEffortHint")}>{t("score.impactEffort", { impact: ie.impact, effort: ie.effort })}</span> : null;
 }
 
 function Meta({ idea, pillar, canEdit, onAudience }: { idea: Idea; pillar: string | null; canEdit: boolean; onAudience: (a: Audience) => void }) {
+  const t = useT("backlog");
+  const td = useT("domain");
   const platforms = idea.target_platforms?.length ? idea.target_platforms : idea.platform ? [idea.platform] : [];
   return (
     <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
       <AudienceSelect value={idea.audience} onChange={onAudience} disabled={!canEdit} />
-      {idea.audience_segment === "both" ? <span className="rounded bg-primary-soft px-1 font-medium text-primary" title="Segment: speaks to both sides of the marketplace">{SEGMENT_LABELS.both}</span> : null}
+      {idea.audience_segment === "both" ? <span className="rounded bg-primary-soft px-1 font-medium text-primary" title={t("segmentBothHint")}>{td("segment.both")}</span> : null}
       {pillar ? <span>{pillar}</span> : null}{pillar && idea.format ? <span>·</span> : null}{idea.format ? <span>{idea.format}</span> : null}
       {platforms.map((p) => <PlatformIcon key={p} platform={p} />)}
-      {(idea.tags ?? []).slice(0, 3).map((t) => <span key={t} className="rounded bg-muted px-1">#{t}</span>)}
+      {(idea.tags ?? []).slice(0, 3).map((x) => <span key={x} className="rounded bg-muted px-1">#{x}</span>)}
     </p>
   );
 }
@@ -317,18 +332,20 @@ function Meta({ idea, pillar, canEdit, onAudience }: { idea: Idea; pillar: strin
 type Acts = Record<"preview" | "place" | "production" | "duplicate" | "archive" | "unplan" | "remove", () => void>;
 
 function RowMenu({ idea, canEdit, a }: { idea: Idea; canEdit: boolean; a: Acts }) {
+  const t = useT("backlog");
+  const tc = useT("common");
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" aria-label={`Actions for ${idea.title}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
+      <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" aria-label={t("row.actionsFor", { title: idea.title })}><MoreHorizontal /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={a.preview}><Eye /> Edit / preview</DropdownMenuItem>
+        <DropdownMenuItem onSelect={a.preview}><Eye /> {t("row.editPreview")}</DropdownMenuItem>
         {canEdit ? <>
-          {!idea.scheduled_date ? <DropdownMenuItem onSelect={a.place}><CalendarPlus /> Add to calendar</DropdownMenuItem> : idea.status !== "scheduled" ? <DropdownMenuItem onSelect={a.unplan}><Undo2 /> Back to Backlog</DropdownMenuItem> : null}
-          {idea.production_stage === "idea" ? <DropdownMenuItem onSelect={a.production}><Send /> Send to Production</DropdownMenuItem> : null}
-          <DropdownMenuItem onSelect={a.duplicate}><Copy /> Duplicate</DropdownMenuItem>
-          <DropdownMenuItem onSelect={a.archive}>{idea.archived_at ? <ArchiveRestore /> : <Archive />} {idea.archived_at ? "Restore" : "Archive"}</DropdownMenuItem>
+          {!idea.scheduled_date ? <DropdownMenuItem onSelect={a.place}><CalendarPlus /> {t("row.addToCalendar")}</DropdownMenuItem> : idea.status !== "scheduled" ? <DropdownMenuItem onSelect={a.unplan}><Undo2 /> {t("bulk.backToBacklog")}</DropdownMenuItem> : null}
+          {idea.production_stage === "idea" ? <DropdownMenuItem onSelect={a.production}><Send /> {t("bulk.sendToProduction")}</DropdownMenuItem> : null}
+          <DropdownMenuItem onSelect={a.duplicate}><Copy /> {tc("actions.duplicate")}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={a.archive}>{idea.archived_at ? <ArchiveRestore /> : <Archive />} {idea.archived_at ? tc("actions.restore") : tc("actions.archive")}</DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={a.remove} className="text-destructive"><Trash2 /> Delete</DropdownMenuItem>
+          <DropdownMenuItem onSelect={a.remove} className="text-destructive"><Trash2 /> {tc("actions.delete")}</DropdownMenuItem>
         </> : null}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -336,11 +353,14 @@ function RowMenu({ idea, canEdit, a }: { idea: Idea; canEdit: boolean; a: Acts }
 }
 
 function IdeaCard({ idea, pillar, canEdit, selected, onToggle, a, onAudience, compact }: { idea: Idea; pillar: string | null; canEdit: boolean; selected: boolean; onToggle: () => void; a: Acts; onAudience: (a: Audience) => void; compact?: boolean }) {
+  const t = useT("backlog");
+  const td = useT("domain");
+  const fmt = useFormatter();
   const s = idea.suggested_slot;
   return (
     <article className={cn("flex flex-col gap-2 rounded-xl border bg-card p-3 shadow-xs", selected && "ring-2 ring-primary")}>
       <div className="flex items-start gap-2">
-        {canEdit ? <input type="checkbox" className="mt-1" aria-label={`Select ${idea.title}`} checked={selected} onChange={onToggle} onPointerDown={(e) => e.stopPropagation()} /> : null}
+        {canEdit ? <input type="checkbox" className="mt-1" aria-label={t("row.select", { title: idea.title })} checked={selected} onChange={onToggle} onPointerDown={(e) => e.stopPropagation()} /> : null}
         <button className="min-w-0 flex-1 text-left text-[13px] font-semibold leading-5 hover:text-primary" onClick={a.preview} onPointerDown={(e) => e.stopPropagation()}>{idea.title}</button>
         <div onPointerDown={(e) => e.stopPropagation()}><RowMenu idea={idea} canEdit={canEdit} a={a} /></div>
       </div>
@@ -349,14 +369,14 @@ function IdeaCard({ idea, pillar, canEdit, selected, onToggle, a, onAudience, co
       <div className="mt-auto flex flex-wrap items-center gap-1.5 text-xs">
         <ScoreBadge s={idea.idea_score} />
         <ImpactEffort idea={idea} />
-        <Badge variant="outline">{lifecycleOf(idea)}</Badge>
-        {!compact ? <Badge variant="secondary">{PRIORITY_LABEL[idea.priority ?? "medium"]}</Badge> : null}
+        <Badge variant="outline">{t(`lifecycle.${lifecycleOf(idea)}`)}</Badge>
+        {!compact ? <Badge variant="secondary">{td(`priority.${prio(idea.priority)}`)}</Badge> : null}
       </div>
-      <p className="text-xs text-muted-foreground">{idea.scheduled_date ? <>On the calendar: <span className="text-foreground">{slotLabel(idea.scheduled_date, idea.scheduled_time?.slice(0, 5) ?? "—")}</span></> : s ? <>Suggested: <span className="text-foreground">{slotLabel(s.date, s.time)}</span> · {s.confidence}{s.source === "heuristic" ? " (heuristic)" : ""}</> : "No suggested time yet"}</p>
+      <p className="text-xs text-muted-foreground">{idea.scheduled_date ? <>{t("row.onCalendar")}<span className="text-foreground">{slotLabel(fmt, t, idea.scheduled_date, idea.scheduled_time?.slice(0, 5) ?? "—")}</span></> : s ? <>{t("row.suggested")}<span className="text-foreground">{slotLabel(fmt, t, s.date, s.time)}</span> · {t(`confidence.${s.confidence}`).toLowerCase()}{s.source === "heuristic" ? t("row.heuristicSuffix") : ""}</> : t("row.noSuggestion")}</p>
       {canEdit && !idea.scheduled_date && !compact ? (
         <div className="flex gap-1.5" onPointerDown={(e) => e.stopPropagation()}>
-          <Button size="sm" variant="outline" onClick={a.place}><CalendarPlus /> Add to calendar</Button>
-          {idea.production_stage === "idea" ? <Button size="sm" variant="ghost" onClick={a.production}><Send /> Production</Button> : null}
+          <Button size="sm" variant="outline" onClick={a.place}><CalendarPlus /> {t("row.addToCalendar")}</Button>
+          {idea.production_stage === "idea" ? <Button size="sm" variant="ghost" onClick={a.production}><Send /> {t("row.production")}</Button> : null}
         </div>
       ) : null}
     </article>
@@ -381,32 +401,35 @@ function NewIdeaDialog({ projectId, pillars, onClose, onCreated }: { projectId: 
   const [f, setF] = React.useState({ title: "", description: "", pillar_id: "", format: "", platforms: ["facebook"] as string[], audience: "", tags: "", tag: "", goal: "" });
   const segment = f.tag ? `${f.tag}s` : "";
   const [busy, setBusy] = React.useState(false);
+  const t = useT("backlog");
+  const tc = useT("common");
+  const td = useT("domain");
   const submit = async () => {
     setBusy(true);
-    const r = await createIdeaAction(projectId, { title: f.title, description: f.description || null, pillar_id: f.pillar_id || null, format: f.format || null, target_platforms: f.platforms, target_audience: f.audience || null, tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean), audience: (f.tag || null) as Audience | null, conversion_goal: f.goal || null });
+    const r = await createIdeaAction(projectId, { title: f.title, description: f.description || null, pillar_id: f.pillar_id || null, format: f.format || null, target_platforms: f.platforms, target_audience: f.audience || null, tags: f.tags.split(",").map((x) => x.trim()).filter(Boolean), audience: (f.tag || null) as Audience | null, conversion_goal: f.goal || null });
     setBusy(false);
     if (!r.ok) return void toast.error(r.error);
-    toast.success(r.message ?? "Added");
+    toast.success(r.message ?? t("newIdea.added"));
     onCreated();
   };
   return (
     <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
       <DialogContent>
-        <DialogHeader><DialogTitle>New idea</DialogTitle><DialogDescription>It goes to the Backlog with a suggested time. You decide when it reaches the calendar.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{t("newIdea.title")}</DialogTitle><DialogDescription>{t("newIdea.description")}</DialogDescription></DialogHeader>
         <div className="space-y-3 text-[13px]">
-          <Input autoFocus placeholder="Idea title" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
-          <textarea className="min-h-20 w-full rounded-md border bg-transparent px-3 py-2 text-[13px]" placeholder="Description (optional)" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
+          <Input autoFocus placeholder={t("newIdea.titlePlaceholder")} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
+          <textarea className="min-h-20 w-full rounded-md border bg-transparent px-3 py-2 text-[13px]" placeholder={t("newIdea.descriptionPlaceholder")} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
           <div className="grid gap-2 sm:grid-cols-2">
-            <NativeSelect value={f.tag} onChange={(e) => setF({ ...f, tag: e.target.value, goal: "", pillar_id: "" })} aria-label="Audience"><option value="">Audience: AI decides</option>{AUDIENCES.map((a) => <option key={a} value={a}>{AUDIENCE_LABELS[a]}</option>)}</NativeSelect>
-            <NativeSelect value={f.goal} onChange={(e) => setF({ ...f, goal: e.target.value })} aria-label="Conversion goal"><option value="">Conversion goal…</option>{goalsFor(segment).map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}</NativeSelect>
-            <NativeSelect value={f.pillar_id} onChange={(e) => setF({ ...f, pillar_id: e.target.value })} aria-label="Content pillar"><option value="">No pillar</option>{(["students_parents", "teachers", "both"] as Side[]).map((side) => { const list = pillars.filter((p) => (p.segment ?? "students_parents") === side && (!segment || side === "both" || (side === "teachers") === (segment === "teachers"))); return list.length ? <optgroup key={side} label={SIDE_LABELS[side]}>{list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup> : null; })}</NativeSelect>
-            <NativeSelect value={f.format} onChange={(e) => setF({ ...f, format: e.target.value })} aria-label="Format"><option value="">Format…</option>{FORMATS.map((x) => <option key={x} value={x}>{x}</option>)}</NativeSelect>
-            <Input placeholder="Target audience" value={f.audience} onChange={(e) => setF({ ...f, audience: e.target.value })} />
-            <Input placeholder="Tags, comma separated" value={f.tags} onChange={(e) => setF({ ...f, tags: e.target.value })} />
+            <NativeSelect value={f.tag} onChange={(e) => setF({ ...f, tag: e.target.value, goal: "", pillar_id: "" })} aria-label={t("newIdea.audience")}><option value="">{t("newIdea.audienceAi")}</option>{AUDIENCES.map((a) => <option key={a} value={a}>{td(`audience.${a}`)}</option>)}</NativeSelect>
+            <NativeSelect value={f.goal} onChange={(e) => setF({ ...f, goal: e.target.value })} aria-label={t("newIdea.goal")}><option value="">{t("newIdea.goalPlaceholder")}</option>{goalsFor(segment).map((g) => <option key={g.key} value={g.key}>{td(goalKey(g.key))}</option>)}</NativeSelect>
+            <NativeSelect value={f.pillar_id} onChange={(e) => setF({ ...f, pillar_id: e.target.value })} aria-label={t("newIdea.pillar")}><option value="">{t("newIdea.noPillar")}</option>{(["students_parents", "teachers", "both"] as Side[]).map((side) => { const list = pillars.filter((p) => (p.segment ?? "students_parents") === side && (!segment || side === "both" || (side === "teachers") === (segment === "teachers"))); return list.length ? <optgroup key={side} label={td(`side.${side}`)}>{list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup> : null; })}</NativeSelect>
+            <NativeSelect value={f.format} onChange={(e) => setF({ ...f, format: e.target.value })} aria-label={t("newIdea.format")}><option value="">{t("newIdea.formatPlaceholder")}</option>{FORMATS.map((x) => <option key={x} value={x}>{x}</option>)}</NativeSelect>
+            <Input placeholder={t("newIdea.targetAudience")} value={f.audience} onChange={(e) => setF({ ...f, audience: e.target.value })} />
+            <Input placeholder={t("newIdea.tags")} value={f.tags} onChange={(e) => setF({ ...f, tags: e.target.value })} />
           </div>
           <div className="flex flex-wrap gap-3">{PLATFORM_CHOICES.map((p) => <label key={p} className="flex items-center gap-1.5"><input type="checkbox" checked={f.platforms.includes(p)} onChange={() => setF({ ...f, platforms: f.platforms.includes(p) ? f.platforms.filter((x) => x !== p) : [...f.platforms, p] })} />{PLATFORM_LABELS[p as Platform]}</label>)}</div>
         </div>
-        <DialogFooter><Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button><Button onClick={submit} disabled={busy || f.title.trim().length < 2}>{busy ? <Loader2 className="animate-spin" /> : <Plus />} Add to Backlog</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={onClose} disabled={busy}>{tc("actions.cancel")}</Button><Button onClick={submit} disabled={busy || f.title.trim().length < 2}>{busy ? <Loader2 className="animate-spin" /> : <Plus />} {t("newIdea.submit")}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -416,17 +439,19 @@ function WeightsDialog({ projectId, initial, onClose }: { projectId: string; ini
   const [w, setW] = React.useState<Weights>(initial);
   const [busy, setBusy] = React.useState(false);
   const total = Object.values(w).reduce((a, b) => a + b, 0);
+  const t = useT("backlog");
+  const tc = useT("common");
   return (
     <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Scoring weights for this brand</DialogTitle><DialogDescription>How much each criterion counts in the idea score. Weights are rescaled to 100%. Rescore ideas to apply new weights.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{t("weights.title")}</DialogTitle><DialogDescription>{t("weights.description")}</DialogDescription></DialogHeader>
         <div className="space-y-2 text-[13px]">
           {CRITERIA.map((c) => (
-            <label key={c.key} className="flex items-center justify-between gap-3"><span>{c.label}</span><Input type="number" min={0} max={100} className="w-24" value={w[c.key]} onChange={(e) => setW({ ...w, [c.key]: Number(e.target.value) || 0 })} /></label>
+            <label key={c.key} className="flex items-center justify-between gap-3"><span>{t(`criteria.${c.key}`)}</span><Input type="number" min={0} max={100} className="w-24" value={w[c.key]} onChange={(e) => setW({ ...w, [c.key]: Number(e.target.value) || 0 })} /></label>
           ))}
-          <p className="text-xs text-muted-foreground">Total: {Math.round(total)} (saved as {Object.values(normalizeWeights(w)).map((x) => Math.round(x)).join(" / ")} %)</p>
+          <p className="text-xs text-muted-foreground">{t("weights.total", { total: Math.round(total), weights: Object.values(normalizeWeights(w)).map((x) => Math.round(x)).join(" / ") })}</p>
         </div>
-        <DialogFooter><Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button><Button disabled={busy || !total} onClick={async () => { setBusy(true); const r = await saveScoreWeightsAction(projectId, w); setBusy(false); if (r.ok) { toast.success(r.message ?? "Saved"); onClose(); } else toast.error(r.error); }}>Save weights</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={onClose} disabled={busy}>{tc("actions.cancel")}</Button><Button disabled={busy || !total} onClick={async () => { setBusy(true); const r = await saveScoreWeightsAction(projectId, w); setBusy(false); if (r.ok) { toast.success(r.message ?? t("savedToast")); onClose(); } else toast.error(r.error); }}>{t("weights.save")}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

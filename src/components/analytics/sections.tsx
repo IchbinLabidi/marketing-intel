@@ -9,21 +9,31 @@ import { Stat } from "@/components/app/stat";
 import { SectionHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { BarList } from "@/components/history/charts";
-import { PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
-import { STAGE_LABELS, type ProductionStage } from "@/lib/production/model";
+import { contentTypeLabel, platformLabelOf, stageLabelOf } from "@/lib/analytics/compute";
 import type { AnalyticsData } from "@/server/services/analytics";
+import { getFormatter, getT } from "@/i18n/server";
+import type { Formatter } from "@/i18n/format";
 import { cn } from "@/lib/utils";
 import { ShareBars, WeeklyColumns } from "./charts";
 import { PlatformIcon } from "@/components/calendar/platform-icon";
 import { InfoTip } from "./info-tip";
 
-const n = (v: number | null | undefined, digits = 0) => (v == null ? "—" : v.toLocaleString("en", { maximumFractionDigits: digits, minimumFractionDigits: 0 }));
 const change = (now: number | null | undefined, prev: number | null | undefined) => (now == null || prev == null || prev === 0 ? null : ((now - prev) / prev) * 100);
-const days = (v: number | null) => (v == null ? "—" : v < 1 ? `${(v * 24).toFixed(0)} h` : `${v.toFixed(1)} d`);
-const stage = (s: string) => STAGE_LABELS[s as ProductionStage] ?? s;
-const platformLabel = (p: string) => PLATFORM_LABELS[p as Platform] ?? p;
-const fmtDate = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-export const periodLabel = (p: { from: string; to: string }) => `${fmtDate(p.from)} – ${fmtDate(p.to)}`;
+const fmtDate = (fmt: Formatter, d: string) => fmt.day(d, { day: "numeric", month: "short", year: "numeric" });
+export const periodLabel = (p: { from: string; to: string }, fmt: Formatter) => `${fmtDate(fmt, p.from)} – ${fmtDate(fmt, p.to)}`;
+
+/** Locale-aware formatting helpers shared by the sections. */
+async function tools() {
+  const [t, td, fmt] = await Promise.all([getT("analytics"), getT("domain"), getFormatter()]);
+  const n = (v: number | null | undefined, digits = 0) => (v == null ? "—" : fmt.number(v, { maximumFractionDigits: digits, minimumFractionDigits: 0 }));
+  const fixed = (v: number, digits: number) => fmt.number(v, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const pct = (v: number, digits = 0) => fmt.number(v / 100, { style: "percent", minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const days = (v: number | null) => (v == null ? "—" : v < 1 ? t("labels.hours", { value: fixed(v * 24, 0) }) : t("labels.days", { value: fixed(v, 1) }));
+  const stage = (s: string) => stageLabelOf(t, s);
+  const platformLabel = (p: string) => platformLabelOf(td, p);
+  const period = (p: { from: string; to: string }) => periodLabel(p, fmt);
+  return { t, fmt, n, fixed, pct, days, stage, platformLabel, period };
+}
 
 function Section({ id, title, description, children, actions }: { id: string; title: string; description?: React.ReactNode; children: React.ReactNode; actions?: React.ReactNode }) {
   return (
@@ -37,21 +47,22 @@ function Section({ id, title, description, children, actions }: { id: string; ti
 // ---------------------------------------------------------------------------
 // A. Executive overview
 // ---------------------------------------------------------------------------
-export function OverviewSection({ data }: { data: AnalyticsData }) {
+export async function OverviewSection({ data }: { data: AnalyticsData }) {
+  const { t, n, pct, period } = await tools();
   const o = data.overview, p = data.overviewPrev;
   const weeks = ((Date.parse(data.params.period.to) - Date.parse(data.params.period.from)) / 86_400_000 + 1) / 7;
-  const prevHint = p ? `vs ${periodLabel(data.prevPeriod)}` : undefined;
+  const prevHint = (value: string) => t("overview.vsPrevious", { value, period: period(data.prevPeriod) });
   return (
-    <Section id="overview" title="Overview" description={`${periodLabel(data.params.period)}. ${data.periodOpen ? `The period isn't over, so results so far are compared with ${periodLabel(data.prevPeriod)}` : "Counts in the period compare with the previous period of the same length"}; current workload is as of today.`}>
+    <Section id="overview" title={t("overview.title")} description={data.periodOpen ? t("overview.descriptionOpen", { period: period(data.params.period), previous: period(data.prevPeriod) }) : t("overview.descriptionClosed", { period: period(data.params.period) })}>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Planned in period" info={<InfoTip expert info={data.ceo.explain.planned} />} icon={CalendarCheck2} value={n(o.planned)} delta={p && !data.periodOpen ? change(o.planned, p.planned) : null} hint={p ? `${n(p.planned)} ${prevHint}` : "Planned publication date in the period"} />
-        <Stat label="Published in period" info={<InfoTip expert info={data.ceo.explain.published} />} icon={Send} value={n(o.published)} delta={p ? change(o.published, p.published) : null} hint={p ? `${n(p.published)} ${prevHint}` : "Verified publications"} />
-        <Stat label="Completion rate" info={<InfoTip expert info={data.ceo.explain.completion} />} icon={CheckCircle2} value={o.completionRate == null ? "—" : `${o.completionRate.toFixed(0)}%`} hint={o.completionBase ? `${Math.round(((o.completionRate ?? 0) / 100) * o.completionBase)} of ${o.completionBase} past planned dates published` : "No planned dates have passed yet"} />
-        <Stat label="Approved per week" info={<InfoTip expert info={data.ceo.explain.approvedPerWeek} />} icon={TrendingUp} value={n(o.approvedInPeriod / weeks, 1)} delta={p ? change(o.approvedInPeriod, p.approvedInPeriod) : null} hint={`${o.approvedInPeriod} approved in the period`} />
-        <Stat label="In production now" info={<InfoTip expert info={data.ceo.explain.inProduction} />} icon={Clock} value={n(o.inProduction)} hint="Brief or In Production stage" />
-        <Stat label="Awaiting approval now" info={<InfoTip expert info={data.ceo.explain.awaitingApproval} />} icon={Users} value={n(o.awaitingApproval)} hint="Internal review or approval stage" />
-        <Stat label="Overdue now" icon={AlertTriangle} info={<InfoTip expert info={data.ceo.explain.overdue} />} value={n(o.overdueContent)} hint={`${o.overdueTasks} overdue task${o.overdueTasks === 1 ? "" : "s"} · internal deadline passed`} className={o.overdueContent ? "border-destructive/30" : undefined} />
-        <Stat label="Upcoming (7 days)" info={<InfoTip expert info={data.ceo.explain.upcoming} />} icon={CalendarCheck2} value={n(o.upcoming)} hint="Planned, not yet published" />
+        <Stat label={t("overview.plannedInPeriod")} info={<InfoTip expert info={data.ceo.explain.planned} />} icon={CalendarCheck2} value={n(o.planned)} delta={p && !data.periodOpen ? change(o.planned, p.planned) : null} hint={p ? prevHint(n(p.planned)) : t("overview.plannedHint")} />
+        <Stat label={t("overview.publishedInPeriod")} info={<InfoTip expert info={data.ceo.explain.published} />} icon={Send} value={n(o.published)} delta={p ? change(o.published, p.published) : null} hint={p ? prevHint(n(p.published)) : t("overview.publishedHint")} />
+        <Stat label={t("overview.completionRate")} info={<InfoTip expert info={data.ceo.explain.completion} />} icon={CheckCircle2} value={o.completionRate == null ? "—" : pct(o.completionRate)} hint={o.completionBase ? t("overview.completionHint", { done: Math.round(((o.completionRate ?? 0) / 100) * o.completionBase), base: o.completionBase }) : t("overview.completionNone")} />
+        <Stat label={t("overview.approvedPerWeek")} info={<InfoTip expert info={data.ceo.explain.approvedPerWeek} />} icon={TrendingUp} value={n(o.approvedInPeriod / weeks, 1)} delta={p ? change(o.approvedInPeriod, p.approvedInPeriod) : null} hint={t("overview.approvedHint", { count: o.approvedInPeriod })} />
+        <Stat label={t("overview.inProductionNow")} info={<InfoTip expert info={data.ceo.explain.inProduction} />} icon={Clock} value={n(o.inProduction)} hint={t("overview.inProductionHint")} />
+        <Stat label={t("overview.awaitingApprovalNow")} info={<InfoTip expert info={data.ceo.explain.awaitingApproval} />} icon={Users} value={n(o.awaitingApproval)} hint={t("overview.awaitingApprovalHint")} />
+        <Stat label={t("overview.overdueNow")} icon={AlertTriangle} info={<InfoTip expert info={data.ceo.explain.overdue} />} value={n(o.overdueContent)} hint={t("overview.overdueHint", { count: o.overdueTasks })} className={o.overdueContent ? "border-destructive/30" : undefined} />
+        <Stat label={t("overview.upcoming")} info={<InfoTip expert info={data.ceo.explain.upcoming} />} icon={CalendarCheck2} value={n(o.upcoming)} hint={t("overview.upcomingHint")} />
       </div>
     </Section>
   );
@@ -60,10 +71,12 @@ export function OverviewSection({ data }: { data: AnalyticsData }) {
 // ---------------------------------------------------------------------------
 // Insights
 // ---------------------------------------------------------------------------
-export function InsightsSection({ data }: { data: AnalyticsData }) {
+export async function InsightsSection({ data }: { data: AnalyticsData }) {
+  const { t } = await tools();
+  const tc = await getT("common");
   const list = data.insights;
   return (
-    <Section id="insights" title="What needs attention" description="Each point is calculated from the figures on this page. Suggestions are labelled as such; nothing here is generated by AI.">
+    <Section id="insights" title={t("insightsSection.title")} description={t("insightsSection.description")}>
       {list.length ? (
         <ul className="grid gap-2.5 md:grid-cols-2">
           {list.map((i) => (
@@ -72,14 +85,14 @@ export function InsightsSection({ data }: { data: AnalyticsData }) {
               <div className="min-w-0 space-y-1 text-[13px]">
                 <p className="font-medium">{i.fact}</p>
                 <p className="tabular-nums text-muted-foreground">{i.figures}</p>
-                {i.action ? <p className="text-muted-foreground"><span className="font-medium text-foreground/80">Suggested next step:</span> {i.action}</p> : null}
-                {i.href ? <Link href={i.href} className="inline-flex items-center gap-1 font-medium text-primary hover:underline print:hidden">Open <ArrowRight className="size-3.5" /></Link> : null}
+                {i.action ? <p className="text-muted-foreground"><span className="font-medium text-foreground/80">{t("insightsSection.suggested")}</span> {i.action}</p> : null}
+                {i.href ? <Link href={i.href} className="inline-flex items-center gap-1 font-medium text-primary hover:underline print:hidden">{tc("actions.open")} <ArrowRight className="size-3.5" /></Link> : null}
               </div>
             </li>
           ))}
         </ul>
       ) : (
-        <Alert variant="success" title="Nothing stands out for this selection">No pillar is below target, nothing waits unusually long, and nothing is overdue. Insights need at least 5 planned items to compare shares.</Alert>
+        <Alert variant="success" title={t("insightsSection.emptyTitle")}>{t("insightsSection.emptyBody")}</Alert>
       )}
     </Section>
   );
@@ -88,34 +101,35 @@ export function InsightsSection({ data }: { data: AnalyticsData }) {
 // ---------------------------------------------------------------------------
 // B. Strategy balance
 // ---------------------------------------------------------------------------
-export function BalanceSection({ data }: { data: AnalyticsData }) {
+export async function BalanceSection({ data }: { data: AnalyticsData }) {
+  const { t, n, pct, platformLabel } = await tools();
   const b = data.balance;
   const base = `/p/${data.project.id}`;
   return (
-    <Section id="strategy" title="Strategy balance" description={`Planned content in the period (${b.total} item${b.total === 1 ? "" : "s"}) compared with the targets set in the strategy. A tick marks the target; amber means more than 5 points under it.`}>
+    <Section id="strategy" title={t("balance.title")} description={t("balance.description", { count: b.total })}>
       {b.total === 0 ? (
-        <EmptyState compact icon={CalendarCheck2} title="No content planned in this period" description="Plan content in the calendar, or widen the period or the filters." action={<Button asChild size="sm" variant="outline"><Link href={`${base}/calendar`}>Open the calendar</Link></Button>} />
+        <EmptyState compact icon={CalendarCheck2} title={t("balance.emptyTitle")} description={t("balance.emptyBody")} action={<Button asChild size="sm" variant="outline"><Link href={`${base}/calendar`}>{t("balance.openCalendar")}</Link></Button>} />
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-1.5">Content pillars <InfoTip expert info={data.ceo.explain.pillars} /></CardTitle><CardDescription>{data.targetsOff ? "Filters are applied, so shares are not compared with the strategy targets (they describe the whole plan)." : data.hasPillarTargets ? "Share of planned items vs each pillar's target share." : <>No pillar has a target share yet. <Link className="text-primary hover:underline" href={`${base}/strategy`}>Set targets in the strategy</Link>.</>}</CardDescription></CardHeader>
-            <CardContent><ShareBars rows={b.pillars} empty="No pillars defined." /></CardContent>
+            <CardHeader><CardTitle className="flex items-center gap-1.5">{t("balance.pillars.title")} <InfoTip expert info={data.ceo.explain.pillars} /></CardTitle><CardDescription>{data.targetsOff ? t("balance.pillars.filtered") : data.hasPillarTargets ? t("balance.pillars.withTargets") : t.rich("balance.pillars.noTargets", { link: (c) => <Link className="text-primary hover:underline" href={`${base}/strategy`}>{c}</Link> })}</CardDescription></CardHeader>
+            <CardContent><ShareBars rows={b.pillars} empty={t("balance.pillars.empty")} /></CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-1.5">Funnel stages <InfoTip expert info={data.ceo.explain.funnel} /></CardTitle><CardDescription>{b.funnelTagged} of {b.total} planned items have a funnel stage. {data.targetsOff ? "Filters are applied, so shares are not compared with targets." : data.hasFunnelTargets ? "Targets come from percentages written in the strategy's funnel notes." : "No numeric funnel targets are set, so only the distribution is shown."}</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-1.5">{t("balance.funnel.title")} <InfoTip expert info={data.ceo.explain.funnel} /></CardTitle><CardDescription>{t("balance.funnel.tagged", { tagged: b.funnelTagged, total: b.total })} {data.targetsOff ? t("balance.funnel.filtered") : data.hasFunnelTargets ? t("balance.funnel.withTargets") : t("balance.funnel.noTargets")}</CardDescription></CardHeader>
             <CardContent><ShareBars rows={b.funnel} /></CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-1.5">Platforms <InfoTip expert info={data.ceo.explain.platforms} /></CardTitle><CardDescription>{data.platformTargetsOff ? "Filters are applied, so planned posts are not compared with channel targets." : data.hasChannelTargets ? "Planned posts vs the channel's posts-per-week target, scaled to the period." : <>No channel has a posting target. <Link className="text-primary hover:underline" href={`${base}/settings`}>Add one in project settings</Link>.</>}</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-1.5">{t("balance.platforms.title")} <InfoTip expert info={data.ceo.explain.platforms} /></CardTitle><CardDescription>{data.platformTargetsOff ? t("balance.platforms.filtered") : data.hasChannelTargets ? t("balance.platforms.withTargets") : t.rich("balance.platforms.noTargets", { link: (c) => <Link className="text-primary hover:underline" href={`${base}/settings`}>{c}</Link> })}</CardDescription></CardHeader>
             <CardContent>
               <Table>
-                <TableHeader><TableRow><TableHead>Platform</TableHead><TableHead className="text-right">Planned</TableHead><TableHead className="text-right">Expected</TableHead><TableHead className="text-right">Difference</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>{t("balance.platforms.platform")}</TableHead><TableHead className="text-right">{t("balance.platforms.planned")}</TableHead><TableHead className="text-right">{t("balance.platforms.expected")}</TableHead><TableHead className="text-right">{t("balance.platforms.difference")}</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {b.platforms.map((pl) => (
                     <TableRow key={pl.key}>
                       <TableCell>{platformLabel(pl.key)}</TableCell>
                       <TableCell className="text-right tabular-nums">{pl.count}</TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">{pl.target ?? "No target"}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">{pl.target != null ? n(pl.target, 1) : t("balance.platforms.noTarget")}</TableCell>
                       <TableCell className={cn("text-right tabular-nums", pl.diff != null && pl.diff < 0 && "text-destructive")}>{pl.diff == null ? "—" : `${pl.diff > 0 ? "+" : ""}${n(pl.diff, 1)}`}</TableCell>
                     </TableRow>
                   ))}
@@ -124,22 +138,22 @@ export function BalanceSection({ data }: { data: AnalyticsData }) {
             </CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle>Content types</CardTitle><CardDescription>Planned items by type (from the format field). No type targets exist in the strategy.</CardDescription></CardHeader>
-            <CardContent><BarList rows={b.types.map((t) => ({ key: t.key, label: t.label, value: t.count, note: `${t.share.toFixed(0)}%` }))} /></CardContent>
+            <CardHeader><CardTitle>{t("balance.types.title")}</CardTitle><CardDescription>{t("balance.types.description")}</CardDescription></CardHeader>
+            <CardContent><BarList rows={b.types.map((x) => ({ key: x.key, label: x.label, value: x.count, note: pct(x.share) }))} /></CardContent>
           </Card>
           <Card className="lg:col-span-2">
-            <CardHeader><CardTitle>Planned vs published mix by pillar</CardTitle><CardDescription>Share of the {b.total} planned items next to the share of the {b.publishedTotal} items published in the same period.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>{t("balance.mix.title")}</CardTitle><CardDescription>{t("balance.mix.description", { planned: b.total, published: b.publishedTotal })}</CardDescription></CardHeader>
             <CardContent>
-              {b.publishedTotal === 0 ? <p className="mb-3 text-[13px] text-muted-foreground">Nothing was published in this period, so only the planned mix is shown.</p> : null}
+              {b.publishedTotal === 0 ? <p className="mb-3 text-[13px] text-muted-foreground">{t("balance.mix.nothingPublished")}</p> : null}
               <Table>
-                <TableHeader><TableRow><TableHead>Pillar</TableHead><TableHead className="text-right">Planned</TableHead><TableHead className="text-right">Published</TableHead><TableHead className="text-right">Gap</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>{t("balance.mix.pillar")}</TableHead><TableHead className="text-right">{t("balance.mix.planned")}</TableHead><TableHead className="text-right">{t("balance.mix.published")}</TableHead><TableHead className="text-right">{t("balance.mix.gap")}</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {b.mix.map((m) => (
                     <TableRow key={m.key}>
                       <TableCell>{m.label}</TableCell>
-                      <TableCell className="text-right tabular-nums">{m.planned.toFixed(0)}% <span className="text-muted-foreground">({m.plannedCount})</span></TableCell>
-                      <TableCell className="text-right tabular-nums">{b.publishedTotal ? <>{m.published.toFixed(0)}% <span className="text-muted-foreground">({m.publishedCount})</span></> : "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">{b.publishedTotal ? `${(m.published - m.planned) > 0 ? "+" : ""}${(m.published - m.planned).toFixed(0)} pts` : "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{pct(m.planned)} <span className="text-muted-foreground">({m.plannedCount})</span></TableCell>
+                      <TableCell className="text-right tabular-nums">{b.publishedTotal ? <>{pct(m.published)} <span className="text-muted-foreground">({m.publishedCount})</span></> : "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">{b.publishedTotal ? t("labels.points", { value: `${(m.published - m.planned) > 0 ? "+" : ""}${n(Number((m.published - m.planned).toFixed(0)))}` }) : "—"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -155,33 +169,34 @@ export function BalanceSection({ data }: { data: AnalyticsData }) {
 // ---------------------------------------------------------------------------
 // C. Production performance
 // ---------------------------------------------------------------------------
-export function ProductionSection({ data }: { data: AnalyticsData }) {
+export async function ProductionSection({ data }: { data: AnalyticsData }) {
+  const { t, n, days, stage } = await tools();
   const pr = data.production, pp = data.productionPrev;
-  const hint = (now: number, prev: number | undefined) => (prev == null ? undefined : `${prev} previous period`);
+  const hint = (now: number, prev: number | undefined) => (prev == null ? undefined : t("productionSection.previous", { count: prev }));
   const maxStage = Math.max(1, ...pr.stages.map((s) => s.count));
   return (
-    <Section id="production" title="Production" description="Movement through the workflow in the period, and where work is waiting now.">
+    <Section id="production" title={t("productionSection.title")} description={t("productionSection.description")}>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Ideas created" value={n(pr.ideasCreated)} delta={pp ? change(pr.ideasCreated, pp.ideasCreated) : null} hint={hint(pr.ideasCreated, pp?.ideasCreated)} />
-        <Stat label="Moved to brief" value={n(pr.briefsCompleted)} delta={pp ? change(pr.briefsCompleted, pp.briefsCompleted) : null} hint={hint(pr.briefsCompleted, pp?.briefsCompleted)} />
-        <Stat label="Sent to review" value={n(pr.enteredReview)} delta={pp ? change(pr.enteredReview, pp.enteredReview) : null} hint={hint(pr.enteredReview, pp?.enteredReview)} />
-        <Stat label="Approved" value={n(pr.approved)} delta={pp ? change(pr.approved, pp.approved) : null} hint={hint(pr.approved, pp?.approved)} />
-        <Stat label="Published" value={n(pr.published)} delta={pp ? change(pr.published, pp.published) : null} hint={hint(pr.published, pp?.published)} />
-        <Stat label="Overdue now" value={n(pr.overdue)} hint="Internal deadline passed, not approved" />
-        <Stat label="Median production time" info={<InfoTip expert info={data.ceo.explain.productionTime} />} value={days(pr.medianProductionDays)} goodWhen="down" delta={pp ? change(pr.medianProductionDays, pp.medianProductionDays) : null} hint={pr.productionSample ? `Created → approved, ${pr.productionSample} item${pr.productionSample === 1 ? "" : "s"}` : "No item approved in the period"} />
-        <Stat label="Median approval time" info={<InfoTip expert info={data.ceo.explain.approvalTime} />} value={days(pr.medianApprovalDays)} goodWhen="down" delta={pp ? change(pr.medianApprovalDays, pp.medianApprovalDays) : null} hint={pr.approvalSample ? `First review → approved, ${pr.approvalSample} item${pr.approvalSample === 1 ? "" : "s"}` : "No reviewed item approved in the period"} />
+        <Stat label={t("productionSection.ideasCreated")} value={n(pr.ideasCreated)} delta={pp ? change(pr.ideasCreated, pp.ideasCreated) : null} hint={hint(pr.ideasCreated, pp?.ideasCreated)} />
+        <Stat label={t("productionSection.movedToBrief")} value={n(pr.briefsCompleted)} delta={pp ? change(pr.briefsCompleted, pp.briefsCompleted) : null} hint={hint(pr.briefsCompleted, pp?.briefsCompleted)} />
+        <Stat label={t("productionSection.sentToReview")} value={n(pr.enteredReview)} delta={pp ? change(pr.enteredReview, pp.enteredReview) : null} hint={hint(pr.enteredReview, pp?.enteredReview)} />
+        <Stat label={t("productionSection.approved")} value={n(pr.approved)} delta={pp ? change(pr.approved, pp.approved) : null} hint={hint(pr.approved, pp?.approved)} />
+        <Stat label={t("productionSection.published")} value={n(pr.published)} delta={pp ? change(pr.published, pp.published) : null} hint={hint(pr.published, pp?.published)} />
+        <Stat label={t("productionSection.overdueNow")} value={n(pr.overdue)} hint={t("productionSection.overdueHint")} />
+        <Stat label={t("productionSection.medianProduction")} info={<InfoTip expert info={data.ceo.explain.productionTime} />} value={days(pr.medianProductionDays)} goodWhen="down" delta={pp ? change(pr.medianProductionDays, pp.medianProductionDays) : null} hint={pr.productionSample ? t("productionSection.productionHint", { count: pr.productionSample }) : t("productionSection.productionNone")} />
+        <Stat label={t("productionSection.medianApproval")} info={<InfoTip expert info={data.ceo.explain.approvalTime} />} value={days(pr.medianApprovalDays)} goodWhen="down" delta={pp ? change(pr.medianApprovalDays, pp.medianApprovalDays) : null} hint={pr.approvalSample ? t("productionSection.approvalHint", { count: pr.approvalSample }) : t("productionSection.approvalNone")} />
       </div>
       <div className="grid gap-3 lg:grid-cols-5">
         <Card className="lg:col-span-3">
-          <CardHeader><CardTitle className="flex items-center gap-1.5">Throughput per week <InfoTip expert info={data.ceo.explain.throughput} /></CardTitle><CardDescription>Ideas created, items approved and items published, by week of the period.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-1.5">{t("productionSection.throughputTitle")} <InfoTip expert info={data.ceo.explain.throughput} /></CardTitle><CardDescription>{t("productionSection.throughputDescription")}</CardDescription></CardHeader>
           <CardContent>
-            <WeeklyColumns weeks={pr.weeks} series={[{ key: "created", label: "Created", className: "bg-chart-a" }, { key: "approved", label: "Approved", className: "bg-chart-b" }, { key: "published", label: "Published", className: "bg-chart-c" }]} />
+            <WeeklyColumns weeks={pr.weeks} series={[{ key: "created", label: t("productionSection.seriesCreated"), className: "bg-chart-a" }, { key: "approved", label: t("productionSection.seriesApproved"), className: "bg-chart-b" }, { key: "published", label: t("productionSection.seriesPublished"), className: "bg-chart-c" }]} />
           </CardContent>
         </Card>
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="flex items-center gap-1.5">Where work waits now <InfoTip expert info={data.ceo.explain.waits} /></CardTitle>
-            <CardDescription>{pr.bottleneck ? <>Longest wait: <span className="font-medium text-foreground">{stage(pr.bottleneck.stage)}</span> (items × median days in stage).</> : "Nothing is waiting beyond the idea stage."}</CardDescription>
+            <CardTitle className="flex items-center gap-1.5">{t("productionSection.waitsTitle")} <InfoTip expert info={data.ceo.explain.waits} /></CardTitle>
+            <CardDescription>{pr.bottleneck ? t.rich("productionSection.waitsLongest", { stage: stage(pr.bottleneck.stage), b: (c) => <span className="font-medium text-foreground">{c}</span> }) : t("productionSection.waitsNone")}</CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="grid gap-2.5">
@@ -189,11 +204,11 @@ export function ProductionSection({ data }: { data: AnalyticsData }) {
                 <li key={s.stage} className="grid grid-cols-[minmax(0,8rem)_1fr_auto] items-center gap-3 text-[13px]">
                   <span className={cn("truncate", pr.bottleneck?.stage === s.stage && "font-medium")}>{stage(s.stage)}</span>
                   <span className="h-2 rounded-full bg-secondary"><span className={cn("block h-2 rounded-full", pr.bottleneck?.stage === s.stage ? "bg-warning" : "bg-chart-b")} style={{ width: `${(s.count / maxStage) * 100}%` }} /></span>
-                  <span className="whitespace-nowrap text-right tabular-nums text-muted-foreground"><span className="font-medium text-foreground">{s.count}</span>{s.count ? ` · ${days(s.medianDays)}` : ""}{s.overdue ? <span className="ml-1 text-destructive">· {s.overdue} late</span> : null}</span>
+                  <span className="whitespace-nowrap text-right tabular-nums text-muted-foreground"><span className="font-medium text-foreground">{n(s.count)}</span>{s.count ? ` · ${days(s.medianDays)}` : ""}{s.overdue ? <span className="ml-1 text-destructive">{t("productionSection.late", { count: s.overdue })}</span> : null}</span>
                 </li>
               ))}
             </ul>
-            <p className="mt-3 text-xs text-muted-foreground">Days in stage are measured from the last move into the stage, or from creation when no move is recorded.</p>
+            <p className="mt-3 text-xs text-muted-foreground">{t("productionSection.waitsNote")}</p>
           </CardContent>
         </Card>
       </div>
@@ -204,33 +219,34 @@ export function ProductionSection({ data }: { data: AnalyticsData }) {
 // ---------------------------------------------------------------------------
 // D. Team workload
 // ---------------------------------------------------------------------------
-export function TeamSection({ data }: { data: AnalyticsData }) {
+export async function TeamSection({ data }: { data: AnalyticsData }) {
+  const { t, n, days } = await tools();
   if (!data.team) {
     const m = data.myWork;
     return (
-      <Section id="team" title="My workload" description="Your own tasks. Team-wide workload is visible to people who assign work.">
+      <Section id="team" title={t("teamSection.myTitle")} description={t("teamSection.myDescription")}>
         {m ? (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Open tasks" value={m.open} />
-            <Stat label="In review" value={m.inReview} />
-            <Stat label="Overdue" value={m.overdue} />
-            <Stat label="Completed in period" value={m.completed} />
+            <Stat label={t("teamSection.openTasks")} value={n(m.open)} />
+            <Stat label={t("teamSection.inReview")} value={n(m.inReview)} />
+            <Stat label={t("teamSection.overdue")} value={n(m.overdue)} />
+            <Stat label={t("teamSection.completedInPeriod")} value={n(m.completed)} />
           </div>
-        ) : <p className="text-[13px] text-muted-foreground">You have no tasks on the content in this selection.</p>}
+        ) : <p className="text-[13px] text-muted-foreground">{t("teamSection.noTasks")}</p>}
       </Section>
     );
   }
   return (
-    <Section id="team" title="Team workload" description="Listed alphabetically, not ranked. Counts reflect assigned tasks only; they don't measure effort or quality, and people have different responsibilities.">
+    <Section id="team" title={t("teamSection.title")} description={t("teamSection.description")}>
       {data.team.length ? (
         <Card>
           <CardContent className="px-0 py-0">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="pl-5">Person</TableHead><TableHead className="text-right">Open</TableHead><TableHead className="text-right">In review</TableHead>
-                  <TableHead className="text-right">Changes asked</TableHead><TableHead className="text-right">Overdue</TableHead><TableHead className="text-right">Due in 7 days</TableHead>
-                  <TableHead className="text-right">Lead on</TableHead><TableHead className="text-right">Completed</TableHead><TableHead className="pr-5 text-right">Median time to complete</TableHead>
+                  <TableHead className="pl-5">{t("teamSection.columns.person")}</TableHead><TableHead className="text-right">{t("teamSection.columns.open")}</TableHead><TableHead className="text-right">{t("teamSection.columns.inReview")}</TableHead>
+                  <TableHead className="text-right">{t("teamSection.columns.changesAsked")}</TableHead><TableHead className="text-right">{t("teamSection.columns.overdue")}</TableHead><TableHead className="text-right">{t("teamSection.columns.dueIn7")}</TableHead>
+                  <TableHead className="text-right">{t("teamSection.columns.leadOn")}</TableHead><TableHead className="text-right">{t("teamSection.columns.completed")}</TableHead><TableHead className="pr-5 text-right">{t("teamSection.columns.medianTime")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -241,7 +257,7 @@ export function TeamSection({ data }: { data: AnalyticsData }) {
                     <TableCell className="text-right tabular-nums">{r.inReview}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.changesRequested}</TableCell>
                     <TableCell className={cn("text-right tabular-nums", r.overdue && "font-medium text-destructive")}>{r.overdue}</TableCell>
-                    <TableCell className="text-right tabular-nums">{r.dueNext7}{r.overlappingDeadlines ? <Badge variant="warning" className="ml-1.5">same day</Badge> : null}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.dueNext7}{r.overlappingDeadlines ? <Badge variant="warning" className="ml-1.5">{t("teamSection.sameDay")}</Badge> : null}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.leadOpen}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.completed}</TableCell>
                     <TableCell className="pr-5 text-right tabular-nums text-muted-foreground">{r.completionSample ? `${days(r.medianCompletionDays)} (${r.completionSample})` : "—"}</TableCell>
@@ -252,9 +268,9 @@ export function TeamSection({ data }: { data: AnalyticsData }) {
           </CardContent>
         </Card>
       ) : (
-        <EmptyState compact icon={Users} title="No tasks assigned on this content" description="Assign collaborators from a content item's detail panel in the calendar." />
+        <EmptyState compact icon={Users} title={t("teamSection.emptyTitle")} description={t("teamSection.emptyBody")} />
       )}
-      <p className="text-xs text-muted-foreground">“Completed” counts tasks approved or completed in the period. Time to complete runs from task creation to its last update, so it is an approximation.</p>
+      <p className="text-xs text-muted-foreground">{t("teamSection.note")}</p>
     </Section>
   );
 }
@@ -262,23 +278,25 @@ export function TeamSection({ data }: { data: AnalyticsData }) {
 // ---------------------------------------------------------------------------
 // E. Social performance
 // ---------------------------------------------------------------------------
-export function SocialSection({ data }: { data: AnalyticsData }) {
+export async function SocialSection({ data }: { data: AnalyticsData }) {
+  const { t, fmt, n, pct, platformLabel } = await tools();
   const base = `/p/${data.project.id}`;
   if (!data.access.canSeeSocial) {
-    return <Section id="social" title="Social performance"><Alert title="Not available with your role">Performance data comes from Content history, which your role can&apos;t view.</Alert></Section>;
+    return <Section id="social" title={t("socialSection.title")}><Alert title={t("socialSection.noRoleTitle")}>{t("socialSection.noRoleBody")}</Alert></Section>;
   }
   const s = data.social!, sp = data.socialPrev;
   const nowMsValue = Date.parse(data.nowIso);
   const stale = (iso: string | null) => !iso || nowMsValue - Date.parse(iso) > 48 * 3600 * 1000;
-  const accountLabel = (id: string) => data.options.accounts.find((a) => a.id === id)?.label ?? "Account";
-  const metric = (label: string, value: number | null, prev: number | null | undefined, key: keyof typeof s.available | null, digits = 0, suffix = "") => (
-    <Stat label={label} info={<InfoTip expert info={data.ceo.explain[({ Reach: "reach", Engagements: "engagement", "Link clicks": "clicks" } as Record<string, string>)[label] ?? ""]} />} value={value == null ? <span className="text-base text-muted-foreground">Not available</span> : `${n(value, digits)}${suffix}`} delta={sp && value != null ? change(value, prev) : null}
-      hint={value == null ? (key && s.posts ? "Not returned for these posts" : "No posts in the period") : key ? `${s.available[key]} of ${s.posts} posts report it` : undefined} />
+  const accountLabel = (id: string) => data.options.accounts.find((a) => a.id === id)?.label ?? t("labels.account");
+  const notAvailable = <span className="text-base text-muted-foreground">{t("labels.notAvailable")}</span>;
+  const metric = (label: string, explainKey: string, value: number | null, prev: number | null | undefined, key: keyof typeof s.available | null, digits = 0, suffix = "") => (
+    <Stat label={label} info={<InfoTip expert info={data.ceo.explain[explainKey]} />} value={value == null ? notAvailable : `${n(value, digits)}${suffix}`} delta={sp && value != null ? change(value, prev) : null}
+      hint={value == null ? (key && s.posts ? t("socialSection.notReturned") : t("socialSection.noPosts")) : key ? t("socialSection.reported", { available: s.available[key], posts: s.posts }) : undefined} />
   );
   const series = (data.weekly?.platforms ?? []).slice(0, 4).map((p, i) => ({ key: p, label: platformLabel(p), className: ["bg-chart-b", "bg-chart-a", "bg-chart-c", "bg-info"][i] }));
   return (
-    <Section id="social" title="Social performance" description={`Organic results of posts published in the period, from connected accounts and imported files (${s.posts} post${s.posts === 1 ? "" : "s"}). “Not available” means the source doesn't return the metric; zero means it returned zero. Paid advertising results are not included.`}
-      actions={<Button asChild size="sm" variant="outline" className="print:hidden"><Link href={`${base}/integrations`}><PlugZap className="size-3.5" /> Integrations</Link></Button>}>
+    <Section id="social" title={t("socialSection.title")} description={t("socialSection.description", { count: s.posts })}
+      actions={<Button asChild size="sm" variant="outline" className="print:hidden"><Link href={`${base}/integrations`}><PlugZap className="size-3.5" /> {t("socialSection.integrations")}</Link></Button>}>
       {/* Data freshness */}
       {data.freshness.length ? (
         <ul className="grid gap-2 text-[13px] sm:grid-cols-2">
@@ -290,37 +308,37 @@ export function SocialSection({ data }: { data: AnalyticsData }) {
                 <PlatformIcon platform={f.provider === "meta" ? "facebook" : f.provider} />
                 <span className="min-w-0 flex-1 truncate">{f.label}</span>
                 <span className={cn("shrink-0 text-xs", bad ? "text-destructive" : old ? "text-warning-foreground" : "text-muted-foreground")}>
-                  {bad ? "Needs attention" : f.lastSuccess ? `Updated ${new Date(f.lastSuccess).toLocaleString("en-GB", { timeZone: data.tz, dateStyle: "medium", timeStyle: "short" })}` : "Not synced yet"}
+                  {bad ? t("socialSection.needsAttention") : f.lastSuccess ? t("socialSection.updated", { date: fmt.dateTime(f.lastSuccess, { timeZone: data.tz, dateStyle: "medium", timeStyle: "short" }) }) : t("socialSection.notSynced")}
                 </span>
               </li>
             );
           })}
         </ul>
       ) : (
-        <Alert title="No social account is connected">Metrics below come only from imported files, if any. Connect accounts on the <Link href={`${base}/integrations`} className="font-medium text-primary hover:underline">Integrations</Link> page.</Alert>
+        <Alert title={t("socialSection.noAccountTitle")}>{t.rich("socialSection.noAccountBody", { link: (c) => <Link href={`${base}/integrations`} className="font-medium text-primary hover:underline">{c}</Link> })}</Alert>
       )}
-      {data.params.account ? <p className="text-xs text-muted-foreground">Showing one account: {accountLabel(data.params.account)}.</p> : null}
-      {data.socialIgnoredFilters.length ? <p className="text-xs text-muted-foreground">Funnel, content type, production stage and collaborator filters don&apos;t apply here: imported and synced posts don&apos;t carry those fields reliably.</p> : null}
+      {data.params.account ? <p className="text-xs text-muted-foreground">{t("socialSection.oneAccount", { account: accountLabel(data.params.account) })}</p> : null}
+      {data.socialIgnoredFilters.length ? <p className="text-xs text-muted-foreground">{t("socialSection.ignoredFilters")}</p> : null}
       {s.posts === 0 ? (
-        <EmptyState compact icon={TrendingUp} title="No published posts with data in this period" description="Sync your accounts on the Integrations page, or widen the period." />
+        <EmptyState compact icon={TrendingUp} title={t("socialSection.emptyTitle")} description={t("socialSection.emptyBody")} />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {metric("Reach", s.reach, sp?.reach, "reach")}
-            {metric("Impressions", s.impressions, sp?.impressions, "impressions")}
-            {metric("Engagements", s.engagement, sp?.engagement, null)}
-            <Stat label="Median engagement rate" info={<InfoTip expert info={data.ceo.explain.engagementRate} />} value={s.medianEngagementRate == null ? <span className="text-base text-muted-foreground">Not available</span> : `${s.medianEngagementRate.toFixed(2)}%`} delta={sp ? change(s.medianEngagementRate, sp.medianEngagementRate) : null} hint={s.rateSample ? `Engagements ÷ reach, ${s.rateSample} posts with consistent reach` : "Needs reach and interactions"} />
-            {metric("Video views", s.videoViews ?? s.views, sp ? sp.videoViews ?? sp.views : null, s.videoViews != null ? "video_views" : "views")}
-            {metric("Watch time (minutes)", s.watchTime, sp?.watchTime, "watch_time_minutes")}
-            {metric("Link clicks", s.clicks, sp?.clicks, "clicks")}
-            {metric("Conversions", s.conversions ?? s.leads, sp ? sp.conversions ?? sp.leads : null, s.conversions != null ? "conversions" : "leads")}
+            {metric(t("socialSection.metrics.reach"), "reach", s.reach, sp?.reach, "reach")}
+            {metric(t("socialSection.metrics.impressions"), "", s.impressions, sp?.impressions, "impressions")}
+            {metric(t("socialSection.metrics.engagements"), "engagement", s.engagement, sp?.engagement, null)}
+            <Stat label={t("socialSection.metrics.medianRate")} info={<InfoTip expert info={data.ceo.explain.engagementRate} />} value={s.medianEngagementRate == null ? notAvailable : pct(s.medianEngagementRate, 2)} delta={sp ? change(s.medianEngagementRate, sp.medianEngagementRate) : null} hint={s.rateSample ? t("socialSection.rateHint", { count: s.rateSample }) : t("socialSection.rateNone")} />
+            {metric(t("socialSection.metrics.videoViews"), "", s.videoViews ?? s.views, sp ? sp.videoViews ?? sp.views : null, s.videoViews != null ? "video_views" : "views")}
+            {metric(t("socialSection.metrics.watchTime"), "", s.watchTime, sp?.watchTime, "watch_time_minutes")}
+            {metric(t("socialSection.metrics.linkClicks"), "clicks", s.clicks, sp?.clicks, "clicks")}
+            {metric(t("socialSection.metrics.conversions"), "", s.conversions ?? s.leads, sp ? sp.conversions ?? sp.leads : null, s.conversions != null ? "conversions" : "leads")}
           </div>
 
           <Card>
-            <CardHeader><CardTitle>Platforms compared</CardTitle><CardDescription>Each platform measures differently (for example, LinkedIn “reach” is unique impressions and YouTube has no reach), so compare trends within a platform rather than raw totals across them.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>{t("socialSection.platformsTitle")}</CardTitle><CardDescription>{t("socialSection.platformsDescription")}</CardDescription></CardHeader>
             <CardContent className="px-0 py-0">
               <Table>
-                <TableHeader><TableRow><TableHead className="pl-5">Platform</TableHead><TableHead className="text-right">Posts</TableHead><TableHead className="text-right">Reach</TableHead><TableHead className="text-right">Views</TableHead><TableHead className="text-right">Interactions</TableHead><TableHead className="text-right">Median per post</TableHead><TableHead className="pr-5 text-right">Median rate</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead className="pl-5">{t("socialSection.columns.platform")}</TableHead><TableHead className="text-right">{t("socialSection.columns.posts")}</TableHead><TableHead className="text-right">{t("socialSection.columns.reach")}</TableHead><TableHead className="text-right">{t("socialSection.columns.views")}</TableHead><TableHead className="text-right">{t("socialSection.columns.interactions")}</TableHead><TableHead className="text-right">{t("socialSection.columns.medianPerPost")}</TableHead><TableHead className="pr-5 text-right">{t("socialSection.columns.medianRate")}</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {s.byPlatform.map((r) => (
                     <TableRow key={r.key}>
@@ -330,7 +348,7 @@ export function SocialSection({ data }: { data: AnalyticsData }) {
                       <TableCell className="text-right tabular-nums">{n(r.views)}</TableCell>
                       <TableCell className="text-right tabular-nums">{n(r.engagement)}</TableCell>
                       <TableCell className="text-right tabular-nums">{n(r.medianEngagement)}</TableCell>
-                      <TableCell className="pr-5 text-right tabular-nums">{r.medianRate == null ? "—" : `${r.medianRate.toFixed(2)}% (${r.rateSample})`}</TableCell>
+                      <TableCell className="pr-5 text-right tabular-nums">{r.medianRate == null ? "—" : `${pct(r.medianRate, 2)} (${n(r.rateSample)})`}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -340,11 +358,11 @@ export function SocialSection({ data }: { data: AnalyticsData }) {
 
           <div className="grid gap-3 lg:grid-cols-5">
             <Card className="lg:col-span-3">
-              <CardHeader><CardTitle>Interactions per week</CardTitle><CardDescription>Likes, comments, shares and saves on posts published each week, by platform.</CardDescription></CardHeader>
-              <CardContent>{data.weekly && series.length ? <WeeklyColumns weeks={data.weekly.weeks} series={series} /> : <p className="text-[13px] text-muted-foreground">No interaction data.</p>}</CardContent>
+              <CardHeader><CardTitle>{t("socialSection.weeklyTitle")}</CardTitle><CardDescription>{t("socialSection.weeklyDescription")}</CardDescription></CardHeader>
+              <CardContent>{data.weekly && series.length ? <WeeklyColumns weeks={data.weekly.weeks} series={series} /> : <p className="text-[13px] text-muted-foreground">{t("socialSection.weeklyNone")}</p>}</CardContent>
             </Card>
             <Card className="lg:col-span-2">
-              <CardHeader><CardTitle>Audience growth</CardTitle><CardDescription>Followers or subscribers recorded at each daily sync. Meta followers aren&apos;t recorded yet.</CardDescription></CardHeader>
+              <CardHeader><CardTitle>{t("socialSection.growthTitle")}</CardTitle><CardDescription>{t("socialSection.growthDescription")}</CardDescription></CardHeader>
               <CardContent>
                 {data.growth.length ? (
                   <ul className="grid gap-2 text-[13px]">
@@ -352,35 +370,35 @@ export function SocialSection({ data }: { data: AnalyticsData }) {
                       <li key={g.connection_id} className="flex items-baseline justify-between gap-3">
                         <span className="min-w-0 truncate">{accountLabel(g.connection_id)}</span>
                         <span className="shrink-0 tabular-nums">
-                          <span className="font-medium">{g.end.toLocaleString("en")}</span>
-                          {g.change == null ? <span className="ml-1 text-xs text-muted-foreground">(one measurement so far)</span>
-                            : <span className={cn("ml-1 text-xs", g.change > 0 ? "text-success" : g.change < 0 ? "text-destructive" : "text-muted-foreground")}>{g.change > 0 ? "+" : ""}{g.change.toLocaleString("en")} since {g.from}</span>}
+                          <span className="font-medium">{n(g.end)}</span>
+                          {g.change == null ? <span className="ml-1 text-xs text-muted-foreground">{t("socialSection.growthOne")}</span>
+                            : <span className={cn("ml-1 text-xs", g.change > 0 ? "text-success" : g.change < 0 ? "text-destructive" : "text-muted-foreground")}>{t("socialSection.growthSince", { change: `${g.change > 0 ? "+" : ""}${n(g.change)}`, date: g.from })}</span>}
                         </span>
                       </li>
                     ))}
                   </ul>
-                ) : <p className="text-[13px] text-muted-foreground">No follower counts recorded in this period. They start with the first sync of a YouTube, LinkedIn or TikTok account.</p>}
+                ) : <p className="text-[13px] text-muted-foreground">{t("socialSection.growthNone")}</p>}
               </CardContent>
             </Card>
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
-            {([["By content type", s.byFormat, (k: string) => k], ["By pillar", s.byPillar, (k: string) => (k === "none" ? "No pillar" : data.pillarNames[k] ?? "Unknown pillar")]] as const).map(([title, rows, label]) => (
+            {([[t("socialSection.byType"), s.byFormat, (k: string) => contentTypeLabel(t, k)], [t("socialSection.byPillar"), s.byPillar, (k: string) => (k === "none" ? t("labels.noPillar") : data.pillarNames[k] ?? t("labels.unknownPillar"))]] as const).map(([title, rows, label]) => (
               <Card key={title}>
-                <CardHeader><CardTitle>{title}</CardTitle><CardDescription>Median interactions per post.</CardDescription></CardHeader>
-                <CardContent><BarList rows={rows.filter((r) => r.medianEngagement != null).map((r) => ({ key: r.key, label: label(r.key), value: Math.round(r.medianEngagement!), note: `· ${r.posts} posts` }))} empty="No engagement data." /></CardContent>
+                <CardHeader><CardTitle>{title}</CardTitle><CardDescription>{t("socialSection.medianPerPost")}</CardDescription></CardHeader>
+                <CardContent><BarList rows={rows.filter((r) => r.medianEngagement != null).map((r) => ({ key: r.key, label: label(r.key), value: Math.round(r.medianEngagement!), note: t("socialSection.postsNote", { count: r.posts }) }))} empty={t("socialSection.noEngagement")} /></CardContent>
               </Card>
             ))}
           </div>
           <Card>
-            <CardHeader><CardTitle>Top posts and videos in the period</CardTitle><CardDescription>By interactions (likes + comments + shares + saves, where reported). A high number shows what people responded to; it doesn&apos;t prove why.{s.bottom.length ? " The lowest five are listed below for comparison." : ""}</CardDescription></CardHeader>
+            <CardHeader><CardTitle>{t("socialSection.topTitle")}</CardTitle><CardDescription>{t("socialSection.topDescription")}{s.bottom.length ? ` ${t("socialSection.topLowestNote")}` : ""}</CardDescription></CardHeader>
             <CardContent className="px-0 py-0">
               <Table>
-                <TableHeader><TableRow><TableHead className="pl-5">Post</TableHead><TableHead>Platform</TableHead><TableHead>Date</TableHead><TableHead className="text-right">Reach</TableHead><TableHead className="text-right">Views</TableHead><TableHead className="pr-5 text-right">Interactions</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead className="pl-5">{t("socialSection.columns.post")}</TableHead><TableHead>{t("socialSection.columns.platform")}</TableHead><TableHead>{t("socialSection.columns.date")}</TableHead><TableHead className="text-right">{t("socialSection.columns.reach")}</TableHead><TableHead className="text-right">{t("socialSection.columns.views")}</TableHead><TableHead className="pr-5 text-right">{t("socialSection.columns.interactions")}</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {[...s.top.map((r) => ({ ...r, group: "top" })), ...s.bottom.map((r) => ({ ...r, group: "bottom" }))].map((r, i) => (
                     <TableRow key={`${r.group}-${r.id}`} className={cn(r.group === "bottom" && i === s.top.length && "border-t-2")}>
-                      <TableCell className="max-w-[22rem] pl-5"><span className="line-clamp-1" dir="auto">{r.permalink ? <a href={r.permalink} target="_blank" rel="noreferrer" className="hover:underline">{r.title || "Untitled post"}</a> : r.title || "Untitled post"}</span>{r.group === "bottom" ? <span className="text-xs text-muted-foreground">Lowest</span> : null}</TableCell>
+                      <TableCell className="max-w-[22rem] pl-5"><span className="line-clamp-1" dir="auto">{r.permalink ? <a href={r.permalink} target="_blank" rel="noreferrer" className="hover:underline">{r.title || t("labels.untitledPost")}</a> : r.title || t("labels.untitledPost")}</span>{r.group === "bottom" ? <span className="text-xs text-muted-foreground">{t("socialSection.lowest")}</span> : null}</TableCell>
                       <TableCell>{r.platform ? platformLabel(r.platform) : "—"}</TableCell>
                       <TableCell className="tabular-nums">{r.date ?? "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{n(r.reach)}</TableCell>
@@ -401,37 +419,27 @@ export function SocialSection({ data }: { data: AnalyticsData }) {
 // ---------------------------------------------------------------------------
 // Definitions (shown on the page and in the printable report)
 // ---------------------------------------------------------------------------
-export const DEFINITIONS: [string, string][] = [
-  ["Planned in period", "Content items whose planned publication date falls in the period."],
-  ["Published in period", "Items marked published whose verified publication time (in the project's time zone) falls in the period."],
-  ["Completion rate", "Of the items planned for dates in the period that have already passed, the share that is published."],
-  ["Approved per week", "Items whose final approval falls in the period, divided by the number of weeks in the period."],
-  ["In production / awaiting approval", "Current count of items in the Brief or In Production stages, and in Internal Review or Approval. A snapshot as of today, not tied to the period."],
-  ["Overdue", "Items whose internal deadline is before today and that are not yet approved, scheduled or published. Overdue tasks: open tasks past their due date."],
-  ["Moved to brief / Sent to review", "Items that entered the stage during the period, from the recorded stage history."],
-  ["Production time", "Median time from an item's creation to its final approval, for items approved in the period."],
-  ["Approval time", "Median time from an item's first entry into review to its final approval."],
-  ["Where work waits", "Items currently in each stage and the median days since they entered it. The bottleneck is the stage with the largest items × median days, excluding ideas."],
-  ["Strategy targets", "Pillar targets are the pillar's target share. Platform targets are the channel's posts per week × weeks in the period. Funnel targets are used only when the strategy's funnel notes contain a percentage. A share is flagged when it is more than 5 points under target."],
-  ["Engagements", "Likes + comments + shares + saves, counting only the metrics a post reports."],
-  ["Engagement rate", "Engagements ÷ reach × 100, only for posts whose reach is at least every single interaction count."],
-  ["Comparison", "The previous period of the same length, ending the day before the selected period starts."],
-];
+export const DEFINITION_KEYS = [
+  "planned", "published", "completion", "approvedPerWeek", "inProduction", "overdue", "moved", "productionTime", "approvalTime", "waits", "targets",
+  "engagements", "engagementRate", "comparison",
+] as const;
 
-export function DefinitionsSection() {
+export async function DefinitionsSection() {
+  const t = await getT("analytics");
   return (
     <details id="definitions" className="rounded-xl border bg-card p-4 text-[13px] shadow-xs print:hidden">
-      <summary className="cursor-pointer font-medium">How these numbers are calculated</summary>
+      <summary className="cursor-pointer font-medium">{t("definitions.summary")}</summary>
       <dl className="mt-3 grid gap-x-6 gap-y-2.5 md:grid-cols-2">
-        {DEFINITIONS.map(([t, d]) => <div key={t}><dt className="font-medium">{t}</dt><dd className="text-muted-foreground">{d}</dd></div>)}
+        {DEFINITION_KEYS.map((k) => <div key={k}><dt className="font-medium">{t(`definitions.${k}.term`)}</dt><dd className="text-muted-foreground">{t(`definitions.${k}.text`)}</dd></div>)}
       </dl>
     </details>
   );
 }
 
-export function NoContentState({ projectId }: { projectId: string }) {
+export async function NoContentState({ projectId }: { projectId: string }) {
+  const t = await getT("analytics");
   return (
-    <EmptyState icon={Lightbulb} title="No content to analyse yet" description="Analytics is calculated from the content you plan and produce. Add ideas in the calendar or Content Production, and connect Meta in Content history for performance data."
-      action={<><Button asChild size="sm"><Link href={`/p/${projectId}/calendar`}>Open the calendar</Link></Button><Button asChild size="sm" variant="outline"><Link href={`/p/${projectId}/history`}>Content history</Link></Button></>} />
+    <EmptyState icon={Lightbulb} title={t("noContent.title")} description={t("noContent.body")}
+      action={<><Button asChild size="sm"><Link href={`/p/${projectId}/calendar`}>{t("noContent.openCalendar")}</Link></Button><Button asChild size="sm" variant="outline"><Link href={`/p/${projectId}/history`}>{t("noContent.history")}</Link></Button></>} />
   );
 }

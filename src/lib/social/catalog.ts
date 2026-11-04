@@ -1,5 +1,8 @@
 // What each integration connects, which metrics it really provides, and what it takes to enable it.
 // Shown on the integrations page; kept in one place so the UI and the docs say the same thing.
+// The English text below is the reference; the page shows `integrations.catalog.<provider>.*` through `localizeProvider`.
+
+import type { TFor } from "@/i18n/messages";
 
 export type ProviderKey = "meta" | "youtube" | "linkedin" | "tiktok";
 
@@ -68,3 +71,22 @@ export const STATE_INFO: Record<IntegrationState, { label: string; meaning: stri
   permission_denied: { label: "Permission denied", meaning: "The account was connected without a permission the import needs.", next: "Reconnect and accept every requested permission, or check that the app's products are approved.", tone: "destructive" },
   disconnected: { label: "Disconnected", meaning: "Access was removed. Previously imported posts are kept unless you deleted them.", next: "Connect again to resume.", tone: "outline" },
 };
+
+/**
+ * The provider's descriptive text in the reader's language (`integrations.catalog.<key>.<field>.m<index>`), falling
+ * back to the English reference. Names, permission scopes and environment variables are identifiers and stay as they are.
+ */
+export function localizeProvider(info: ProviderInfo, t: TFor<"integrations">): ProviderInfo {
+  const tt = t as unknown as (key: string) => string;
+  const one = (k: string, fallback: string) => (t.has(k) ? tt(k) : fallback);
+  const list = (field: string, items: string[]) => items.map((s, i) => one(`catalog.${info.key}.${field}.m${i}`, s));
+  return {
+    ...info,
+    connects: one(`catalog.${info.key}.connects`, info.connects),
+    metrics: list("metrics", info.metrics),
+    extraWithOAuth: info.extraWithOAuth ? list("extraWithOAuth", info.extraWithOAuth) : undefined,
+    notAvailable: list("notAvailable", info.notAvailable),
+    requirements: list("requirements", info.requirements),
+    setup: list("setup", info.setup),
+  };
+}

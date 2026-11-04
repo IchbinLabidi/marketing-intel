@@ -3,6 +3,8 @@
 //   link, date, likes, comments, shares, views, caption…
 // Everything after the views column is the caption, so captions may contain commas.
 
+import type { TFor } from "@/i18n/messages";
+
 export type BulkRow = {
   line: number; url: string; published_at: string | null; likes: number | null; comments: number | null; shares: number | null; views: number | null;
   caption: string; error: string | null;
@@ -33,7 +35,8 @@ export function parseDate(raw: string | undefined): string | null {
   return date.toISOString().slice(0, 10);
 }
 
-export function parseBulkPosts(text: string, today: string): BulkRow[] {
+/** `t`: the "competitors" translator, for the per-line error shown in the preview. */
+export function parseBulkPosts(text: string, today: string, t: TFor<"competitors">): BulkRow[] {
   const rows: BulkRow[] = [];
   text.split(/\r?\n/).forEach((rawLine, i) => {
     const line = rawLine.trim();
@@ -44,10 +47,10 @@ export function parseBulkPosts(text: string, today: string): BulkRow[] {
     const [url = "", date, likes, comments, shares, views, ...rest] = cells;
     const counts = [likes, comments, shares, views].map(parseCount);
     const published = parseDate(date);
-    const error = !/^https:\/\/\S+$/i.test(url) ? "The first column must be the post's https:// link"
-      : !published ? "Date not recognised (use 2026-10-28 or 28/10/2026)"
-      : published > today ? "Date is in the future"
-      : counts.some((c) => c === "invalid") ? "A number is not recognised (examples: 120, 1.2K, 3 400)"
+    const error = !/^https:\/\/\S+$/i.test(url) ? t("bulk.errors.link")
+      : !published ? t("bulk.errors.date")
+      : published > today ? t("bulk.errors.future")
+      : counts.some((c) => c === "invalid") ? t("bulk.errors.number")
       : null;
     rows.push({
       line: i + 1, url, published_at: published,

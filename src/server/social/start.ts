@@ -1,6 +1,7 @@
 import "server-only";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getT } from "@/i18n/server";
 import { getSocialConnection, type SocialConnection } from "@/server/services/social";
 import { describeSocialError, runSocialSync, SocialSyncBusyError } from "./sync";
 
@@ -11,9 +12,10 @@ const AUTO_SYNC_AFTER_MS = 24 * 3600 * 1000;
  * the user may edit intelligence on the project. Not a Server Action.
  */
 export async function startSocialSync(projectId: string, connectionId: string, trigger: "manual" | "auto" | "connect") {
+  const t = await getT("integrations");
   const conn = await getSocialConnection(projectId, connectionId);
-  if (!conn || conn.status === "disconnected") return { ok: false as const, error: "This account is not connected." };
-  if (conn.last_sync_status === "running" && conn.last_sync_at && Date.now() - Date.parse(conn.last_sync_at) < 3 * 60_000) return { ok: false as const, error: new SocialSyncBusyError().message };
+  if (!conn || conn.status === "disconnected") return { ok: false as const, error: t("actions.notConnected") };
+  if (conn.last_sync_status === "running" && conn.last_sync_at && Date.now() - Date.parse(conn.last_sync_at) < 3 * 60_000) return { ok: false as const, error: t("actions.socialBusy") };
   const db = await createClient();
   after(async () => {
     try {

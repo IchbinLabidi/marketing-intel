@@ -1,10 +1,11 @@
-import { FUNNEL_LABELS, FUNNEL_STAGES, PLATFORM_LABELS, type FunnelStage, type Platform } from "@/lib/domain/constants";
+import { FUNNEL_STAGES, PLATFORM_LABELS, type FunnelStage, type Platform } from "@/lib/domain/constants";
 import { EXPECTED_FORMATS } from "@/lib/history/analysis";
 import { normalizeFormat } from "@/lib/history/parse";
-import { ENGAGEMENT_FORMULA, engagementOf, engagementRate, usableReach, type PerfItem, type PlatformPerformance } from "@/lib/history/performance";
+import { engagementOf, engagementRate, usableReach, type PerfItem, type PlatformPerformance } from "@/lib/history/performance";
 import { contentTokens } from "@/lib/history/text";
 import { captionHook } from "@/lib/meta/normalize";
-import { WEEKDAY_LABELS, windowLabel, type PlatformTiming } from "@/lib/calendar/insights";
+import { windowLabel, type PlatformTiming } from "@/lib/calendar/insights";
+import type { TFor } from "@/i18n/messages";
 
 // Signals are the only facts the opportunity engine may cite. Every one is computed here from database rows, carries
 // the numbers, period, method and supporting post ids, and is shown verbatim under "View evidence". The AI chooses
@@ -54,10 +55,7 @@ export type SignalInput = {
 };
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
-const pct = (n: number) => `${r1(n)}%`;
 const dateOf = (i: SignalItem) => i.actual_publication_date ?? i.publication_date ?? i.published_at?.slice(0, 10) ?? null;
-const RATE_METHOD = `Median engagement rate (${ENGAGEMENT_FORMULA}, ÷ reach) of the group ÷ the platform median. Posts whose reach is truncated (below their interactions or under 10% of the platform's recent median reach) are excluded.`;
-const ENG_METHOD = `Median engagement (${ENGAGEMENT_FORMULA}) of the group ÷ the platform median.`;
 const LIFT_STRONG = 1.25;
 const LIFT_WEAK = 0.8;
 
@@ -65,17 +63,30 @@ function periodOf(list: SignalItem[]) {
   const d = list.map(dateOf).filter((x): x is string => Boolean(x)).sort();
   return { from: d[0] ?? null, to: d.at(-1) ?? null };
 }
-const periodText = (p: { from: string | null; to: string | null }) => (p.from ? `${p.from} → ${p.to}` : "undated");
 
-export function buildSignals(input: SignalInput): Signal[] {
+/**
+ * Statements and methods are written with `t` (the "opportunities" translator) and `td` ("domain", for funnel stages).
+ * The engine builds them in English (they are given to the AI and stored as evidence); the signals panel rebuilds them
+ * in the viewer's language. Metrics stay language-neutral.
+ */
+export function buildSignals(input: SignalInput, t: TFor<"opportunities">, td: TFor<"domain">): Signal[] {
   const out: Omit<Signal, "key">[] = [];
+  const S = (key: Parameters<typeof t>[0], values?: Record<string, string | number>) => t(key, values as never);
+  const pct = (n: number) => S("signals.percent", { value: r1(n) });
+  const periodText = (p: { from: string | null; to: string | null }) => (p.from ? `${p.from} → ${p.to}` : S("signals.undated"));
+  const formula = S("signals.engagementFormula");
+  const RATE_METHOD = S("signals.method.rate", { formula });
+  const ENG_METHOD = S("signals.method.engagement", { formula });
+  const weekday = (d: number) => new Intl.DateTimeFormat(t.locale, { weekday: "long", timeZone: "UTC" }).format(Date.UTC(2023, 0, 1 + d));
 
   for (const perf of input.performance) {
     const platform = perf.platform;
     const label = PLATFORM_LABELS[platform];
     const useRate = perf.metric === "engagement_rate";
-    const unit = useRate ? "engagement rate" : "interactions per post";
-    const fmtScore = (v: number | null) => (v == null ? "?" : useRate ? `${v}%` : String(v));
+    // metrics.unit stays an English code; the statement uses the translated unit
+    const unitCode = useRate ? "engagement rate" : "interactions per post";
+    const unit = useRate ? S("signals.unit.rate") : S("signals.unit.interactions");
+    const fmtScore = (v: number | null) => (v == null ? "?" : useRate ? S("signals.percent", { value: v }) : S("signals.number", { value: v }));
     const platformItems = input.items.filter((i) => i.platform === platform && engagementOf(i) != null);
     const reachOk = usableReach(platformItems);
     // same pool as computePerformance: rate-ranked posts need a usable reach
@@ -91,9 +102,9 @@ export function buildSignals(input: SignalInput): Signal[] {
       const list = pool.filter((i) => i.pillar_id === g.key);
       out.push({
         kind: "pillar_performance", category: "historical", platform, pillar_id: g.key, format: null,
-        statement: `On ${label}, "${g.label}" posts have a median ${unit} of ${fmtScore(g.medianScore)} vs ${fmtScore(perf.baseline)} for all ${label} posts (×${g.lift}, ${g.n} posts, ${periodText(periodOf(list))}).`,
+        statement: S("signals.statement.pillarPerformance", { platform: label, group: g.label, unit, score: fmtScore(g.medianScore), baseline: fmtScore(perf.baseline), lift: g.lift, count: g.n, period: periodText(periodOf(list)) }),
         method, period: periodOf(list), n: g.n, lift: g.lift, gap: null,
-        metrics: { group_median: g.medianScore, platform_median: perf.baseline, median_engagement: g.medianEngagement, unit },
+        metrics: { group_median: g.medianScore, platform_median: perf.baseline, median_engagement: g.medianEngagement, unit: unitCode },
         ref_ids: topIds(list),
       });
     }
@@ -102,21 +113,21 @@ export function buildSignals(input: SignalInput): Signal[] {
       const list = pool.filter((i) => normalizeFormat(i.format) === g.key);
       out.push({
         kind: "format_performance", category: "historical", platform, pillar_id: null, format: g.key,
-        statement: `On ${label}, ${/posts?$/i.test(g.label) ? `${g.label.replace(/ posts?$/i, "")} posts` : `${g.label} posts`} have a median ${unit} of ${fmtScore(g.medianScore)} vs ${fmtScore(perf.baseline)} overall (×${g.lift}, ${g.n} posts, ${periodText(periodOf(list))}).`,
+        statement: S("signals.statement.formatPerformance", { platform: label, group: g.label.replace(/ posts?$/i, ""), unit, score: fmtScore(g.medianScore), baseline: fmtScore(perf.baseline), lift: g.lift, count: g.n, period: periodText(periodOf(list)) }),
         method, period: periodOf(list), n: g.n, lift: g.lift, gap: null,
-        metrics: { group_median: g.medianScore, platform_median: perf.baseline, median_engagement: g.medianEngagement, unit },
+        metrics: { group_median: g.medianScore, platform_median: perf.baseline, median_engagement: g.medianEngagement, unit: unitCode },
         ref_ids: topIds(list),
       });
     }
     // Topics (content words in ≥5 posts)
-    for (const t of perf.topics) {
-      if (t.n < 5 || t.lift == null || (t.lift < 1.3 && t.lift > 0.7)) continue;
-      const list = pool.filter((i) => contentTokens(`${i.title ?? ""} ${i.topic ?? ""} ${captionHook(i.caption) ?? ""}`).includes(t.topic));
+    for (const tp of perf.topics) {
+      if (tp.n < 5 || tp.lift == null || (tp.lift < 1.3 && tp.lift > 0.7)) continue;
+      const list = pool.filter((i) => contentTokens(`${i.title ?? ""} ${i.topic ?? ""} ${captionHook(i.caption) ?? ""}`).includes(tp.topic));
       out.push({
         kind: "topic_performance", category: "historical", platform, pillar_id: null, format: null,
-        statement: `On ${label}, posts mentioning "${t.topic}" have a median ${unit} of ${fmtScore(t.medianScore)} vs ${fmtScore(perf.baseline)} (×${t.lift}, ${t.n} posts).`,
-        method: `${method} Topic = the word appears in the title, topic or first line of the caption.`, period: periodOf(list), n: t.n, lift: t.lift, gap: null,
-        metrics: { group_median: t.medianScore, platform_median: perf.baseline, unit },
+        statement: S("signals.statement.topicPerformance", { platform: label, topic: tp.topic, unit, score: fmtScore(tp.medianScore), baseline: fmtScore(perf.baseline), lift: tp.lift, count: tp.n }),
+        method: S("signals.method.topic", { method }), period: periodOf(list), n: tp.n, lift: tp.lift, gap: null,
+        metrics: { group_median: tp.medianScore, platform_median: perf.baseline, unit: unitCode },
         ref_ids: topIds(list),
       });
     }
@@ -124,60 +135,62 @@ export function buildSignals(input: SignalInput): Signal[] {
       if (h.n < 10 || h.lift == null || (h.lift < LIFT_STRONG && h.lift > LIFT_WEAK)) continue;
       out.push({
         kind: "hook_pattern", category: "historical", platform, pillar_id: null, format: null,
-        statement: `On ${label}, hooks of type "${h.label}" have a median ${unit} of ${fmtScore(h.medianScore)} vs ${fmtScore(perf.baseline)} (×${h.lift}, ${h.n} posts).`,
-        method: `${method} Hook = first line of the caption, classified by pattern.`, period, n: h.n, lift: h.lift, gap: null,
-        metrics: { group_median: h.medianScore, platform_median: perf.baseline, unit }, ref_ids: [],
+        statement: S("signals.statement.hookPattern", { platform: label, hook: h.label, unit, score: fmtScore(h.medianScore), baseline: fmtScore(perf.baseline), lift: h.lift, count: h.n }),
+        method: S("signals.method.hook", { method }), period, n: h.n, lift: h.lift, gap: null,
+        metrics: { group_median: h.medianScore, platform_median: perf.baseline, unit: unitCode }, ref_ids: [],
       });
     }
     for (const c of perf.ctas) {
       if (c.n < 10 || c.lift == null || (c.lift < LIFT_STRONG && c.lift > LIFT_WEAK)) continue;
       out.push({
         kind: "cta_pattern", category: "historical", platform, pillar_id: null, format: null,
-        statement: `On ${label}, posts with a "${c.label}" call to action have a median ${unit} of ${fmtScore(c.medianScore)} vs ${fmtScore(perf.baseline)} (×${c.lift}, ${c.n} posts).`,
-        method: `${method} CTA detected by keywords in the caption.`, period, n: c.n, lift: c.lift, gap: null,
-        metrics: { group_median: c.medianScore, platform_median: perf.baseline, unit }, ref_ids: [],
+        statement: S("signals.statement.ctaPattern", { platform: label, cta: c.label, unit, score: fmtScore(c.medianScore), baseline: fmtScore(perf.baseline), lift: c.lift, count: c.n }),
+        method: S("signals.method.cta", { method }), period, n: c.n, lift: c.lift, gap: null,
+        metrics: { group_median: c.medianScore, platform_median: perf.baseline, unit: unitCode }, ref_ids: [],
       });
     }
     // Outliers: the 3 best posts more than 3× the median, the 3 weakest
-    for (const t of perf.top.slice(0, 3)) {
-      if (perf.baseline == null || t.score == null || t.score < perf.baseline * 3) continue;
+    for (const p of perf.top.slice(0, 3)) {
+      if (perf.baseline == null || p.score == null || p.score < perf.baseline * 3) continue;
       out.push({
-        kind: "top_post", category: "historical", platform, pillar_id: null, format: t.format,
-        statement: `"${t.title.slice(0, 90)}" (${label}, ${t.date ?? "undated"}${t.format ? `, ${t.format}` : ""}) had ${useRate ? `an engagement rate of ${fmtScore(t.score)}` : `${t.score} interactions`}, ×${r1(t.score / perf.baseline)} the platform median.`,
-        method, period: { from: t.date, to: t.date }, n: 1, lift: r1(t.score / perf.baseline), gap: null,
-        metrics: { score: t.score, platform_median: perf.baseline, engagement: t.engagement, reach: t.raw.reach ?? null, unit }, ref_ids: [t.id],
+        kind: "top_post", category: "historical", platform, pillar_id: null, format: p.format,
+        statement: S(useRate ? "signals.statement.topPostRate" : "signals.statement.topPostCount", {
+          title: p.title.slice(0, 90), details: [label, p.date ?? S("signals.undated"), p.format].filter(Boolean).join(", "), score: useRate ? fmtScore(p.score) : p.score, lift: r1(p.score / perf.baseline),
+        }),
+        method, period: { from: p.date, to: p.date }, n: 1, lift: r1(p.score / perf.baseline), gap: null,
+        metrics: { score: p.score, platform_median: perf.baseline, engagement: p.engagement, reach: p.raw.reach ?? null, unit: unitCode }, ref_ids: [p.id],
       });
     }
-    for (const t of perf.bottom.slice(0, 3)) {
-      if (perf.baseline == null || t.score == null) continue;
+    for (const p of perf.bottom.slice(0, 3)) {
+      if (perf.baseline == null || p.score == null) continue;
       out.push({
-        kind: "low_post", category: "historical", platform, pillar_id: null, format: t.format,
-        statement: `"${t.title.slice(0, 90)}" (${label}, ${t.date ?? "undated"}) is among the weakest ${label} posts: ${unit} ${fmtScore(t.score)} vs median ${fmtScore(perf.baseline)}.`,
-        method, period: { from: t.date, to: t.date }, n: 1, lift: perf.baseline ? r1(t.score / perf.baseline) : null, gap: null,
-        metrics: { score: t.score, platform_median: perf.baseline, unit }, ref_ids: [t.id],
+        kind: "low_post", category: "historical", platform, pillar_id: null, format: p.format,
+        statement: S("signals.statement.lowPost", { title: p.title.slice(0, 90), platform: label, date: p.date ?? S("signals.undated"), unit, score: fmtScore(p.score), baseline: fmtScore(perf.baseline) }),
+        method, period: { from: p.date, to: p.date }, n: 1, lift: perf.baseline ? r1(p.score / perf.baseline) : null, gap: null,
+        metrics: { score: p.score, platform_median: perf.baseline, unit: unitCode }, ref_ids: [p.id],
       });
     }
-    for (const t of perf.refreshCandidates.slice(0, 4)) {
+    for (const p of perf.refreshCandidates.slice(0, 4)) {
       out.push({
-        kind: "refresh", category: "historical", platform, pillar_id: null, format: t.format,
-        statement: `"${t.title.slice(0, 90)}" (${label}, ${t.date}) is in the top quarter of ${label} posts and is over 6 months old: a candidate to refresh or repurpose.`,
-        method: `${method} Top quarter = score at or above the 75th percentile; age measured from publication date.`,
-        period: { from: t.date, to: t.date }, n: 1, lift: perf.baseline && t.score != null ? r1(t.score / perf.baseline) : null, gap: null,
-        metrics: { score: t.score, platform_median: perf.baseline, unit }, ref_ids: [t.id],
+        kind: "refresh", category: "historical", platform, pillar_id: null, format: p.format,
+        statement: S("signals.statement.refresh", { title: p.title.slice(0, 90), platform: label, date: p.date ?? S("signals.undated") }),
+        method: S("signals.method.refresh", { method }),
+        period: { from: p.date, to: p.date }, n: 1, lift: perf.baseline && p.score != null ? r1(p.score / perf.baseline) : null, gap: null,
+        metrics: { score: p.score, platform_median: perf.baseline, unit: unitCode }, ref_ids: [p.id],
       });
     }
   }
 
   // Timing (interactions per post) — the suggestions already require ≥5 posts and ≥1% of the history
-  for (const t of input.timing) {
-    const best = t.suggestions[0];
+  for (const tm of input.timing) {
+    const best = tm.suggestions[0];
     if (!best) continue;
     out.push({
-      kind: "timing", category: "historical", platform: t.platform, pillar_id: null, format: null,
-      statement: `On ${t.label}, posts published ${WEEKDAY_LABELS[best.weekday]} ${windowLabel(best.window)} get ×${best.lift} the median interactions per post (${best.n} posts out of ${t.posts} with exact times).`,
-      method: `Median interactions per post (${ENGAGEMENT_FORMULA}) in the weekday × 3-hour window ÷ the platform median; project time zone.`,
-      period: periodOf(input.items.filter((i) => i.platform === t.platform && i.published_at)), n: best.n, lift: best.lift, gap: null,
-      metrics: { window: best.label, median: best.median, platform_median: t.baseline }, ref_ids: [],
+      kind: "timing", category: "historical", platform: tm.platform, pillar_id: null, format: null,
+      statement: S("signals.statement.timing", { platform: tm.label, weekday: weekday(best.weekday), window: windowLabel(best.window), lift: best.lift ?? 0, count: best.n, total: tm.posts }),
+      method: S("signals.method.timing", { formula }),
+      period: periodOf(input.items.filter((i) => i.platform === tm.platform && i.published_at)), n: best.n, lift: best.lift, gap: null,
+      metrics: { window: best.label, median: best.median, platform_median: tm.baseline }, ref_ids: [],
     });
   }
 
@@ -192,8 +205,8 @@ export function buildSignals(input: SignalInput): Signal[] {
       if (target - actual >= 5) {
         out.push({
           kind: "pillar_gap", category: "strategy", platform: null, pillar_id: p.id, format: null,
-          statement: `"${p.name}" is ${pct(actual)} of posts linked to a pillar, below its strategy target of ${target}% (${list.length} of ${withPillar.length} posts).`,
-          method: "Share of historical posts assigned to the pillar (by import, a person or AI) vs the target share set in the strategy.",
+          statement: S("signals.statement.pillarGap", { pillar: p.name, actual: pct(actual), target: S("signals.percent", { value: target }), count: list.length, total: withPillar.length }),
+          method: S("signals.method.pillarGap"),
           period: periodOf(withPillar), n: withPillar.length, lift: null, gap: r1(target - actual),
           metrics: { actual_share: r1(actual), target_share: target, posts: list.length }, ref_ids: [],
         });
@@ -203,8 +216,8 @@ export function buildSignals(input: SignalInput): Signal[] {
     if (withPillar.length >= 20 && recent === 0) {
       out.push({
         kind: "pillar_dormant", category: "strategy", platform: null, pillar_id: p.id, format: null,
-        statement: `No post linked to "${p.name}" in the last 90 days (since ${recentFrom}); ${list.length} posts in total.`,
-        method: "Count of historical posts assigned to the pillar with a publication date in the last 90 days.",
+        statement: S("signals.statement.pillarDormant", { pillar: p.name, since: recentFrom, count: list.length }),
+        method: S("signals.method.pillarDormant"),
         period: { from: recentFrom, to: input.today }, n: list.length, lift: null, gap: p.target_share != null ? Number(p.target_share) : 10,
         metrics: { posts_last_90_days: 0, posts_total: list.length }, ref_ids: list.slice(-3).map((i) => i.id),
       });
@@ -220,8 +233,8 @@ export function buildSignals(input: SignalInput): Signal[] {
       if (share < 10) {
         out.push({
           kind: "funnel_gap", category: "strategy", platform: null, pillar_id: null, format: null,
-          statement: `The strategy describes a ${FUNNEL_LABELS[stage]} stage, but only ${pct(share)} of posts with a recorded funnel stage target it (${n} of ${withFunnel.length}).`,
-          method: "Share of historical posts whose funnel stage is recorded, per stage described in the strategy.",
+          statement: S("signals.statement.funnelGap", { stage: td(`funnel.${stage}`), share: pct(share), count: n, total: withFunnel.length }),
+          method: S("signals.method.funnelGap"),
           period: periodOf(withFunnel), n: withFunnel.length, lift: null, gap: r1(10 - share), metrics: { share: r1(share), posts: n }, ref_ids: [],
         });
       }
@@ -236,8 +249,8 @@ export function buildSignals(input: SignalInput): Signal[] {
     for (const f of (EXPECTED_FORMATS[platform] ?? []).filter((f) => !used.has(f))) {
       out.push({
         kind: "format_gap", category: "strategy", platform, pillar_id: null, format: f,
-        statement: `${f} has never been used on ${PLATFORM_LABELS[platform]} in ${list.length} posts.`,
-        method: "Formats recorded on the platform's historical posts vs the formats commonly available there.",
+        statement: S("signals.statement.formatGap", { format: f, platform: PLATFORM_LABELS[platform], count: list.length }),
+        method: S("signals.method.formatGap"),
         period: periodOf(list), n: list.length, lift: null, gap: 10, metrics: { posts: list.length }, ref_ids: [],
       });
     }
@@ -246,7 +259,7 @@ export function buildSignals(input: SignalInput): Signal[] {
   // --- Competitors: frequency always; engagement only when real counts exist ----------------------------------
   if (input.competitorItems.length >= 5) {
     const counts = new Map<string, Set<string>>();
-    for (const c of input.competitorItems) for (const t of new Set(contentTokens(`${c.title ?? ""} ${c.topic ?? ""} ${captionHook(c.caption) ?? ""}`))) counts.set(t, (counts.get(t) ?? new Set()).add(c.id));
+    for (const c of input.competitorItems) for (const w of new Set(contentTokens(`${c.title ?? ""} ${c.topic ?? ""} ${captionHook(c.caption) ?? ""}`))) counts.set(w, (counts.get(w) ?? new Set()).add(c.id));
     const ownTokens = new Set(input.items.flatMap((i) => contentTokens(`${i.title ?? ""} ${i.topic ?? ""}`)));
     const frequent = [...counts.entries()].filter(([, ids]) => ids.size >= 3).sort((a, b) => b[1].size - a[1].size).slice(0, 8);
     for (const [topic, ids] of frequent) {
@@ -256,8 +269,12 @@ export function buildSignals(input: SignalInput): Signal[] {
       const competitors = [...new Set(list.map((c) => c.competitor))];
       out.push({
         kind: "competitor_topic", category: "competitor", platform: null, pillar_id: null, format: null,
-        statement: `"${topic}" appears in ${ids.size} competitor posts (${competitors.slice(0, 3).join(", ")})${ownTokens.has(topic) ? "" : "; your own history never mentions it"}${withCounts.length >= 3 ? `; median likes + comments + shares ${eng[Math.floor(eng.length / 2)]} on ${withCounts.length} posts with counts` : "; no engagement counts available"}.`,
-        method: "Word frequency in competitor post titles/topics/first caption lines you imported; engagement only from counts recorded with those posts.",
+        statement: S("signals.statement.competitorTopic", {
+          topic, count: ids.size, competitors: competitors.slice(0, 3).join(", "),
+          own: ownTokens.has(topic) ? "" : S("signals.statement.competitorNotOwn"),
+          engagement: withCounts.length >= 3 ? S("signals.statement.competitorEngagement", { median: eng[Math.floor(eng.length / 2)]!, count: withCounts.length }) : S("signals.statement.competitorNoCounts"),
+        }),
+        method: S("signals.method.competitor"),
         period: { from: list.map((c) => c.published_at?.slice(0, 10)).filter(Boolean).sort()[0] ?? null, to: list.map((c) => c.published_at?.slice(0, 10)).filter(Boolean).sort().at(-1) ?? null },
         n: ids.size, lift: null, gap: ownTokens.has(topic) ? null : 10, metrics: { competitor_posts: ids.size, own_coverage: ownTokens.has(topic) ? "yes" : "none" }, ref_ids: [],
       });
@@ -268,8 +285,14 @@ export function buildSignals(input: SignalInput): Signal[] {
   for (const q of (input.searchItems ?? []).slice(0, 12)) {
     out.push({
       kind: "search_demand", category: "search", platform: "blog", pillar_id: null, format: null,
-      statement: `Google (${q.country.toUpperCase()}, ${q.language}) for "${q.keyword}": ${q.intent ?? "unknown"} intent; your site ${q.ownPosition ? `ranks #${q.ownPosition}` : "is not in the results"}${q.questions.length ? `; people also ask: ${q.questions.slice(0, 3).map((x) => `"${x}"`).join(", ")}` : ""}${q.related.length ? `; related searches: ${q.related.slice(0, 3).join(", ")}` : ""}.`,
-      method: "Google search snapshot (real Google results via SerpApi). No search volume: the provider plan doesn't return it.",
+      statement: S("signals.statement.searchDemand", {
+        country: q.country.toUpperCase(), language: q.language, keyword: q.keyword,
+        intent: S(`signals.intent.${q.intent === "informational" || q.intent === "commercial" || q.intent === "transactional" || q.intent === "navigational" ? q.intent : "unknown"}`),
+        position: q.ownPosition ? S("signals.statement.ranks", { position: q.ownPosition }) : S("signals.statement.notInResults"),
+        questions: q.questions.length ? S("signals.statement.peopleAlsoAsk", { list: q.questions.slice(0, 3).map((x) => `"${x}"`).join(", ") }) : "",
+        related: q.related.length ? S("signals.statement.related", { list: q.related.slice(0, 3).join(", ") }) : "",
+      }),
+      method: S("signals.method.search"),
       period: { from: q.date, to: q.date }, n: q.resultsRead, lift: null, gap: q.ownPosition ? null : 10,
       metrics: { keyword: q.keyword, intent: q.intent, own_position: q.ownPosition, questions: q.questions.length }, ref_ids: [q.id],
     });
@@ -279,7 +302,7 @@ export function buildSignals(input: SignalInput): Signal[] {
   for (const l of input.learnings ?? []) {
     out.push({
       kind: "published_result", category: "results", platform: l.platform, pillar_id: null, format: l.format,
-      statement: l.statement, method: "Published calendar posts: their objective's KPI ÷ the same KPI's median on the platform (own history).",
+      statement: l.statement, method: S("signals.method.published"),
       period: { from: null, to: null }, n: l.n, lift: l.ratio, gap: null, metrics: { ratio: l.ratio, posts: l.n }, ref_ids: l.ref_ids,
     });
   }

@@ -27,17 +27,17 @@ export const calendarRequestSchema = z
   .object({
     start: z.iso.date(),
     end: z.iso.date(),
-    platforms: z.array(z.object({ platform: z.enum(PLATFORMS), perWeek: z.number().min(0.5).max(21) })).min(1, "Pick at least one platform"),
+    platforms: z.array(z.object({ platform: z.enum(PLATFORMS), perWeek: z.number().min(0.5).max(21) })).min(1, "v:pickPlatform"),
     instruction: z.string().max(1000).optional(),
   })
-  .refine((r) => r.end >= r.start, { message: "End date must be after start date", path: ["end"] })
-  .refine((r) => (Date.parse(r.end) - Date.parse(r.start)) / 86400000 <= 92, { message: "Generate at most 3 months at a time", path: ["end"] });
+  .refine((r) => r.end >= r.start, { message: "v:endAfterStart", path: ["end"] })
+  .refine((r) => (Date.parse(r.end) - Date.parse(r.start)) / 86400000 <= 92, { message: "v:maxThreeMonths", path: ["end"] });
 export type CalendarRequest = z.infer<typeof calendarRequestSchema>;
 
 export const draftItemSchema = z.object({
   scheduled_date: z.iso.date(),
   platform: z.enum(PLATFORMS),
-  title: z.string().trim().min(1, "Title required").max(300),
+  title: z.string().trim().min(1, "v:titleRequired").max(300),
   format: z.string().trim().max(120).nullable(),
   pillar_id: z.uuid().nullable(),
   campaign_id: z.uuid().nullable(),
@@ -54,9 +54,9 @@ export const draftItemSchema = z.object({
 export type DraftItem = z.infer<typeof draftItemSchema>;
 
 export const saveCalendarSchema = z.object({
-  name: z.string().trim().min(1, "Name required").max(160),
+  name: z.string().trim().min(1, "v:nameRequired").max(160),
   start: z.iso.date(),
   end: z.iso.date(),
-  items: z.array(draftItemSchema).min(1, "Keep at least one item").max(200),
+  items: z.array(draftItemSchema).min(1, "v:keepOneItem").max(200),
   settings: z.record(z.string(), z.unknown()).default({}),
 });

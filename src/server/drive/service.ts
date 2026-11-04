@@ -3,7 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { readSocialTokens, storeSocialTokens } from "@/server/services/social";
 import { SocialApiError } from "@/server/social/http";
-import { refreshDriveToken } from "./google";
+import { driveT, refreshDriveToken } from "./google";
+import type { TFor } from "@/i18n/messages";
 
 export type DriveConnection = { id: string; project_id: string; external_account_id: string; account_name: string | null; status: string; token_expires_at: string | null };
 
@@ -20,11 +21,11 @@ export async function getDriveConnection(projectId: string): Promise<DriveConnec
  * A valid access token for the Drive API, refreshed on the server when it is about to expire. The refresh token
  * never leaves the server; only short-lived access tokens are used.
  */
-export async function driveAccessToken(db: SupabaseClient, conn: DriveConnection): Promise<string> {
+export async function driveAccessToken(db: SupabaseClient, conn: DriveConnection, translator?: TFor<"calendar">): Promise<string> {
   const tokens = await readSocialTokens(db, conn.id);
   const fresh = conn.token_expires_at && Date.parse(conn.token_expires_at) > Date.now() + 5 * 60_000;
   if (tokens.access && fresh) return tokens.access;
-  if (!tokens.refresh) throw new SocialApiError("Google Drive access expired. Reconnect Google Drive.", 401, "Google Drive", "auth");
+  if (!tokens.refresh) throw new SocialApiError(driveT(translator)("driveApi.expired"), 401, "Google Drive", "auth");
   const t = await refreshDriveToken(tokens.refresh);
   await storeSocialTokens(db, conn.id, { access: t.access, refresh: t.refresh, refreshExpiresAt: null });
   await db.from("social_connections").update({ token_expires_at: t.expiresAt, status: "connected", last_error: null }).eq("id", conn.id);

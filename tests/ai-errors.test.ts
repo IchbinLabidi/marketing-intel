@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { allowsFallback, backoffMs, classifyNetwork, classifyStatus, cooldownMs, failureMessage, isRetryable, MAX_RETRIES, redactSecrets, startWith } from "@/lib/ai/errors";
+import { allowsFallback, backoffMs, classifyNetwork, classifyStatus, cooldownMs, failureMessage, isRetryable, KIND_LABELS, kindLabel, MAX_RETRIES, redactSecrets, startWith } from "@/lib/ai/errors";
+import { testT } from "@/i18n/testing";
 
 describe("AI failure classification", () => {
   it("separates temporary overload (503) from rate limits and quota (429)", () => {
@@ -58,6 +59,12 @@ describe("AI failure classification", () => {
   it("writes clear messages and never leaks keys", () => {
     expect(failureMessage("gemini", "overloaded", { status: 503, attempts: 3 })).toBe("Gemini is overloaded (high demand, HTTP 503) after 3 attempts. This is temporary on the provider's side.");
     expect(failureMessage("anthropic", "billing")).toMatch(/Claude has no credit left/);
+    expect(failureMessage("gemini", "overloaded", { status: 503, attempts: 3 }, testT("errors"))).toBe("Gemini is overloaded (high demand, HTTP 503) after 3 attempts. This is temporary on the provider's side.");
+    expect(failureMessage("gemini", "not_configured")).toBe("Gemini is not configured (GEMINI_API_KEY missing).");
+    expect(failureMessage("anthropic", "server", { status: 500 })).toBe("Claude returned an error (HTTP 500).");
+    expect(failureMessage("gemini", "network", { attempts: 3 }, testT("errors", "fr"))).toBe("Impossible de joindre Gemini après 3 tentatives (erreur réseau).");
+    expect(KIND_LABELS.quota).toBe("quota reached");
+    expect(kindLabel("quota", testT("errors"))).toBe("quota reached");
     // fake values in the real formats (never a real key)
     const leaky = "request to https://x/v1?key=AIzaSyFAKEFAKEFAKEFAKEFAKEFAKEFAKE00000 failed; header x-api-key: sk-ant-api03-abcdefghijklmnop1234";
     const clean = redactSecrets(leaky);

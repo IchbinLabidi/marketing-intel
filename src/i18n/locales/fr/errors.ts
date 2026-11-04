@@ -1,0 +1,60 @@
+import type en from "../en/errors";
+import type { Translation } from "../../core";
+
+const errors: Translation<typeof en> = {
+  ai: {
+    kind: {
+      not_configured: "non configuré",
+      auth: "clé API refusée",
+      billing: "plus de crédit",
+      quota: "quota atteint",
+      rate_limit: "limite de requêtes",
+      overloaded: "surchargé",
+      network: "erreur réseau",
+      server: "erreur serveur",
+      bad_request: "requête rejetée",
+      refused: "refusé",
+      truncated: "réponse tronquée",
+      invalid_output: "réponse invalide",
+    },
+    failure: {
+      not_configured: "{name} n’est pas configuré ({envVar} manquante).",
+      auth: "{name} a refusé la clé API. Vérifiez {envVar}.",
+      billing: "{name} n’a plus de crédit.",
+      billingAnthropic: "{name} n’a plus de crédit (Anthropic Console → Plans & Billing).",
+      quota: "Le quota de {name} est atteint.",
+      quotaGemini: "Le quota de {name} est atteint (Google AI Studio → forfait et facturation).",
+      rate_limit: "{name} limite le nombre de requêtes ; patientez une minute.",
+      overloaded: "{name} est surchargé (forte demande{status}){tries}. C’est temporaire, côté fournisseur.",
+      network: "Impossible de joindre {name}{tries} (erreur réseau).",
+      server: "{name} a renvoyé une erreur{status}{tries}.",
+      bad_request: "{name} a rejeté la requête{status}.",
+      refused: "{name} a refusé cette requête.",
+      truncated: "La réponse de {name} était trop longue et a été tronquée ; essayez une demande plus ciblée.",
+      invalid_output: "La réponse de {name} ne respecte pas le format attendu.",
+    },
+    tries: { one: " après {count} tentative", other: " après {count} tentatives" },
+  },
+  aiTest: {
+    readOnly: "Votre rôle dans cet espace de travail est en lecture seule.",
+    notSet: "{envVar} n’est pas définie.",
+    working: "opérationnel",
+    validAnswer: "Réponse valide en {seconds} s.",
+    invalidJson: "Le modèle a répondu, mais pas avec le code JSON attendu : il n’est pas considéré comme opérationnel.",
+    unexpected: "Erreur inattendue",
+    summary: "{working} fournisseur(s) opérationnel(s) sur {total}",
+    noneWorking: "Aucun fournisseur d’IA n’est opérationnel pour le moment",
+    finished: "Test terminé",
+    title: "Test de l’IA",
+    subtitle: "· une toute petite requête par fournisseur (quelques fractions de centime) ; les erreurs temporaires sont retentées deux fois",
+    testing: "Test en cours… (jusqu’à quelques minutes si un fournisseur est surchargé)",
+    retry: "Relancer le test de l’IA",
+    run: "Lancer le test de l’IA",
+    health: "{provider} : {label} ; les requêtes l’ignorent jusqu’à {until}, sauf si le test réussit.",
+    attemptsWord: "tentatives",
+    attempts: " {count} tentatives.",
+    seconds: " {seconds} s.",
+  },
+};
+
+export default errors;

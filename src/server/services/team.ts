@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { legacyPermissions, type Permission, type Priority, type TaskStatus, type TaskType } from "@/lib/permissions";
 import type { WorkspaceRole } from "@/lib/domain/constants";
 import { getWorkspaceRole } from "./workspaces";
+import { getT } from "@/i18n/server";
 
 /** True when migration 0013 has not been applied yet (team tables/functions missing). */
 export function isMissingTeamSchema(error: unknown) {
@@ -34,7 +35,7 @@ export async function hasPermission(workspaceId: string, permission: Permission)
 
 /** For server actions: throws a readable error when the permission is missing. */
 export async function assertPermission(workspaceId: string, permission: Permission, message?: string) {
-  if (!(await hasPermission(workspaceId, permission))) throw new Error(message ?? "You don't have permission to do this.");
+  if (!(await hasPermission(workspaceId, permission))) throw new Error(message ?? (await getT("team"))("errors.noPermission"));
 }
 
 export const teamSchemaReady = cache(async (): Promise<boolean> => {
@@ -85,12 +86,12 @@ export const listTeam = cache(async (workspaceId: string): Promise<TeamMember[]>
 
 /** Members with their role name, for assignee and collaborator pickers. */
 export async function assignablePeople(workspaceId: string) {
-  const [team, roles] = await Promise.all([listTeam(workspaceId), listRoles(workspaceId)]);
+  const [team, roles, t] = await Promise.all([listTeam(workspaceId), listRoles(workspaceId), getT("domain")]);
   const roleNames = new Map(roles.map((r) => [r.id, r.name]));
   return team.map((m) => ({
     user_id: m.user_id,
     name: m.full_name,
-    roleName: (m.role_id && roleNames.get(m.role_id)) || (m.role === "owner" ? "Owner" : m.role[0].toUpperCase() + m.role.slice(1)),
+    roleName: (m.role_id && roleNames.get(m.role_id)) || t(`role.${m.role}`),
     canEdit: m.role !== "viewer",
   }));
 }

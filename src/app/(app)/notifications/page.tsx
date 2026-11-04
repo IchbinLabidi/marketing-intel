@@ -3,14 +3,18 @@ import { TaskTable } from "@/components/team/task-table";
 import { NotificationList } from "@/components/team/notification-list";
 import { OPEN_TASK_STATUSES } from "@/lib/permissions";
 import { nowMs } from "@/lib/format";
+import { getT } from "@/i18n/server";
 import { requireUser } from "@/server/services/session";
 import { getActiveWorkspace } from "@/server/services/workspaces";
 import { getPermissions, listNotifications, listWorkspaceTasks } from "@/server/services/team";
 
-export const metadata = { title: "Notifications" };
+export async function generateMetadata() {
+  const t = await getT("team");
+  return { title: t("meta.notifications") };
+}
 
 export default async function NotificationsPage() {
-  const [user, workspace] = await Promise.all([requireUser(), getActiveWorkspace()]);
+  const [user, workspace, t] = await Promise.all([requireUser(), getActiveWorkspace(), getT("team")]);
   const ws = workspace!;
   const [items, tasks, perms] = await Promise.all([listNotifications(ws.id), listWorkspaceTasks(ws.id, { userId: user.id }), getPermissions(ws.id)]);
   const today = new Date().toISOString().slice(0, 10);
@@ -20,15 +24,15 @@ export default async function NotificationsPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader eyebrow={ws.name} title="Notifications" description="Assignments, mentions, review requests and requested changes." />
+      <PageHeader eyebrow={ws.name} title={t("notifications.title")} description={t("notifications.description")} />
       {dueSoon.length ? (
         <section className="space-y-3">
-          <SectionHeader title="Deadlines" description="Your open tasks that are overdue or due within two days." />
+          <SectionHeader title={t("notifications.deadlines")} description={t("notifications.deadlinesDescription")} />
           <TaskTable tasks={dueSoon} today={today} userId={user.id} perms={[...perms]} emptyText="" />
         </section>
       ) : null}
       <section className="space-y-3">
-        <SectionHeader title="Activity for you" />
+        <SectionHeader title={t("notifications.activity")} />
         <NotificationList items={items} />
       </section>
     </div>

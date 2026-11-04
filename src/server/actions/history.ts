@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { canEdit, METRICS } from "@/lib/domain/constants";
 import { autoMapColumns, TARGET_FIELD_KEYS, type ColumnMapping } from "@/lib/history/fields";
 import { buildRows, coveredPeriod, type RawRow, type StrategyRefs } from "@/lib/history/rows";
-import { formToObject, zodErrorToResult, type ActionResult } from "@/lib/validation/common";
+import { formToObject, type ActionResult } from "@/lib/validation/common";
+import { zodErrorToResult } from "@/lib/validation/errors";
 import { historicalItemSchema } from "@/lib/validation/history";
 import type { ImportJob } from "@/types/domain";
 import { describeAIError, isAIConfigured } from "@/server/ai/client";
@@ -29,8 +30,9 @@ import {
 import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
 import { getStrategyBundle } from "@/server/services/strategy";
+import { getT } from "@/i18n/server";
 
-const NO_EDIT: ActionResult<never> = { ok: false, error: "Your role in this workspace is read-only." };
+const noEdit = async (): Promise<ActionResult<never>> => ({ ok: false, error: (await getT("history"))("actions.readOnly") });
 const fail = (e: unknown, fallback: string): ActionResult<never> => ({ ok: false, error: e instanceof Error ? e.message : fallback });
 
 async function guard(projectId: string) {
@@ -55,12 +57,13 @@ const CONTENT_TYPES: Record<ImportFileKind, string> = {
 type UploadedFile = { buffer: Buffer; name: string; kind: ImportFileKind; ext: string; hash: string; size: number };
 
 async function readUpload(formData: FormData): Promise<UploadedFile | ActionResult<never>> {
+  const t = await getT("history");
   const file = formData.get("file");
-  if (!(file instanceof File) || !file.name) return { ok: false, error: "Choose a file to import." };
-  if (file.size === 0) return { ok: false, error: `“${file.name}” is empty.` };
-  if (file.size > MAX_FILE_BYTES) return { ok: false, error: `“${file.name}” is larger than 10 MB. Split it or export only the calendar sheet.` };
+  if (!(file instanceof File) || !file.name) return { ok: false, error: t("actions.chooseFile") };
+  if (file.size === 0) return { ok: false, error: t("actions.emptyFile", { name: file.name }) };
+  if (file.size > MAX_FILE_BYTES) return { ok: false, error: t("actions.tooLarge", { name: file.name }) };
   const kind = fileKind(file.name);
-  if (!kind) return { ok: false, error: "Unsupported file type. Import an Excel (.xlsx, .xls), CSV or PDF file." };
+  if (!kind) return { ok: false, error: t("actions.unsupported") };
   const buffer = Buffer.from(await file.arrayBuffer());
   return { buffer, name: file.name, ...kind, hash: createHash("sha256").update(buffer).digest("hex"), size: file.size };
 }
@@ -69,8 +72,9 @@ const storagePath = (projectId: string, jobId: string, name: string) =>
   `${projectId}/${jobId}/${name.normalize("NFD").replace(/[^\w.-]+/g, "_").slice(-120)}`;
 
 async function extractPdf(buffer: Buffer, ctx: { workspaceId: string; projectId: string; userId: string }) {
+  const t = await getT("history");
   if (!isAIConfigured()) {
-    throw new ExtractionError("PDF calendars are read with AI, which is not configured on this server. Export the calendar to Excel or CSV and import that file instead.");
+    throw new ExtractionError(t("actions.pdfNoAi"));
   }
   const out = await runStructured({
     feature: "history.pdf_extraction",
@@ -84,7 +88,7 @@ async function extractPdf(buffer: Buffer, ctx: { workspaceId: string; projectId:
     pdfs: [buffer.toString("base64")],
   });
   if (!out.rows.length) {
-    throw new ExtractionError(`No calendar table could be extracted from this PDF.${out.notes.length ? ` ${out.notes.join(" ")}` : ""} Try an Excel or CSV export instead.`);
+    throw new ExtractionError(out.notes.length ? t("actions.pdfNoTableNotes", { notes: out.notes.join(" ") }) : t("actions.pdfNoTable"));
   }
   // PDF rows have no sheet row numbers; number them from 1 in reading order.
   const extracted = matrixToRows([out.columns, ...out.rows], 0);
@@ -100,6 +104,7 @@ async function extractIntoJob(
   file: { buffer: Buffer; kind: ImportFileKind; sheet?: string | null },
   ctx: { workspaceId: string; userId: string },
 ) {
+  const t = await getT("history");
   try {
     let extracted: Extracted;
     const pdfWarnings: { row: number; field: string; message: string }[] = [];
@@ -107,18 +112,18 @@ async function extractIntoJob(
       const pdf = await extractPdf(file.buffer, { ...ctx, projectId: job.project_id });
       extracted = pdf.extracted;
       if (pdf.reliability !== "high") {
-        pdfWarnings.push({ row: 0, field: "file", message: `PDF extraction reliability is ${pdf.reliability}. Check every row against the original before confirming, or import an Excel/CSV export.` });
+        pdfWarnings.push({ row: 0, field: "file", message: t("actions.pdfReliability", { reliability: t(`actions.reliability.${pdf.reliability === "medium" ? "medium" : "low"}`) }) });
       }
       for (const n of pdf.notes) pdfWarnings.push({ row: 0, field: "file", message: n });
     } else {
       extracted = file.kind === "csv" ? extractCsv(file.buffer) : extractSpreadsheet(file.buffer, file.sheet);
     }
     if (!extracted.rows.some((r) => Object.entries(r).some(([k, v]) => k !== "__row" && v))) {
-      throw new ExtractionError(extracted.headers.length ? "The file has column headers but no data rows." : "No data was found in this file.");
+      throw new ExtractionError(extracted.headers.length ? t("actions.noDataRows") : t("actions.noData"));
     }
     const previous = Object.fromEntries(Object.entries(job.column_mapping ?? {}).filter(([, col]) => extracted.headers.includes(col)));
     const mapping = { ...autoMapColumns(extracted.headers), ...previous };
-    const result = buildRows(extracted.rows, mapping, await strategyRefs(job.project_id), { excluded: job.excluded_rows ?? [] });
+    const result = buildRows(extracted.rows, mapping, await strategyRefs(job.project_id), { excluded: job.excluded_rows ?? [] }, t);
     await updateImportJob(job.project_id, job.id, {
       status: result.errors.length ? "mapped" : "validated",
       raw_columns: extracted.headers,
@@ -138,7 +143,7 @@ async function extractIntoJob(
 
 async function revalidateJob(projectId: string, job: ImportJob, patch: Partial<ImportJob> = {}) {
   const merged = { ...job, ...patch };
-  const result = buildRows(merged.raw_rows as RawRow[], merged.column_mapping, await strategyRefs(projectId), { excluded: merged.excluded_rows });
+  const result = buildRows(merged.raw_rows as RawRow[], merged.column_mapping, await strategyRefs(projectId), { excluded: merged.excluded_rows }, await getT("history"));
   const keepFileWarnings = (job.warnings ?? []).filter((w) => w.row === 0);
   await updateImportJob(projectId, job.id, {
     ...patch,
@@ -156,7 +161,7 @@ export type UploadResult = { jobId?: string; duplicateOf?: { id: string; label: 
 
 export async function uploadImportAction(projectId: string, _: ActionResult<UploadResult> | null, formData: FormData): Promise<ActionResult<UploadResult>> {
   const { user, project, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const file = await readUpload(formData);
   if ("ok" in file) return file;
   try {
@@ -180,17 +185,17 @@ export async function uploadImportAction(projectId: string, _: ActionResult<Uplo
     await updateImportJob(projectId, jobId, { storage_path: path });
     await extractIntoJob({ id: jobId, project_id: projectId, column_mapping: {}, excluded_rows: [] }, file, { workspaceId: project.workspace_id, userId: user.id });
     refresh(projectId);
-    return { ok: true, data: { jobId }, message: "File uploaded" };
+    return { ok: true, data: { jobId }, message: (await getT("history"))("actions.uploaded") };
   } catch (e) {
-    return fail(e, "Upload failed");
+    return fail(e, (await getT("history"))("actions.uploadFailed"));
   }
 }
 
 export async function replaceImportFileAction(projectId: string, jobId: string, _: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const { user, project, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const job = await getImportJob(projectId, jobId);
-  if (!job) return { ok: false, error: "Import not found." };
+  if (!job) return { ok: false, error: (await getT("history"))("actions.importNotFound") };
   const file = await readUpload(formData);
   if ("ok" in file) return file;
   try {
@@ -202,38 +207,38 @@ export async function replaceImportFileAction(projectId: string, jobId: string, 
     });
     await extractIntoJob({ ...job, excluded_rows: [] }, file, { workspaceId: project.workspace_id, userId: user.id });
     refresh(projectId);
-    return { ok: true, message: "New file loaded. Review it and confirm to replace the imported records." };
+    return { ok: true, message: (await getT("history"))("actions.replaced") };
   } catch (e) {
-    return fail(e, "Could not replace the file");
+    return fail(e, (await getT("history"))("actions.replaceFailed"));
   }
 }
 
 export async function selectSheetAction(projectId: string, jobId: string, sheet: string): Promise<ActionResult> {
   const { user, project, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const job = await getImportJob(projectId, jobId);
-  if (!job?.storage_path) return { ok: false, error: "Import not found." };
-  if (!job.sheet_names.includes(sheet)) return { ok: false, error: "Unknown sheet." };
+  if (!job?.storage_path) return { ok: false, error: (await getT("history"))("actions.importNotFound") };
+  if (!job.sheet_names.includes(sheet)) return { ok: false, error: (await getT("history"))("actions.unknownSheet") };
   try {
     const buffer = await downloadImportFile(job.storage_path);
     await updateImportJob(projectId, jobId, { excluded_rows: [] });
     await extractIntoJob({ ...job, column_mapping: {}, excluded_rows: [] }, { buffer, kind: "xlsx", sheet }, { workspaceId: project.workspace_id, userId: user.id });
     refresh(projectId);
-    return { ok: true, message: `Sheet “${sheet}” loaded` };
+    return { ok: true, message: (await getT("history"))("actions.sheetLoaded", { sheet }) };
   } catch (e) {
-    return fail(e, "Could not read that sheet");
+    return fail(e, (await getT("history"))("actions.sheetFailed"));
   }
 }
 
 export async function deleteImportAction(projectId: string, jobId: string): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   try {
     await deleteImportJob(projectId, jobId);
     refresh(projectId);
-    return { ok: true, message: "Import and its records deleted" };
+    return { ok: true, message: (await getT("history"))("actions.importDeleted") };
   } catch (e) {
-    return fail(e, "Could not delete");
+    return fail(e, (await getT("history"))("actions.deleteFailed"));
   }
 }
 
@@ -242,65 +247,67 @@ export async function deleteImportAction(projectId: string, jobId: string): Prom
 // ---------------------------------------------------------------------------
 export async function saveMappingAction(projectId: string, jobId: string, mapping: ColumnMapping): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const job = await getImportJob(projectId, jobId);
-  if (!job) return { ok: false, error: "Import not found." };
+  if (!job) return { ok: false, error: (await getT("history"))("actions.importNotFound") };
   const clean = Object.fromEntries(
     Object.entries(mapping ?? {}).filter(([field, col]) => TARGET_FIELD_KEYS.includes(field) && typeof col === "string" && job.raw_columns.includes(col)),
   );
   const used = Object.values(clean);
-  if (new Set(used).size !== used.length) return { ok: false, error: "Each column can only be mapped to one field." };
+  if (new Set(used).size !== used.length) return { ok: false, error: (await getT("history"))("actions.columnUsedTwice") };
   try {
     await revalidateJob(projectId, job, { column_mapping: clean });
     refresh(projectId);
-    return { ok: true, message: "Mapping saved" };
+    return { ok: true, message: (await getT("history"))("actions.mappingSaved") };
   } catch (e) {
-    return fail(e, "Could not save the mapping");
+    return fail(e, (await getT("history"))("actions.mappingFailed"));
   }
 }
 
 export async function correctCellAction(projectId: string, jobId: string, row: number, column: string, value: string): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const job = await getImportJob(projectId, jobId);
-  if (!job) return { ok: false, error: "Import not found." };
-  if (!job.raw_columns.includes(column)) return { ok: false, error: "Unknown column." };
+  if (!job) return { ok: false, error: (await getT("history"))("actions.importNotFound") };
+  if (!job.raw_columns.includes(column)) return { ok: false, error: (await getT("history"))("actions.unknownColumn") };
   const rows = (job.raw_rows as RawRow[]).map((r) => (Number(r.__row) === row ? { ...r, [column]: String(value).slice(0, 5000) } : r));
   try {
     await revalidateJob(projectId, job, { raw_rows: rows });
     refresh(projectId);
-    return { ok: true, message: `Row ${row} corrected` };
+    return { ok: true, message: (await getT("history"))("actions.rowCorrected", { row: String(row) }) };
   } catch (e) {
-    return fail(e, "Could not save the correction");
+    return fail(e, (await getT("history"))("actions.correctionFailed"));
   }
 }
 
 export async function setRowExcludedAction(projectId: string, jobId: string, row: number, excluded: boolean): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const job = await getImportJob(projectId, jobId);
-  if (!job) return { ok: false, error: "Import not found." };
+  if (!job) return { ok: false, error: (await getT("history"))("actions.importNotFound") };
   const set = new Set(job.excluded_rows);
   if (excluded) set.add(row);
   else set.delete(row);
   try {
     await revalidateJob(projectId, job, { excluded_rows: [...set].sort((a, b) => a - b) });
     refresh(projectId);
-    return { ok: true, message: excluded ? `Row ${row} will not be imported` : `Row ${row} restored` };
+    const t = await getT("history");
+    return { ok: true, message: excluded ? t("actions.rowExcluded", { row: String(row) }) : t("actions.rowRestored", { row: String(row) }) };
   } catch (e) {
-    return fail(e, "Could not update the row");
+    return fail(e, (await getT("history"))("actions.rowFailed"));
   }
 }
 
 export async function confirmImportAction(projectId: string, jobId: string, label: string, referenceYear: number | null): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const job = await getImportJob(projectId, jobId);
-  if (!job) return { ok: false, error: "Import not found." };
+  if (!job) return { ok: false, error: (await getT("history"))("actions.importNotFound") };
+  const t = await getT("history");
   try {
-    const result = buildRows(job.raw_rows as RawRow[], job.column_mapping, await strategyRefs(projectId), { excluded: job.excluded_rows });
-    if (result.errors.length) return { ok: false, error: `${result.errors.length} problem(s) must be fixed or the rows excluded before importing.` };
-    if (!result.rows.length) return { ok: false, error: "There is nothing to import: every row is empty or excluded." };
+    const result = buildRows(job.raw_rows as RawRow[], job.column_mapping, await strategyRefs(projectId), { excluded: job.excluded_rows }, t);
+    if (result.errors.length) return { ok: false, error: t("actions.problemsToFix", { count: result.errors.length }) };
+    if (!result.rows.length) return { ok: false, error: t("actions.nothingToImport") };
     await replaceJobItems(
       projectId,
       jobId,
@@ -318,9 +325,9 @@ export async function confirmImportAction(projectId: string, jobId: string, labe
       validation_errors: [],
     });
     refresh(projectId);
-    return { ok: true, message: `${result.rows.length} records imported` };
+    return { ok: true, message: t("actions.imported", { count: result.rows.length }) };
   } catch (e) {
-    return fail(e, "Import failed");
+    return fail(e, t("actions.importFailed"));
   }
 }
 
@@ -329,22 +336,23 @@ export async function confirmImportAction(projectId: string, jobId: string, labe
 // ---------------------------------------------------------------------------
 export async function updateHistoricalItemAction(projectId: string, itemId: string, _: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const parsed = historicalItemSchema.safeParse(formToObject(formData));
   if (!parsed.success) return zodErrorToResult(parsed.error);
+  const t = await getT("history");
   const refs = await strategyRefs(projectId);
   const values = { ...parsed.data };
-  if (values.pillar_id && !refs.pillars.some((p) => p.id === values.pillar_id)) return { ok: false, error: "Unknown pillar." };
-  if (values.campaign_id && !refs.campaigns.some((c) => c.id === values.campaign_id)) return { ok: false, error: "Unknown campaign." };
+  if (values.pillar_id && !refs.pillars.some((p) => p.id === values.pillar_id)) return { ok: false, error: t("actions.unknownPillar") };
+  if (values.campaign_id && !refs.campaigns.some((c) => c.id === values.campaign_id)) return { ok: false, error: t("actions.unknownCampaign") };
   if (!values.title && !values.topic && !values.caption && !values.description) {
-    return { ok: false, error: "Please fix the highlighted fields.", fieldErrors: { title: "A record needs a title, topic, caption or description" } };
+    return { ok: false, error: t("actions.fixFields"), fieldErrors: { title: t("actions.recordNeedsContent") } };
   }
   try {
     // Keep the text columns in sync with the linked strategy record, so analysis and exports agree.
     const pillar = refs.pillars.find((p) => p.id === values.pillar_id);
     const campaign = refs.campaigns.find((c) => c.id === values.campaign_id);
     const current = await getHistoricalItem(projectId, itemId);
-    if (!current) return { ok: false, error: "Record not found." };
+    if (!current) return { ok: false, error: t("actions.recordNotFound") };
     // Metrics of synced posts belong to the source and are refreshed by each sync; they can't be edited by hand.
     const editable = current.source === "meta_api" ? Object.fromEntries(Object.entries(values).filter(([k]) => !(METRICS as readonly string[]).includes(k))) : values;
     await updateHistoricalItem(projectId, itemId, {
@@ -354,20 +362,20 @@ export async function updateHistoricalItemAction(projectId: string, itemId: stri
       ...(values.pillar_id !== current.pillar_id ? { pillar_assigned_by: values.pillar_id ? "user" : null } : {}),
     } as never);
     refresh(projectId);
-    return { ok: true, message: "Record saved" };
+    return { ok: true, message: t("actions.recordSaved") };
   } catch (e) {
-    return fail(e, "Could not save");
+    return fail(e, t("actions.saveFailed"));
   }
 }
 
 export async function deleteHistoricalItemAction(projectId: string, itemId: string): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   try {
     await deleteHistoricalItem(projectId, itemId);
     refresh(projectId);
-    return { ok: true, message: "Record deleted" };
+    return { ok: true, message: (await getT("history"))("actions.recordDeleted") };
   } catch (e) {
-    return fail(e, "Could not delete");
+    return fail(e, (await getT("history"))("actions.deleteFailed"));
   }
 }

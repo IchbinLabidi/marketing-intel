@@ -1,42 +1,41 @@
-export const metadata = { title: "Terms of service" };
+import { LanguageSwitcher } from "@/components/app/language-switcher";
+import { siteConfig } from "@/config/site";
+import { getT } from "@/i18n/server";
+import { languageAlternates } from "@/i18n/seo";
+
+const CONTACT = "elyes.lab@gmail.com";
+
+export async function generateMetadata() {
+  const t = await getT("legal");
+  return { title: t("terms.metaTitle"), description: t("terms.metaDescription", { app: siteConfig.name }), alternates: languageAlternates("/terms") };
+}
 
 /** Public terms of service, linked from the TikTok, Google and Meta app settings. */
-export default function TermsOfService() {
+export default async function TermsOfService() {
+  const t = await getT("legal");
+  const v = { app: siteConfig.name, email: CONTACT };
   return (
     <main className="mx-auto max-w-2xl space-y-4 px-6 py-16 text-[13px] leading-relaxed">
-      <h1 className="text-lg font-semibold">Orix Signals terms of service</h1>
-      <p>
-        Orix Signals is a marketing workspace used by invited teams to plan, approve, publish and analyse social media content for their own
-        brands. By using Orix Signals you agree to these terms. Contact: elyes.lab@gmail.com.
-      </p>
+      <div className="flex items-start justify-between gap-3">
+        <h1 className="text-lg font-semibold">{t("terms.title", v)}</h1>
+        <LanguageSwitcher size="sm" />
+      </div>
+      <p>{t("terms.intro", v)}</p>
 
-      <h2 className="font-semibold">Who can use Orix Signals</h2>
-      <p>
-        Access is by invitation only. You are responsible for the accounts you connect and must be allowed to publish on behalf of them.
-      </p>
+      <h2 className="font-semibold">{t("terms.whoTitle", v)}</h2>
+      <p>{t("terms.whoBody")}</p>
 
-      <h2 className="font-semibold">Publishing</h2>
-      <p>
-        Orix Signals publishes only content that a team member has approved and explicitly chosen to publish, to the account and network that
-        member selected. You remain responsible for the content you publish and for following the rules of each network (Facebook,
-        Instagram, TikTok, YouTube, LinkedIn), including their community guidelines and music and branded-content policies.
-      </p>
+      <h2 className="font-semibold">{t("terms.publishingTitle")}</h2>
+      <p>{t("terms.publishingBody", v)}</p>
 
-      <h2 className="font-semibold">Your data</h2>
-      <p>
-        Your content and connected accounts stay yours. How Orix Signals handles data is described in the{" "}
-        <a className="underline" href="/privacy">privacy policy</a>. You can disconnect any account at any time from a project&apos;s
-        Integrations page.
-      </p>
+      <h2 className="font-semibold">{t("terms.dataTitle")}</h2>
+      <p>{t.rich("terms.dataBody", { ...v, link: (c) => <a className="underline" href="/privacy">{c}</a> })}</p>
 
-      <h2 className="font-semibold">Availability</h2>
-      <p>
-        Orix Signals is provided as is. Networks can change or limit their APIs, which can temporarily stop a feature such as publishing or
-        statistics. Orix Signals is not liable for posts a network rejects, delays or removes.
-      </p>
+      <h2 className="font-semibold">{t("terms.availabilityTitle")}</h2>
+      <p>{t("terms.availabilityBody", v)}</p>
 
-      <h2 className="font-semibold">Changes</h2>
-      <p>These terms can be updated; the current version is always on this page.</p>
+      <h2 className="font-semibold">{t("terms.changesTitle")}</h2>
+      <p>{t("terms.changesBody")}</p>
     </main>
   );
 }

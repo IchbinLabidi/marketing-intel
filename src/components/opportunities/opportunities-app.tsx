@@ -9,14 +9,15 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { EmptyState } from "@/components/app/empty-state";
 import { PostEditor } from "@/components/calendar/post-editor";
 import { pillarDotClass } from "@/components/calendar/styles";
-import { FUNNEL_LABELS, FUNNEL_STAGES, PLATFORM_LABELS, type InsightType, type Platform } from "@/lib/domain/constants";
+import { FUNNEL_STAGES, PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
 import type { PlatformTiming } from "@/lib/calendar/insights";
 import { relevanceOf, type FeedbackKind, type Weights } from "@/lib/opportunities/scoring";
 import { opportunityFeedbackAction, regenerateOpportunityAction, setOpportunityStateAction } from "@/server/actions/opportunities";
 import { opportunityToProductionAction } from "@/server/actions/production";
 import type { Opportunity, OpportunityFeedback } from "@/types/domain";
 import { cn } from "@/lib/utils";
-import { EVIDENCE_LABELS, OpportunityCard, STATE_LABELS } from "./opportunity-card";
+import { EVIDENCE_TYPES, OpportunityCard, STATES } from "./opportunity-card";
+import { useFormatter, useT } from "@/i18n/client";
 import { EvidenceDialog, GenerateDialog, RefineDialog, WeightsDialog } from "./opportunity-dialogs";
 
 type Linked = { id: string; opportunity_id: string | null; title: string; status: string; scheduled_date: string | null };
@@ -44,6 +45,9 @@ export function OpportunitiesApp({
   aiEnabled: boolean;
 }) {
   const router = useRouter();
+  const t = useT("opportunities");
+  const td = useT("domain");
+  const fmt = useFormatter();
   const [filters, setFilters] = React.useState<Filters>(NO_FILTERS);
   const [sort, setSort] = React.useState<Sort>("relevance");
   const [busyId, setBusyId] = React.useState<string | null>(null);
@@ -56,7 +60,7 @@ export function OpportunitiesApp({
   const [timing, setTiming] = React.useState<PlatformTiming[]>([]);
   React.useEffect(() => {
     let live = true;
-    timingPromise.then((t) => live && setTiming(t), () => live && setTiming([]));
+    timingPromise.then((x) => live && setTiming(x), () => live && setTiming([]));
     return () => { live = false; };
   }, [timingPromise]);
 
@@ -124,57 +128,57 @@ export function OpportunitiesApp({
   };
 
   const brief = (o: Opportunity) =>
-    [o.creative_angle ? `Angle: ${o.creative_angle}` : "", o.target_audience ? `Audience: ${o.target_audience}` : "", `Why: ${o.rationale}`, o.suggested_timing ? `Timing: ${o.suggested_timing}` : ""]
+    [o.creative_angle ? t("brief.angle", { text: o.creative_angle }) : "", o.target_audience ? t("brief.audience", { text: o.target_audience }) : "", t("brief.why", { text: o.rationale ?? "" }), o.suggested_timing ? t("brief.timing", { text: o.suggested_timing }) : ""]
       .filter(Boolean).join("\n").slice(0, 3000);
 
   return (
     <div className="space-y-6">
       {/* Overview */}
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-5" aria-label="Overview">
-        <Stat icon={Lightbulb} label="Opportunities" value={stats.total} hint="Not dismissed" />
-        <Stat icon={Star} label="High priority" value={stats.high} hint="Score 70 or more" />
-        <Stat icon={Target} label="Data-supported" value={stats.data} hint="Backed by your data" />
-        <Stat icon={FlaskConical} label="To validate" value={stats.hypotheses} hint="Hypotheses and experiments" />
-        <Stat icon={CalendarCheck} label="In the calendar" value={stats.calendar} hint={`${stats.published} published`} className="col-span-2 md:col-span-1" />
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-5" aria-label={t("stats.label")}>
+        <Stat icon={Lightbulb} label={t("stats.total")} value={stats.total} hint={t("stats.totalHint")} />
+        <Stat icon={Star} label={t("stats.high")} value={stats.high} hint={t("stats.highHint")} />
+        <Stat icon={Target} label={t("stats.data")} value={stats.data} hint={t("stats.dataHint")} />
+        <Stat icon={FlaskConical} label={t("stats.toValidate")} value={stats.hypotheses} hint={t("stats.toValidateHint")} />
+        <Stat icon={CalendarCheck} label={t("stats.calendar")} value={stats.calendar} hint={t("stats.published", { count: stats.published })} className="col-span-2 md:col-span-1" />
       </section>
 
       {/* Toolbar */}
       <section className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           {!readOnly ? (
-            <Button onClick={() => setDialog({ kind: "generate", initial: { pillar_id: filters.pillar && filters.pillar !== "none" ? filters.pillar : undefined, platform: (filters.platform || undefined) as Platform | undefined, funnel_stage: filters.funnel || undefined } })} disabled={!aiEnabled} title={!aiEnabled ? "Add GEMINI_API_KEY or ANTHROPIC_API_KEY to enable AI features" : undefined}>
-              <Sparkles /> Generate opportunities
+            <Button onClick={() => setDialog({ kind: "generate", initial: { pillar_id: filters.pillar && filters.pillar !== "none" ? filters.pillar : undefined, platform: (filters.platform || undefined) as Platform | undefined, funnel_stage: filters.funnel || undefined } })} disabled={!aiEnabled} title={!aiEnabled ? t("toolbar.aiDisabled") : undefined}>
+              <Sparkles /> {t("toolbar.generate")}
             </Button>
           ) : null}
-          {!readOnly ? <Button variant="outline" onClick={() => setDialog({ kind: "weights" })}><SlidersHorizontal /> Scoring weights</Button> : null}
+          {!readOnly ? <Button variant="outline" onClick={() => setDialog({ kind: "weights" })}><SlidersHorizontal /> {t("toolbar.weights")}</Button> : null}
           <div className="ml-auto flex items-center gap-2">
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              Sort
-              <NativeSelect value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="h-8 w-40 text-[13px]" aria-label="Sort opportunities">
-                <option value="relevance">Relevance</option>
-                <option value="score">Opportunity score</option>
-                <option value="confidence">Confidence</option>
-                <option value="newest">Newest</option>
+              {t("toolbar.sort")}
+              <NativeSelect value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="h-8 w-40 text-[13px]" aria-label={t("toolbar.sortLabel")}>
+                <option value="relevance">{t("toolbar.sortRelevance")}</option>
+                <option value="score">{t("toolbar.sortScore")}</option>
+                <option value="confidence">{t("toolbar.sortConfidence")}</option>
+                <option value="newest">{t("toolbar.sortNewest")}</option>
               </NativeSelect>
             </label>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-x-2 gap-y-3 rounded-xl border bg-card p-3 shadow-xs lg:grid-cols-4 xl:grid-cols-8">
-          <F label="Platform" value={filters.platform} onChange={(v) => setFilters({ ...filters, platform: v })} options={[...new Set(opportunities.map((o) => o.platform).filter(Boolean))].map((p) => ({ value: p!, label: PLATFORM_LABELS[p as Platform] ?? p! }))} />
-          <F label="Pillar" value={filters.pillar} onChange={(v) => setFilters({ ...filters, pillar: v })} options={[...pillars.map((p) => ({ value: p.id, label: p.name })), { value: "none", label: "No pillar" }]} />
-          <F label="Funnel" value={filters.funnel} onChange={(v) => setFilters({ ...filters, funnel: v })} options={FUNNEL_STAGES.map((f) => ({ value: f, label: FUNNEL_LABELS[f] }))} />
-          <F label="Format" value={filters.format} onChange={(v) => setFilters({ ...filters, format: v })} options={formats.map((f) => ({ value: f, label: f }))} />
-          <F label="Score" value={filters.minScore} onChange={(v) => setFilters({ ...filters, minScore: v })} options={[{ value: "50", label: "50 or more" }, { value: "70", label: "70 or more" }, { value: "85", label: "85 or more" }]} />
-          <F label="Confidence" value={filters.confidence} onChange={(v) => setFilters({ ...filters, confidence: v })} options={[{ value: "high", label: "High" }, { value: "medium", label: "Medium" }, { value: "low", label: "Low" }]} />
-          <F label="Evidence" value={filters.evidence} onChange={(v) => setFilters({ ...filters, evidence: v })} options={(Object.keys(EVIDENCE_LABELS) as InsightType[]).map((k) => ({ value: k, label: EVIDENCE_LABELS[k] }))} />
-          <F label="Status" value={filters.status} onChange={(v) => setFilters({ ...filters, status: v })} allLabel="All, incl. dismissed" options={[{ value: "active", label: "Active (not dismissed)" }, ...(Object.keys(STATE_LABELS) as Opportunity["state"][]).map((s) => ({ value: s, label: STATE_LABELS[s] }))]} />
+          <F label={t("fields.platform")} allLabel={t("filters.all")} value={filters.platform} onChange={(v) => setFilters({ ...filters, platform: v })} options={[...new Set(opportunities.map((o) => o.platform).filter(Boolean))].map((p) => ({ value: p!, label: PLATFORM_LABELS[p as Platform] ?? p! }))} />
+          <F label={t("filters.pillar")} allLabel={t("filters.all")} value={filters.pillar} onChange={(v) => setFilters({ ...filters, pillar: v })} options={[...pillars.map((p) => ({ value: p.id, label: p.name })), { value: "none", label: t("filters.noPillar") }]} />
+          <F label={t("filters.funnel")} allLabel={t("filters.all")} value={filters.funnel} onChange={(v) => setFilters({ ...filters, funnel: v })} options={FUNNEL_STAGES.map((f) => ({ value: f, label: td(`funnel.${f}`) }))} />
+          <F label={t("filters.format")} allLabel={t("filters.all")} value={filters.format} onChange={(v) => setFilters({ ...filters, format: v })} options={formats.map((f) => ({ value: f, label: f }))} />
+          <F label={t("filters.score")} allLabel={t("filters.all")} value={filters.minScore} onChange={(v) => setFilters({ ...filters, minScore: v })} options={[50, 70, 85].map((n) => ({ value: String(n), label: t("filters.orMore", { value: n }) }))} />
+          <F label={t("filters.confidence")} allLabel={t("filters.all")} value={filters.confidence} onChange={(v) => setFilters({ ...filters, confidence: v })} options={(["high", "medium", "low"] as const).map((c) => ({ value: c, label: t(`filters.level.${c}`) }))} />
+          <F label={t("filters.evidence")} allLabel={t("filters.all")} value={filters.evidence} onChange={(v) => setFilters({ ...filters, evidence: v })} options={EVIDENCE_TYPES.map((k) => ({ value: k, label: t(`evidence.${k}.label`) }))} />
+          <F label={t("filters.status")} value={filters.status} onChange={(v) => setFilters({ ...filters, status: v })} allLabel={t("filters.allStatuses")} options={[{ value: "active", label: t("filters.active") }, ...STATES.map((s) => ({ value: s, label: t(`state.${s}`) }))]} />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5"><ListFilter className="size-3.5" /> {visible.length} of {opportunities.length} shown{sort === "relevance" ? " · relevance = score adjusted by your feedback on similar pillar/format (±20 max)" : ""}</span>
-          {activeFilters ? <Button size="sm" variant="ghost" onClick={() => setFilters(NO_FILTERS)}><X /> Clear filters</Button> : null}
+          <span className="flex items-center gap-1.5"><ListFilter className="size-3.5" /> {t("filters.shown", { shown: fmt.number(visible.length), total: fmt.number(opportunities.length) })}{sort === "relevance" ? ` · ${t("filters.relevanceNote")}` : ""}</span>
+          {activeFilters ? <Button size="sm" variant="ghost" onClick={() => setFilters(NO_FILTERS)}><X /> {t("filters.clear")}</Button> : null}
         </div>
         {!competitorData ? (
-          <p className="text-xs text-muted-foreground">No competitor posts yet, so differentiation is left out of scores and no competitor insight is claimed. Competitors (Phase 6) will add them.</p>
+          <p className="text-xs text-muted-foreground">{t("noCompetitorData")}</p>
         ) : null}
       </section>
 
@@ -182,12 +186,12 @@ export function OpportunitiesApp({
       {!opportunities.length ? (
         <EmptyState
           icon={Lightbulb}
-          title="No opportunities yet"
-          description={hasHistory ? "Generate opportunities: they are built from your strategy and the signals calculated from your synced posts, each with its evidence and score." : "Connect Meta or import past content in Content history first, so opportunities can be grounded in real results. You can still generate hypotheses from the strategy."}
-          action={!readOnly && aiEnabled ? <Button onClick={() => setDialog({ kind: "generate", initial: {} })}><Sparkles /> Generate opportunities</Button> : null}
+          title={t("empty.title")}
+          description={hasHistory ? t("empty.withHistory") : t("empty.noHistory")}
+          action={!readOnly && aiEnabled ? <Button onClick={() => setDialog({ kind: "generate", initial: {} })}><Sparkles /> {t("toolbar.generate")}</Button> : null}
         />
       ) : !visible.length ? (
-        <EmptyState icon={ListFilter} title="No opportunity matches these filters" action={<Button variant="outline" onClick={() => setFilters(NO_FILTERS)}>Clear filters</Button>} />
+        <EmptyState icon={ListFilter} title={t("empty.noMatch")} action={<Button variant="outline" onClick={() => setFilters(NO_FILTERS)}>{t("filters.clear")}</Button>} />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {visible.map(({ o, adjust }) => (
@@ -209,7 +213,7 @@ export function OpportunitiesApp({
                   const r = await opportunityToProductionAction(projectId, o.id);
                   if (!r.ok) toast.error(r.error);
                   else if (r.data) router.push(`/p/${projectId}/production?item=${r.data.id}`);
-                } catch { toast.error("Could not create production content. Try again."); }
+                } catch { toast.error(t("errors.production")); }
                 finally { setBusyId(null); }
               }}
               onOpenEvidence={() => setDialog({ kind: "evidence", o })}
@@ -260,7 +264,7 @@ export function OpportunitiesApp({
           aiEnabled={aiEnabled}
           readOnly={readOnly}
           onClose={() => setDialog(null)}
-          onSaved={() => { setDialog(null); toast.success("Added to the Editorial Calendar"); router.refresh(); }}
+          onSaved={() => { setDialog(null); toast.success(t("messages.addedToCalendar")); router.refresh(); }}
           onDeleted={() => setDialog(null)}
         />
       ) : null}
@@ -278,7 +282,7 @@ function Stat({ icon: Icon, label, value, hint, className }: { icon: typeof Ligh
   );
 }
 
-function F({ label, value, onChange, options, allLabel = "All" }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; allLabel?: string }) {
+function F({ label, value, onChange, options, allLabel }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; allLabel: string }) {
   return (
     <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
       {label}

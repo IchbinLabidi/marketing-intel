@@ -2,7 +2,8 @@ import { nowMs } from "@/lib/format";
 import { PageHeader } from "@/components/app/page-header";
 import { Alert } from "@/components/ui/alert";
 import { IntegrationsBoard, type ProviderView } from "@/components/integrations/integrations-board";
-import { CATALOG } from "@/lib/social/catalog";
+import { CATALOG, localizeProvider } from "@/lib/social/catalog";
+import { getT } from "@/i18n/server";
 import { appUrl, isBackgroundSyncConfigured, isMetaConfigured, metaMissingConfig } from "@/server/meta/config";
 import { oauthConfig, youtubeApiKey } from "@/server/social/config";
 import { autoSyncStale } from "@/server/social/start";
@@ -12,13 +13,17 @@ import { listSocialConnections, listSocialRuns } from "@/server/services/social"
 import { hasPermission } from "@/server/services/team";
 import { createClient } from "@/lib/supabase/server";
 
-export const metadata = { title: "Integrations" };
+export async function generateMetadata() {
+  const t = await getT("integrations");
+  return { title: t("page.title") };
+}
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
 
 export default async function IntegrationsPage({ params, searchParams }: PageProps<"/p/[projectId]/integrations">) {
   const { projectId } = await params;
   const sp = await searchParams;
+  const t = await getT("integrations");
   const { project } = await getProjectContext(projectId);
   const canEdit = await hasPermission(project.workspace_id, "intelligence.edit");
   const [meta, metaRuns, metaCounts, social, socialRuns] = await Promise.all([
@@ -42,7 +47,7 @@ export default async function IntegrationsPage({ params, searchParams }: PagePro
     const cfg = oauthConfig(p);
     return {
       key: p,
-      info: { ...CATALOG[p], setup: CATALOG[p].setup.map(withUrl) },
+      info: (() => { const info = localizeProvider(CATALOG[p], t); return { ...info, setup: info.setup.map(withUrl) }; })(),
       oauthReady: cfg.missing.length === 0,
       missing: cfg.missing,
       publicReady: p === "youtube" ? Boolean(youtubeApiKey()) : false,
@@ -54,18 +59,18 @@ export default async function IntegrationsPage({ params, searchParams }: PagePro
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Integrations"
-        description="Connect the social accounts this project publishes on. Their real results feed Content history, Analytics and the calendar. Access is read-only, and you never type a social media password here."
+        title={t("page.title")}
+        description={t("page.description")}
       />
       {!social.ready ? (
-        <Alert variant="warning" title="YouTube, LinkedIn and TikTok need a database update">
-          Migration 0015 hasn&apos;t been applied to this database yet. Meta works as before; the other providers appear once it is applied.
+        <Alert variant="warning" title={t("page.migrationTitle")}>
+          {t("page.migrationBody")}
         </Alert>
       ) : null}
       {!isBackgroundSyncConfigured() ? (
-        <Alert title="Daily background sync is off on this server">
-          Accounts are refreshed when someone who can edit opens this page or Content history and the data is over a day old, or with Sync now.
-          Scheduled sync needs SUPABASE_SERVICE_ROLE_KEY and CRON_SECRET in the server settings.
+        <Alert title={t("page.backgroundTitle")}>
+          {t("page.backgroundBody")}
+          {" "}{t("page.backgroundEnv")}
         </Alert>
       ) : null}
       <IntegrationsBoard
@@ -74,7 +79,7 @@ export default async function IntegrationsPage({ params, searchParams }: PagePro
         schemaReady={social.ready}
         flash={{ provider: one(sp.provider), connected: one(sp.connected), error: one(sp.error), detail: one(sp.detail) }}
         meta={{
-          info: { ...CATALOG.meta, setup: CATALOG.meta.setup.map(withUrl) },
+          info: (() => { const info = localizeProvider(CATALOG.meta, t); return { ...info, setup: info.setup.map(withUrl) }; })(),
           configured: isMetaConfigured(), missing: metaMissingConfig(),
           connection: meta ? { status: meta.status, page_name: meta.page_name, ig_username: meta.ig_username, last_sync_at: meta.last_sync_at, last_sync_status: meta.last_sync_status, last_error: meta.last_error, granted_scopes: meta.granted_scopes, declined_scopes: meta.declined_scopes, token_expires_at: meta.token_expires_at } : null,
           // A run whose heartbeat stopped more than 3 minutes ago was interrupted; it isn't shown as running.

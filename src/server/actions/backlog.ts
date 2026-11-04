@@ -9,8 +9,9 @@ import { isIsoDate, isTime, todayInZone } from "@/lib/calendar/time";
 import { CRITERIA, normalizeWeights, weightedScore, type ScoreDetails } from "@/lib/backlog/score";
 import { suggestSlot, type SuggestedSlot } from "@/lib/backlog/slots";
 import { planCalendar, type PlanIdea, type PlanRequest, type Placement } from "@/lib/backlog/planner";
-import { AUDIENCE_GUIDE, AUDIENCE_LABELS, AUDIENCES, conversionLabel, goalFits, normalizeMix, parseAudience, segmentForAudience, SEGMENTS, SEGMENT_LABELS, sideOf, SIDE_LABELS, type Audience, type Segment } from "@/lib/backlog/audience";
+import { AUDIENCE_GUIDE, AUDIENCES, conversionLabel, goalFits, normalizeMix, parseAudience, segmentForAudience, SEGMENTS, SEGMENT_LABELS, sideOf, SIDE_LABELS, type Audience, type Segment } from "@/lib/backlog/audience";
 import type { ActionResult } from "@/lib/validation/common";
+import { getT } from "@/i18n/server";
 import { describeAIError } from "@/server/ai/client";
 import { buildProjectContext } from "@/server/ai/context";
 import { runStructuredWithMeta } from "@/server/ai/run";
@@ -33,12 +34,12 @@ async function guard(projectId: string) {
   const allowed = canEdit(role) && ((await hasPermission(project.workspace_id, "content.create")) || (await hasPermission(project.workspace_id, "calendar.edit")));
   return { user, project, role, allowed, tz: project.timezone || "Africa/Tunis" };
 }
-const NO_EDIT: ActionResult<never> = { ok: false, error: "Your role can't edit ideas." };
+const noEdit = async (): Promise<ActionResult<never>> => ({ ok: false, error: (await getT("backlog"))("actions.noEdit") });
 
 export async function listIdeasAction(projectId: string, filters: BacklogFilters, page = 0): Promise<ActionResult<{ ideas: Idea[]; total: number }>> {
   await requireUser();
   await getProjectContext(projectId);
-  try { return { ok: true, data: await listIdeas(projectId, filters, page) }; } catch (e) { return fail(e, "Could not load ideas"); }
+  try { return { ok: true, data: await listIdeas(projectId, filters, page) }; } catch (e) { return fail(e, (await getT("backlog"))("actions.loadFailed")); }
 }
 
 // --- Create & edit -----------------------------------------------------------------------------------------
@@ -62,10 +63,11 @@ export type IdeaInput = z.infer<typeof ideaSchema>;
 /** Every new idea starts in the Backlog: no calendar date, Idea stage. It never reaches the calendar on its own. */
 export async function createIdeaAction(projectId: string, input: unknown): Promise<ActionResult<Idea>> {
   const { user, project, allowed, tz } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
+  const t = await getT("backlog");
   const parsed = ideaSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: "Give the idea a title (2 to 300 characters)." };
-  if (!goalFits(parsed.data.audience_segment, parsed.data.conversion_goal)) return { ok: false, error: "This conversion goal belongs to the other side of the audience (teacher goals and student goals are kept apart)." };
+  if (!parsed.success) return { ok: false, error: t("actions.titleRequired") };
+  if (!goalFits(parsed.data.audience_segment, parsed.data.conversion_goal)) return { ok: false, error: t("actions.goalMismatch") };
   try {
     const db = await createClient();
     const v = parsed.data;
@@ -84,16 +86,17 @@ export async function createIdeaAction(projectId: string, input: unknown): Promi
     await computeSlots(projectId, [data as Idea], tz);
     refresh(projectId);
     const { data: fresh } = await db.from("content_items").select("*").eq("id", data.id).single();
-    return { ok: true, data: fresh as Idea, message: "Idea added to the Backlog" };
-  } catch (e) { return fail(e, "Could not create the idea"); }
+    return { ok: true, data: fresh as Idea, message: t("actions.added") };
+  } catch (e) { return fail(e, t("actions.createFailed")); }
 }
 
 export async function updateIdeaAction(projectId: string, id: string, input: unknown): Promise<ActionResult<Idea>> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
+  const t = await getT("backlog");
   const parsed = ideaSchema.partial().safeParse(input);
-  if (!parsed.success) return { ok: false, error: "Some fields are invalid." };
-  if ("conversion_goal" in parsed.data && !goalFits(parsed.data.audience_segment, parsed.data.conversion_goal)) return { ok: false, error: "This conversion goal belongs to the other side of the audience (teacher goals and student goals are kept apart)." };
+  if (!parsed.success) return { ok: false, error: t("actions.invalidFields") };
+  if ("conversion_goal" in parsed.data && !goalFits(parsed.data.audience_segment, parsed.data.conversion_goal)) return { ok: false, error: t("actions.goalMismatch") };
   try {
     const db = await createClient();
     const v = parsed.data;
@@ -106,8 +109,8 @@ export async function updateIdeaAction(projectId: string, id: string, input: unk
     const { data, error } = await db.from("content_items").update(patch).eq("project_id", projectId).eq("id", id).select("*").single();
     if (error) throw error;
     refresh(projectId);
-    return { ok: true, data: data as Idea, message: "Idea saved" };
-  } catch (e) { return fail(e, "Could not save the idea"); }
+    return { ok: true, data: data as Idea, message: t("actions.saved") };
+  } catch (e) { return fail(e, t("actions.saveFailed")); }
 }
 
 // --- Scoring -----------------------------------------------------------------------------------------------
@@ -128,13 +131,14 @@ const SCORE_PARALLEL = 5;
 /** AI rates up to 200 ideas: batches of 20, five at a time. A failed batch doesn't undo the others. */
 export async function scoreIdeasAction(projectId: string, ids: string[]): Promise<ActionResult<{ scored: number }>> {
   const { user, project, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
+  const t = await getT("backlog");
   const list = [...new Set(ids)].slice(0, BULK_MAX);
-  if (!list.length) return { ok: false, error: "Select ideas to score." };
+  if (!list.length) return { ok: false, error: t("actions.selectToScore") };
   try {
     const db = await createClient();
     const { data: rows } = await db.from("content_items").select("id, title, description, hook, format, platform, target_platforms, target_audience, pillar_id, tags, funnel_stage, audience_segment, conversion_goal").eq("project_id", projectId).in("id", list);
-    if (!rows?.length) return { ok: false, error: "Ideas not found." };
+    if (!rows?.length) return { ok: false, error: t("actions.notFound") };
     const { bundle, brand, channels } = await loadHistoryAnalysis(projectId);
     const weights = normalizeWeights(project.idea_score_weights as Record<string, unknown> | null);
     const pillar = (id: string | null) => bundle.pillars.find((p) => p.id === id)?.name ?? "none";
@@ -161,35 +165,37 @@ export async function scoreIdeasAction(projectId: string, ids: string[]): Promis
       if (!error) scored++;
     }
     refresh(projectId);
-    const more = list.length < new Set(ids).size ? ` (the first ${BULK_MAX}; run it again for the rest)` : "";
-    const missed = failedBatches ? ` ${failedBatches} batch${failedBatches > 1 ? "es" : ""} failed: score the rest again.` : "";
-    return { ok: true, data: { scored }, message: `${scored} idea${scored === 1 ? "" : "s"} scored${more}.${missed} Scores are estimates to rank ideas, not performance predictions.` };
+    const more = list.length < new Set(ids).size ? t("actions.firstOnly", { max: BULK_MAX }) : "";
+    const missed = failedBatches ? t("actions.batchesFailed", { count: failedBatches }) : "";
+    return { ok: true, data: { scored }, message: `${t("actions.scored", { count: scored })}${more}.${missed}${t("actions.scoresDisclaimer")}` };
   } catch (e) { return { ok: false, error: describeAIError(e) }; }
 }
 
 export async function setScoreAction(projectId: string, id: string, score: number, note: string): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
-  if (!Number.isInteger(score) || score < 0 || score > 100) return { ok: false, error: "Enter a score from 0 to 100." };
+  if (!allowed) return noEdit();
+  const t = await getT("backlog");
+  if (!Number.isInteger(score) || score < 0 || score > 100) return { ok: false, error: t("actions.scoreRange") };
   const db = await createClient();
   const { data: row } = await db.from("content_items").select("score_details").eq("project_id", projectId).eq("id", id).maybeSingle();
   const prev = (row?.score_details ?? null) as ScoreDetails | null;
   const details: ScoreDetails = { ...(prev ?? {}), source: "manual", note: note.slice(0, 300), scored_at: new Date().toISOString() };
   const { error } = await db.from("content_items").update({ idea_score: score, score_details: details }).eq("project_id", projectId).eq("id", id);
-  if (error) return fail(error, "Could not save the score");
+  if (error) return fail(error, t("actions.scoreSaveFailed"));
   refresh(projectId);
-  return { ok: true, message: "Score set manually" };
+  return { ok: true, message: t("actions.scoreManual") };
 }
 
 export async function saveScoreWeightsAction(projectId: string, weights: Record<string, number>): Promise<ActionResult> {
   await requireUser();
   const { project, role } = await getProjectContext(projectId);
-  if (!canAdmin(role) && !(await hasPermission(project.workspace_id, "projects.manage"))) return { ok: false, error: "Only administrators can change the scoring weights." };
+  const t = await getT("backlog");
+  if (!canAdmin(role) && !(await hasPermission(project.workspace_id, "projects.manage"))) return { ok: false, error: t("actions.weightsAdmin") };
   const db = await createClient();
   const { error } = await db.from("projects").update({ idea_score_weights: normalizeWeights(weights) }).eq("id", projectId);
-  if (error) return fail(error, "Could not save the weights");
+  if (error) return fail(error, t("actions.weightsSaveFailed"));
   refresh(projectId);
-  return { ok: true, message: "Scoring weights saved. Rescore ideas to apply them." };
+  return { ok: true, message: t("actions.weightsSaved") };
 }
 
 // --- Best time to post -------------------------------------------------------------------------------------
@@ -200,12 +206,13 @@ async function computeSlots(projectId: string, ideas: Pick<Idea, "id" | "platfor
   const timing = bestPublicationTimes(items, tz);
   const today = todayInZone(tz);
   const busy = await busyDays(projectId, today, new Date(Date.parse(`${today}T00:00:00Z`) + 30 * 86_400_000).toISOString().slice(0, 10));
+  const t = await getT("backlog");
   const out: Record<string, SuggestedSlot | null> = {};
   for (const i of ideas) {
     const slot = suggestSlot({
       platform: i.platform, targetPlatforms: i.target_platforms, format: i.format, audience: i.target_audience ?? null, segment: i.audience_segment ?? null,
       pillar: bundle.pillars.find((p) => p.id === i.pillar_id)?.name ?? null, today, timing, busy,
-    });
+    }, t);
     out[i.id] = slot;
     if (slot) busy[slot.date] = (busy[slot.date] ?? 0) + 1; // spread suggestions instead of stacking one day
     await db.from("content_items").update({ suggested_slot: slot }).eq("project_id", projectId).eq("id", i.id);
@@ -216,22 +223,23 @@ async function computeSlots(projectId: string, ideas: Pick<Idea, "id" | "platfor
 /** Recomputes the suggested date/time (cached on the idea; never schedules anything). */
 export async function refreshSuggestionsAction(projectId: string, ids: string[]): Promise<ActionResult<Record<string, SuggestedSlot | null>>> {
   const { allowed, tz } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
+  const t = await getT("backlog");
   try {
     const db = await createClient();
     const { data } = await db.from("content_items").select("id, platform, target_platforms, format, target_audience, pillar_id, audience_segment").eq("project_id", projectId).in("id", [...new Set(ids)].slice(0, BULK_MAX));
     const out = await computeSlots(projectId, (data ?? []) as Idea[], tz);
     refresh(projectId);
-    return { ok: true, data: out, message: "Suggestions updated" };
-  } catch (e) { return fail(e, "Could not compute suggestions"); }
+    return { ok: true, data: out, message: t("actions.suggestionsUpdated") };
+  } catch (e) { return fail(e, t("actions.suggestionsFailed")); }
 }
 
 export async function dismissSuggestionAction(projectId: string, id: string): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const db = await createClient();
   const { error } = await db.from("content_items").update({ suggested_slot: null }).eq("project_id", projectId).eq("id", id);
-  if (error) return fail(error, "Could not dismiss");
+  if (error) return fail(error, (await getT("backlog"))("actions.dismissFailed"));
   refresh(projectId);
   return { ok: true };
 }
@@ -240,13 +248,14 @@ export async function dismissSuggestionAction(projectId: string, id: string): Pr
 
 export async function placeIdeaAction(projectId: string, id: string, input: { date: string; time: string | null; platforms: string[]; force?: boolean }): Promise<ActionResult<{ conflicts?: Conflict[] }>> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
-  if (!isIsoDate(input.date) || (input.time && !isTime(input.time))) return { ok: false, error: "Choose a valid date and time." };
+  if (!allowed) return noEdit();
+  const t = await getT("backlog");
+  if (!isIsoDate(input.date) || (input.time && !isTime(input.time))) return { ok: false, error: t("actions.invalidDateTime") };
   const platforms = input.platforms.filter((p) => (PLATFORMS as readonly string[]).includes(p));
   const db = await createClient();
   if (platforms.length) {
     const { error } = await db.from("content_items").update({ target_platforms: platforms, platform: platforms[0] }).eq("project_id", projectId).eq("id", id);
-    if (error) return fail(error, "Could not save the platforms");
+    if (error) return fail(error, t("actions.platformsFailed"));
   }
   const r = await reschedulePostAction(projectId, id, input.date, input.time, Boolean(input.force));
   if (!r.ok) return r;
@@ -254,13 +263,14 @@ export async function placeIdeaAction(projectId: string, id: string, input: { da
   // an idea placed on the calendar becomes "planned" (production stage and publishing status are unchanged)
   await db.from("content_items").update({ status: "planned" }).eq("project_id", projectId).eq("id", id).eq("status", "idea");
   refresh(projectId);
-  return { ok: true, data: {}, message: `Planned for ${input.date}${input.time ? ` at ${input.time}` : ""}. Nothing is published until you publish it.` };
+  return { ok: true, data: {}, message: input.time ? t("actions.plannedForAt", { date: input.date, time: input.time }) : t("actions.plannedFor", { date: input.date }) };
 }
 
 /** Back to the Backlog: the calendar date is removed, all content and metadata are kept. */
 export async function unplanIdeasAction(projectId: string, ids: string[]): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
+  const t = await getT("backlog");
   const db = await createClient();
   // any number of ideas and briefs, in batches: the date goes and they return to the Idea stage (writing, files and
   // history are kept), so they show only in the Backlog again
@@ -270,65 +280,69 @@ export async function unplanIdeasAction(projectId: string, ids: string[]): Promi
     const batch = list.slice(k, k + BULK_MAX);
     const { error, count } = await db.from("content_items").update({ scheduled_date: null, scheduled_time: null, scheduled_at: null, production_stage: "idea", status: "idea" }, { count: "exact" })
       .eq("project_id", projectId).in("id", batch).not("status", "in", "(published,scheduled)");
-    if (error) return fail(error, "Could not move back to the Backlog");
+    if (error) return fail(error, t("actions.unplanFailed"));
     moved += count ?? 0;
   }
   refresh(projectId);
   const skipped = list.length - moved;
-  return { ok: true, message: `${moved} moved back to the Backlog${skipped ? ` · ${skipped} scheduled or published left as they are` : ""}` };
+  return { ok: true, message: skipped ? t("actions.unplannedSkipped", { count: moved, skipped }) : t("actions.unplanned", { count: moved }) };
 }
 
 // --- Bulk actions ------------------------------------------------------------------------------------------
 
 export async function archiveIdeasAction(projectId: string, ids: string[], archived: boolean): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
+  const t = await getT("backlog");
   const db = await createClient();
   let q = db.from("content_items").update({ archived_at: archived ? new Date().toISOString() : null }, { count: "exact" })
     .eq("project_id", projectId).in("id", ids.slice(0, BULK_MAX)).neq("status", "published");
   if (archived) q = q.is("scheduled_date", null); // only Backlog ideas are archived; planned posts stay on the calendar
   const { error, count } = await q;
-  if (error) return fail(error, "Could not archive");
+  if (error) return fail(error, t("actions.archiveFailed"));
   refresh(projectId);
-  return { ok: true, message: archived ? `${count ?? 0} archived (only Backlog ideas can be archived)` : `${count ?? 0} restored to the Backlog` };
+  return { ok: true, message: archived ? t("actions.archived", { count: count ?? 0 }) : t("actions.restored", { count: count ?? 0 }) };
 }
 
 /** Deletes ideas permanently, with their stored files (no orphaned files). Published posts are never deleted. */
 export async function deleteIdeasAction(projectId: string, ids: string[]): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
+  const t = await getT("backlog");
   const db = await createClient();
   const list = ids.slice(0, BULK_MAX);
   const { data: items } = await db.from("content_items").select("id, status").eq("project_id", projectId).in("id", list);
   const deletable = (items ?? []).filter((i) => i.status !== "published" && i.status !== "scheduled").map((i) => i.id);
-  if (!deletable.length) return { ok: false, error: "Scheduled and published posts can't be deleted from the Backlog." };
+  if (!deletable.length) return { ok: false, error: t("actions.cannotDelete") };
   const { data: assets } = await db.from("content_assets").select("body").eq("project_id", projectId).in("content_item_id", deletable).eq("kind", "media");
   const paths = (assets ?? []).map((a) => (a.body as { path?: string }).path).filter((p): p is string => Boolean(p));
   if (paths.length) {
     const { error } = await db.storage.from("production-media").remove(paths);
-    if (error) return { ok: false, error: "Stored files couldn't be removed, so nothing was deleted. Try again." };
+    if (error) return { ok: false, error: t("actions.filesNotRemoved") };
   }
   const { error, count } = await db.from("content_items").delete({ count: "exact" }).eq("project_id", projectId).in("id", deletable);
-  if (error) return fail(error, "Could not delete");
+  if (error) return fail(error, t("actions.deleteFailed"));
   refresh(projectId);
-  return { ok: true, message: `${count ?? 0} deleted permanently${paths.length ? ` with ${paths.length} stored file${paths.length > 1 ? "s" : ""}` : ""}` };
+  return { ok: true, message: paths.length ? t("actions.deletedWithFiles", { count: count ?? 0, files: paths.length }) : t("actions.deleted", { count: count ?? 0 }) };
 }
 
 export async function setPriorityAction(projectId: string, ids: string[], priority: "low" | "medium" | "high" | "urgent"): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const db = await createClient();
   const { error } = await db.from("content_items").update({ priority }).eq("project_id", projectId).in("id", ids.slice(0, BULK_MAX));
-  if (error) return fail(error, "Could not change the priority");
+  const t = await getT("backlog");
+  if (error) return fail(error, t("actions.priorityFailed"));
   refresh(projectId);
-  return { ok: true, message: "Priority updated" };
+  return { ok: true, message: t("actions.priorityUpdated") };
 }
 
 export async function tagIdeasAction(projectId: string, ids: string[], tag: string): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
+  const tr = await getT("backlog");
   const t = tag.trim().slice(0, 40);
-  if (!t) return { ok: false, error: "Enter a tag." };
+  if (!t) return { ok: false, error: tr("actions.enterTag") };
   const db = await createClient();
   const { data } = await db.from("content_items").select("id, tags").eq("project_id", projectId).in("id", ids.slice(0, BULK_MAX));
   for (const r of data ?? []) {
@@ -336,13 +350,13 @@ export async function tagIdeasAction(projectId: string, ids: string[], tag: stri
     if (!tags.includes(t)) await db.from("content_items").update({ tags: [...tags, t].slice(0, 20) }).eq("id", r.id);
   }
   refresh(projectId);
-  return { ok: true, message: `Tagged “${t}”` };
+  return { ok: true, message: tr("actions.tagged", { tag: t }) };
 }
 
 /** Sends ideas to Content Production (Brief stage), keeping title, pillar, score, files, date, brand and platforms. */
 export async function sendToProductionAction(projectId: string, ids: string[]): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const db = await createClient();
   const { data } = await db.from("content_items").select("id, revision, production_stage").eq("project_id", projectId).in("id", ids.slice(0, BULK_MAX));
   let moved = 0; const errors: string[] = [];
@@ -353,26 +367,28 @@ export async function sendToProductionAction(projectId: string, ids: string[]): 
   }
   refresh(projectId);
   if (!moved && errors.length) return { ok: false, error: errors[0] };
-  return { ok: true, message: `${moved} sent to Content Production${errors.length ? ` (${errors.length} failed: ${errors[0]})` : ""}` };
+  const t = await getT("backlog");
+  return { ok: true, message: errors.length ? t("actions.sentToProductionFailed", { count: moved, failed: errors.length, error: errors[0] }) : t("actions.sentToProduction", { count: moved }) };
 }
 
 export async function duplicateIdeaAction(projectId: string, id: string): Promise<ActionResult<Idea>> {
   const { user, allowed, tz } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const db = await createClient();
   const { data: src } = await db.from("content_items").select("*").eq("project_id", projectId).eq("id", id).maybeSingle();
-  if (!src) return { ok: false, error: "Idea not found." };
+  const t = await getT("backlog");
+  if (!src) return { ok: false, error: t("actions.ideaNotFound") };
   const { data, error } = await db.from("content_items").insert({
-    project_id: projectId, created_by: user.id, title: `${src.title} (copy)`.slice(0, 300), description: src.description, hook: src.hook, caption: src.caption,
+    project_id: projectId, created_by: user.id, title: t("actions.copySuffix", { title: src.title }).slice(0, 300), description: src.description, hook: src.hook, caption: src.caption,
     cta: src.cta, hashtags: src.hashtags, creative_brief: src.creative_brief, pillar_id: src.pillar_id, format: src.format, platform: src.platform,
     target_platforms: src.target_platforms, target_audience: src.target_audience, tags: src.tags, funnel_stage: src.funnel_stage, language: src.language,
     audience: src.audience, audience_segment: src.audience_segment, conversion_goal: src.conversion_goal,
     idea_score: src.idea_score, score_details: src.score_details, status: "idea", production_stage: "idea", idea_source: "manual",
   }).select("*").single();
-  if (error) return fail(error, "Could not duplicate");
+  if (error) return fail(error, t("actions.duplicateFailed"));
   await computeSlots(projectId, [data as Idea], tz);
   refresh(projectId);
-  return { ok: true, data: data as Idea, message: "Idea duplicated in the Backlog" };
+  return { ok: true, data: data as Idea, message: t("actions.duplicated") };
 }
 
 // --- Saved filters -----------------------------------------------------------------------------------------
@@ -389,18 +405,19 @@ export async function listPresetsAction(projectId: string): Promise<ActionResult
 export async function savePresetAction(projectId: string, name: string, filters: BacklogFilters): Promise<ActionResult<FilterPreset>> {
   await requireUser();
   await getProjectContext(projectId);
+  const t = await getT("backlog");
   const n = name.trim().slice(0, 60);
-  if (!n) return { ok: false, error: "Name the filter." };
+  if (!n) return { ok: false, error: t("actions.nameFilter") };
   const db = await createClient();
   const { data, error } = await db.from("backlog_filter_presets").upsert({ project_id: projectId, name: n, filters }, { onConflict: "project_id,user_id,name" }).select("id, name, filters").single();
-  if (error) return fail(error, "Could not save the filter");
-  return { ok: true, data: data as FilterPreset, message: `Filter “${n}” saved` };
+  if (error) return fail(error, t("actions.filterSaveFailed"));
+  return { ok: true, data: data as FilterPreset, message: t("actions.filterSaved", { name: n }) };
 }
 export async function deletePresetAction(projectId: string, id: string): Promise<ActionResult> {
   await requireUser();
   const db = await createClient();
   const { error } = await db.from("backlog_filter_presets").delete().eq("project_id", projectId).eq("id", id);
-  if (error) return fail(error, "Could not delete the filter");
+  if (error) return fail(error, (await getT("backlog"))("actions.filterDeleteFailed"));
   return { ok: true };
 }
 
@@ -410,9 +427,10 @@ export async function previewPlanAction(projectId: string, req: PlanRequest): Pr
   await requireUser();
   const { project } = await getProjectContext(projectId);
   const tz = project.timezone || "Africa/Tunis";
-  if (!isIsoDate(req.from) || !isIsoDate(req.to) || req.to < req.from) return { ok: false, error: "Choose a valid date range." };
-  if (Date.parse(req.to) - Date.parse(req.from) > 92 * 86_400_000) return { ok: false, error: "Plan at most 3 months at a time." };
-  if (!Number.isInteger(req.postsPerWeek) || req.postsPerWeek < 1 || req.postsPerWeek > 14) return { ok: false, error: "Posts per week: 1 to 14." };
+  const [t, td] = await Promise.all([getT("backlog"), getT("domain")]);
+  if (!isIsoDate(req.from) || !isIsoDate(req.to) || req.to < req.from) return { ok: false, error: t("actions.invalidRange") };
+  if (Date.parse(req.to) - Date.parse(req.from) > 92 * 86_400_000) return { ok: false, error: t("actions.rangeTooLong") };
+  if (!Number.isInteger(req.postsPerWeek) || req.postsPerWeek < 1 || req.postsPerWeek > 14) return { ok: false, error: t("actions.postsPerWeekRange") };
   try {
     const db = await createClient();
     const { data } = await db.from("content_items").select("id, title, idea_score, pillar_id, format, platform, target_platforms, target_audience, priority, audience_segment")
@@ -421,44 +439,47 @@ export async function previewPlanAction(projectId: string, req: PlanRequest): Pr
     const { items } = await loadHistoryPerformance(projectId);
     const timing = bestPublicationTimes(items, tz);
     const busy = await busyDays(projectId, req.from, req.to);
-    const plan = planCalendar(ideas, { ...req, audienceMix: req.audienceMix ?? normalizeMix(project.audience_mix) ?? undefined }, { timing, busy, today: todayInZone(tz) });
+    const plan = planCalendar(ideas, { ...req, audienceMix: req.audienceMix ?? normalizeMix(project.audience_mix) ?? undefined }, { timing, busy, today: todayInZone(tz) }, t, (sd) => td(`side.${sd}`));
     return { ok: true, data: { ...plan, options: ideas } };
-  } catch (e) { return fail(e, "Could not prepare the plan"); }
+  } catch (e) { return fail(e, t("actions.planFailed")); }
 }
 
 /** Saves the approved placements on the calendar (planning only). Each one is independent: failures are reported. */
 export async function savePlanAction(projectId: string, placements: { ideaId: string; date: string; time: string; platform: string }[]): Promise<ActionResult<{ saved: number; failed: string[] }>> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const failed: string[] = []; let saved = 0;
   for (const p of placements.slice(0, 100)) {
     const r = await placeIdeaAction(projectId, p.ideaId, { date: p.date, time: p.time, platforms: [p.platform], force: true });
     if (r.ok) saved++; else failed.push(r.error);
   }
   refresh(projectId);
-  if (!saved && placements.length) return { ok: false, error: failed[0] ?? "Nothing was saved." };
-  return { ok: true, data: { saved, failed }, message: `${saved} idea${saved === 1 ? "" : "s"} placed on the calendar${failed.length ? `, ${failed.length} failed (${failed[0]})` : ""}. Nothing is published until you publish it.` };
+  const t = await getT("backlog");
+  if (!saved && placements.length) return { ok: false, error: failed[0] ?? t("actions.nothingSaved") };
+  return { ok: true, data: { saved, failed }, message: failed.length ? t("actions.planSavedFailed", { count: saved, failed: failed.length, error: failed[0] }) : t("actions.planSaved", { count: saved }) };
 }
 
 /** The brand's monthly audience distribution (e.g. 60% students & parents, 35% teachers, 5% both). Admins only. */
 export async function saveAudienceMixAction(projectId: string, mix: Record<string, number>): Promise<ActionResult> {
   await requireUser();
   const { project, role } = await getProjectContext(projectId);
-  if (!canAdmin(role) && !(await hasPermission(project.workspace_id, "projects.manage"))) return { ok: false, error: "Only administrators can change the audience mix." };
+  const t = await getT("backlog");
+  if (!canAdmin(role) && !(await hasPermission(project.workspace_id, "projects.manage"))) return { ok: false, error: t("actions.mixAdmin") };
   const normalized = normalizeMix(mix);
-  if (!normalized) return { ok: false, error: "Give at least one audience a share above 0%." };
+  if (!normalized) return { ok: false, error: t("actions.mixEmpty") };
   const db = await createClient();
   const { error } = await db.from("projects").update({ audience_mix: normalized }).eq("id", projectId);
-  if (error) return fail(error, "Could not save the mix");
+  if (error) return fail(error, t("actions.mixSaveFailed"));
   refresh(projectId);
-  return { ok: true, message: "Audience mix saved" };
+  return { ok: true, message: t("actions.mixSaved") };
 }
 
 /** Sets the audience of several ideas; a conversion goal from the other side is cleared (sides are never mixed). */
 export async function setAudienceAction(projectId: string, ids: string[], segment: Segment | null): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
-  if (segment && !(SEGMENTS as readonly string[]).includes(segment)) return { ok: false, error: "Unknown audience." };
+  if (!allowed) return noEdit();
+  const [t, td] = await Promise.all([getT("backlog"), getT("domain")]);
+  if (segment && !(SEGMENTS as readonly string[]).includes(segment)) return { ok: false, error: t("actions.unknownAudience") };
   const db = await createClient();
   const { data } = await db.from("content_items").select("id, conversion_goal").eq("project_id", projectId).in("id", ids.slice(0, BULK_MAX));
   let n = 0;
@@ -467,7 +488,7 @@ export async function setAudienceAction(projectId: string, ids: string[], segmen
     if (!error) n++;
   }
   refresh(projectId);
-  return { ok: true, message: `${n} idea${n === 1 ? "" : "s"} set to ${segment ? SEGMENT_LABELS[segment] : "no audience"}` };
+  return { ok: true, message: t("actions.segmentSet", { count: n, segment: segment ? td(`segment.${segment}`) : t("actions.noAudience") }) };
 }
 
 const audienceSchema = z.object({ ideas: z.array(z.object({ id: z.string(), audience: z.string().describe("student, parent or teacher"), segment: z.enum(SEGMENTS), conversion_goal: z.string(), reason: z.string().max(200) })) });
@@ -480,13 +501,14 @@ const AUDIENCE_MAX = BULK_MAX;
 /** AI proposes the audience tag, segment and conversion goal of up to 200 ideas (applied right away, editable afterwards). */
 export async function suggestAudienceAction(projectId: string, ids: string[]): Promise<ActionResult<{ set: number }>> {
   const { user, project, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
+  const t = await getT("backlog");
   const list = [...new Set(ids)].slice(0, AUDIENCE_MAX);
-  if (!list.length) return { ok: false, error: "Select ideas first." };
+  if (!list.length) return { ok: false, error: t("actions.selectFirst") };
   try {
     const db = await createClient();
     const { data: rows } = await db.from("content_items").select("id, title, description, hook, caption, format, pillar_id, target_audience").eq("project_id", projectId).in("id", list);
-    if (!rows?.length) return { ok: false, error: "Ideas not found." };
+    if (!rows?.length) return { ok: false, error: t("actions.notFound") };
     const { bundle } = await loadHistoryAnalysis(projectId);
     const pillar = (id: string | null) => { const p = bundle.pillars.find((x) => x.id === id); return p ? `${p.name} (${p.audience_segment === "teachers" ? "teacher pillar" : "student & parent pillar"})` : "none"; };
     const goals = { students_parents: ["forum_participation", "teacher_profile_visits", "lesson_requests", "completed_bookings"], teachers: ["teacher_registration", "profile_completion", "teacher_activation", "lesson_requests_received", "completed_sessions"] };
@@ -516,15 +538,16 @@ export async function suggestAudienceAction(projectId: string, ids: string[]): P
     const rest = rows.map((r) => r.id).filter((id) => !tagged.has(id));
     if (rest.length) set += (await tagUntagged(projectId, user.id, rest)).tagged;
     refresh(projectId);
-    return { ok: true, data: { set }, message: `Audience suggested for ${set} idea${set === 1 ? "" : "s"}${list.length < new Set(ids).size ? ` (the first ${AUDIENCE_MAX}; run it again for the rest)` : ""}. Change any tag from its badge.` };
+    return { ok: true, data: { set }, message: t("actions.audienceSuggested", { count: set, more: list.length < new Set(ids).size ? t("actions.firstOnly", { max: AUDIENCE_MAX }) : "" }) };
   } catch (e) { return { ok: false, error: describeAIError(e) }; }
 }
 
 /** Sets the audience tag (student / parent / teacher) of one or more items; a single-side segment follows it. */
 export async function setAudienceTagAction(projectId: string, ids: string[], audience: Audience): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
-  if (!(AUDIENCES as readonly string[]).includes(audience)) return { ok: false, error: "Unknown audience." };
+  if (!allowed) return noEdit();
+  const [t, td] = await Promise.all([getT("backlog"), getT("domain")]);
+  if (!(AUDIENCES as readonly string[]).includes(audience)) return { ok: false, error: t("actions.unknownAudience") };
   const db = await createClient();
   const { data } = await db.from("content_items").select("id, audience_segment, conversion_goal").eq("project_id", projectId).in("id", ids.slice(0, BULK_MAX));
   let n = 0;
@@ -534,16 +557,17 @@ export async function setAudienceTagAction(projectId: string, ids: string[], aud
     if (!error) n++;
   }
   refresh(projectId);
-  return { ok: true, message: `${n} item${n === 1 ? "" : "s"} tagged ${AUDIENCE_LABELS[audience]}` };
+  return { ok: true, message: t("actions.itemsTagged", { count: n, audience: td(`audience.${audience}`) }) };
 }
 
 /** AI backfill for older items: tags the brand's untagged items (up to 120 per run), or only the selected ones. */
 export async function tagUntaggedAction(projectId: string, ids?: string[]): Promise<ActionResult<{ tagged: number }>> {
   const { user, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   try {
     const r = await tagUntagged(projectId, user.id, ids);
     refresh(projectId);
-    return { ok: true, data: { tagged: r.tagged }, message: r.tagged ? `${r.tagged} item${r.tagged === 1 ? "" : "s"} tagged${r.remaining ? ": run it again for the rest" : ""}. Change any tag from its badge.` : "Every item already has an audience tag." };
+    const t = await getT("backlog");
+    return { ok: true, data: { tagged: r.tagged }, message: r.tagged ? t(r.remaining ? "actions.backfilledMore" : "actions.backfilled", { count: r.tagged }) : t("actions.allTagged") };
   } catch (e) { return { ok: false, error: describeAIError(e) }; }
 }

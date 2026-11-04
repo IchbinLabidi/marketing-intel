@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { canEdit } from "@/lib/domain/constants";
 import type { ActionResult } from "@/lib/validation/common";
+import { getT } from "@/i18n/server";
 import { MetaApiError } from "@/server/meta/graph";
 import { listManagedPages } from "@/server/meta/oauth";
 import { startMetaSync } from "@/server/meta/start";
@@ -18,7 +19,7 @@ import {
 import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
 
-const NO_EDIT: ActionResult<never> = { ok: false, error: "Your role in this workspace is read-only." };
+const noEdit = async (): Promise<ActionResult<never>> => ({ ok: false, error: (await getT("integrations"))("actions.readOnly") });
 const refresh = (projectId: string) => revalidatePath(`/p/${projectId}`, "layout");
 
 async function guard(projectId: string) {
@@ -28,13 +29,14 @@ async function guard(projectId: string) {
 }
 
 export async function syncMetaAction(projectId: string, kind: "incremental" | "refresh"): Promise<ActionResult> {
-  if (!(await guard(projectId))) return NO_EDIT;
+  if (!(await guard(projectId))) return noEdit();
   try {
     const conn = await getMetaConnection(projectId);
     const r = await startMetaSync(projectId, conn?.last_sync_at ? kind : "initial", "manual");
     if (!r.ok) return r;
     refresh(projectId);
-    return { ok: true, message: kind === "refresh" ? "Refreshing metrics of all synced posts…" : "Synchronization started" };
+    const t = await getT("integrations");
+    return { ok: true, message: kind === "refresh" ? t("actions.metaRefreshing") : t("actions.syncStarted") };
   } catch (e) {
     return { ok: false, error: describeMetaError(e) };
   }
@@ -42,12 +44,13 @@ export async function syncMetaAction(projectId: string, kind: "incremental" | "r
 
 /** Pages the connected person manages (no tokens leave the server). */
 export async function listMetaPagesAction(projectId: string): Promise<ActionResult<{ id: string; name: string; instagram: string | null; canAnalyze: boolean }[]>> {
-  if (!(await guard(projectId))) return NO_EDIT;
+  if (!(await guard(projectId))) return noEdit();
   try {
+    const t = await getT("integrations");
     const conn = await getMetaConnection(projectId);
-    if (!conn) return { ok: false, error: "Connect Meta first." };
+    if (!conn) return { ok: false, error: t("actions.metaConnectFirst") };
     const { user } = await readMetaTokens(conn.id);
-    if (!user) return { ok: false, error: "Meta authorization is missing. Connect Meta again." };
+    if (!user) return { ok: false, error: t("actions.metaAuthMissing") };
     const pages = await listManagedPages(user);
     return {
       ok: true,
@@ -65,14 +68,15 @@ export async function listMetaPagesAction(projectId: string): Promise<ActionResu
 }
 
 export async function selectMetaPageAction(projectId: string, pageId: string): Promise<ActionResult> {
-  if (!(await guard(projectId))) return NO_EDIT;
+  if (!(await guard(projectId))) return noEdit();
   try {
+    const t = await getT("integrations");
     const conn = await getMetaConnection(projectId);
-    if (!conn) return { ok: false, error: "Connect Meta first." };
+    if (!conn) return { ok: false, error: t("actions.metaConnectFirst") };
     const { user } = await readMetaTokens(conn.id);
-    if (!user) return { ok: false, error: "Meta authorization is missing. Connect Meta again." };
+    if (!user) return { ok: false, error: t("actions.metaAuthMissing") };
     const page = (await listManagedPages(user)).find((p) => p.id === pageId);
-    if (!page) return { ok: false, error: "That Page is not managed by the connected Facebook account." };
+    if (!page) return { ok: false, error: t("actions.metaPageNotManaged") };
     const switching = conn.page_id && conn.page_id !== page.id;
     if (switching) await deleteMetaPosts(projectId); // posts from another Page would mix two brands' histories
     await storeMetaTokens(conn.id, { page: page.access_token });
@@ -89,33 +93,35 @@ export async function selectMetaPageAction(projectId: string, pageId: string): P
     });
     await startMetaSync(projectId, "initial", "manual");
     refresh(projectId);
-    return { ok: true, message: `${page.name} connected. The first synchronization has started.` };
+    return { ok: true, message: t("actions.metaPageConnected", { name: page.name }) };
   } catch (e) {
     return { ok: false, error: describeMetaError(e) };
   }
 }
 
 export async function disconnectMetaAction(projectId: string, deletePosts: boolean): Promise<ActionResult> {
-  if (!(await guard(projectId))) return NO_EDIT;
+  if (!(await guard(projectId))) return noEdit();
   try {
+    const t = await getT("integrations");
     const conn = await getMetaConnection(projectId);
-    if (!conn) return { ok: true, message: "Already disconnected" };
+    if (!conn) return { ok: true, message: t("actions.alreadyDisconnected") };
     await clearMetaTokens(conn.id);
     await updateMetaConnection(projectId, { status: "disconnected", last_error: null });
     if (deletePosts) await deleteMetaPosts(projectId);
     refresh(projectId);
-    return { ok: true, message: deletePosts ? "Meta disconnected and synced posts deleted" : "Meta disconnected. Synced posts are kept." };
+    return { ok: true, message: deletePosts ? t("actions.metaDisconnectedDeleted") : t("actions.metaDisconnectedKept") };
   } catch (e) {
     return { ok: false, error: describeMetaError(e) };
   }
 }
 
 export async function setMetaAutoSyncAction(projectId: string, enabled: boolean): Promise<ActionResult> {
-  if (!(await guard(projectId))) return NO_EDIT;
+  if (!(await guard(projectId))) return noEdit();
   try {
     await updateMetaConnection(projectId, { auto_sync: enabled });
     refresh(projectId);
-    return { ok: true, message: enabled ? "Automatic synchronization on" : "Automatic synchronization off" };
+    const t = await getT("integrations");
+    return { ok: true, message: enabled ? t("actions.metaAutoOn") : t("actions.metaAutoOff") };
   } catch (e) {
     return { ok: false, error: describeMetaError(e) };
   }

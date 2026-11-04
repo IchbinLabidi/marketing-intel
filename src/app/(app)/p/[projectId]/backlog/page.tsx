@@ -9,8 +9,12 @@ import { listIdeas, listTags, type BacklogFilters } from "@/server/services/back
 import { getProjectContext } from "@/server/services/projects";
 import { getStrategyBundle } from "@/server/services/strategy";
 import { hasPermission } from "@/server/services/team";
+import { getT } from "@/i18n/server";
 
-export const metadata = { title: "Ideas Backlog" };
+export async function generateMetadata() {
+  const t = await getT("backlog");
+  return { title: t("meta.title") };
+}
 
 export default async function Page({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;

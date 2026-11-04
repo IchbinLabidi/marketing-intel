@@ -1,6 +1,9 @@
 // Time zone and calendar-date helpers. Dates are ISO strings ("2026-11-03"), times "HH:MM".
 // Wall-clock values are always interpreted in the project's IANA time zone; storage is UTC (timestamptz).
 
+import type { Formatter } from "@/i18n/format";
+import type { TFor } from "@/i18n/messages";
+
 const pad = (n: number) => String(n).padStart(2, "0");
 
 export function isValidTimeZone(tz: string) {
@@ -55,6 +58,10 @@ export function utcToZoned(iso: string, tz: string) {
 export function todayInZone(tz: string, now = Date.now()) {
   return utcToZoned(new Date(now).toISOString(), tz).date;
 }
+
+/** Localized weekday name (0 = Sunday), from Intl through the UI formatter. */
+export const weekdayLabel = (fmt: Formatter, weekday: number, style: "long" | "short" = "long") =>
+  fmt.day(addDays("2023-01-01", weekday), { weekday: style }); // 1 Jan 2023 was a Sunday
 
 // --- Pure calendar-date arithmetic (no time zone involved) ---------------------------------------------
 const toUtc = (date: string) => Date.parse(`${date}T00:00:00Z`);
@@ -111,14 +118,15 @@ export const isTime = (v: unknown): v is string => typeof v === "string" && /^([
 /**
  * A planned publication slot (local date and optional time in the project zone) as the three stored columns.
  * No date = back to undated. A time that doesn't exist (daylight-saving jump) is refused rather than shifted.
+ * Pass `t` to get the error in the viewer's language (without it, English).
  */
-export function slotFields(date: string | null, time: string | null, tz: string):
+export function slotFields(date: string | null, time: string | null, tz: string, t?: TFor<"calendar">):
   { ok: true; fields: { scheduled_date: string | null; scheduled_time: string | null; scheduled_at: string | null } } | { ok: false; error: string } {
   if (!date) return { ok: true, fields: { scheduled_date: null, scheduled_time: null, scheduled_at: null } };
-  if (!isIsoDate(date) || (time && !isTime(time))) return { ok: false, error: "Enter a valid publication date and time." };
+  if (!isIsoDate(date) || (time && !isTime(time))) return { ok: false, error: t ? t("slot.invalid") : "Enter a valid publication date and time." };
   if (!time) return { ok: true, fields: { scheduled_date: date, scheduled_time: null, scheduled_at: null } };
   const at = zonedToUtc(date, time, tz);
   const back = utcToZoned(at, tz);
-  if (back.date !== date || back.time !== time) return { ok: false, error: "This local time does not exist because of a daylight-saving change." };
+  if (back.date !== date || back.time !== time) return { ok: false, error: t ? t("slot.dst") : "This local time does not exist because of a daylight-saving change." };
   return { ok: true, fields: { scheduled_date: date, scheduled_time: time, scheduled_at: at } };
 }

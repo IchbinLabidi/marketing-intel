@@ -1,12 +1,11 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { todayInZone, addDays } from "@/lib/calendar/time";
-import { FUNNEL_LABELS, FUNNEL_STAGES, PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
+import { FUNNEL_STAGES } from "@/lib/domain/constants";
 import {
-  audienceGrowth, filterItems, funnelTargets, insights, socialWeekly, localDate, overview, parseStageEvents, previousPeriod, production, social, strategyBalance, teamWorkload, daysBetween,
+  audienceGrowth, filterItems, funnelTargets, insights, socialWeekly, localDate, overview, parseStageEvents, previousPeriod, production, social, strategyBalance, teamWorkload, daysBetween, contentTypeLabel, platformLabelOf, stageLabelOf,
   type AnalyticsItem, type AnalyticsTask, type Filters, type Period, type PerfRow,
 } from "@/lib/analytics/compute";
-import { STAGE_LABELS, type ProductionStage } from "@/lib/production/model";
 import { actionCenter, executiveSummary, explain, fiveQuestions, type CeoInput } from "@/lib/analytics/ceo";
 import { getProjectContext } from "./projects";
 import { getStrategyBundle } from "./strategy";
@@ -15,6 +14,7 @@ import { getMetaConnection, listSyncRuns } from "./meta";
 import { listSnapshots, listSocialConnections } from "./social";
 import { assignablePeople, getPermissions, isMissingTeamSchema } from "./team";
 import { requireUser } from "./session";
+import { getLocale, translatorFor } from "@/i18n/server";
 
 const ITEM_COLUMNS = "id, title, status, production_stage, platform, format, pillar_id, funnel_stage, campaign_id, assignee_id, created_at, scheduled_date, published_at, due_date, approved_at";
 const PERF_COLUMNS = "id, title, platform, format, pillar_id, campaign_id, permalink, publication_date, actual_publication_date, reach, impressions, views, video_views, clicks, likes, comments, shares, saves, conversions, leads, source, meta_connection_id";
@@ -65,6 +65,10 @@ export type AnalyticsParams = ReturnType<typeof parseAnalyticsParams>;
  */
 export async function loadAnalytics(projectId: string, sp: Record<string, string | string[] | undefined>) {
   const user = await requireUser();
+  const locale = await getLocale();
+  const t = translatorFor(locale, "analytics");
+  const td = translatorFor(locale, "domain");
+  const stageLabel = (s: string) => stageLabelOf(t, s);
   const { project } = await getProjectContext(projectId);
   const tz = project.timezone || "UTC";
   const today = todayInZone(tz);
@@ -108,10 +112,12 @@ export async function loadAnalytics(projectId: string, sp: Record<string, string
   const targetsOff = subset || Boolean(params.filters.platform);
   const balanceOpts = {
     pillars: targetsOff ? bundle.pillars.map((p) => ({ ...p, target_share: null })) : bundle.pillars,
-    funnel: FUNNEL_STAGES.map((s) => ({ stage: s, label: FUNNEL_LABELS[s] })),
+    funnel: FUNNEL_STAGES.map((s) => ({ stage: s, label: td(`funnel.${s}`) })),
     funnelTargets: targetsOff ? new Map<string, number>() : funnelTargets(bundle.strategy?.funnel as Record<string, unknown> | undefined),
-    platforms: channels.filter((c) => c.is_active && (!params.filters.platform || c.platform === params.filters.platform)).map((c) => ({ platform: c.platform, label: PLATFORM_LABELS[c.platform as Platform] ?? c.platform, postsPerWeek: subset ? null : c.target_posts_per_week })),
+    platforms: channels.filter((c) => c.is_active && (!params.filters.platform || c.platform === params.filters.platform)).map((c) => ({ platform: c.platform, label: platformLabelOf(td, c.platform), postsPerWeek: subset ? null : c.target_posts_per_week })),
     periodDays,
+    noPillarLabel: t("labels.noPillar"),
+    typeLabel: (k: string) => contentTypeLabel(t, k),
   };
   const plannedNow = filtered.filter((i) => i.scheduled_date && i.scheduled_date >= params.period.from && i.scheduled_date <= params.period.to);
   const publishedNow = filtered.filter((i) => i.status === "published" && (localDate(i.published_at, tz) ?? "") >= params.period.from && (localDate(i.published_at, tz) ?? "") <= params.period.to);
@@ -122,7 +128,7 @@ export async function loadAnalytics(projectId: string, sp: Record<string, string
   const prod = production(filtered, events, params.period, today, tz, nowIso);
   const prodPrev = production(filtered, events, prevPeriod, today, tz, nowIso);
 
-  const peopleRows = people.map((p) => ({ user_id: p.user_id, name: p.name || "Unnamed member", roleName: p.roleName }));
+  const peopleRows = people.map((p) => ({ user_id: p.user_id, name: p.name || t("labels.unnamedMember"), roleName: p.roleName }));
   const team = canSeeTeam ? teamWorkload(tasks, filtered, peopleRows, params.period, today, tz) : null;
   const myWork = teamWorkload(tasks.filter((t) => t.user_id === user.id), filtered, peopleRows.filter((p) => p.user_id === user.id), params.period, today, tz)[0] ?? null;
 
@@ -151,8 +157,8 @@ export async function loadAnalytics(projectId: string, sp: Record<string, string
     period: params.period, balance, overview: ov, production: prod, team,
     social: socialNow && socialPrev ? { now: socialNow, prev: socialPrev } : null,
     links: { strategy: `${base}/strategy`, production: `${base}/production`, calendar: `${base}/calendar?view=list`, team: "/team", history: `${base}/history` },
-    stageLabel: (s) => STAGE_LABELS[s as ProductionStage] ?? s,
-  });
+    stageLabel,
+  }, t);
 
   const ceoInput: CeoInput = {
     period: params.period, periodDays, overview: ov, overviewPrev: params.compare ? ovPrev : null, production: prod, productionPrev: params.compare ? prodPrev : null,
@@ -161,11 +167,11 @@ export async function loadAnalytics(projectId: string, sp: Record<string, string
     meta: meta ? { status: meta.status, lastSyncStatus: meta.last_sync_status, error: meta.last_error } : null,
     otherConnected: socialAccounts.filter((c) => c.status === "connected").length,
     failingAccounts: socialAccounts.filter((c) => c.status === "needs_attention" || c.status === "permission_denied" || (c.status === "connected" && c.last_sync_status === "failed")).map((c) => c.account_name ?? c.provider),
-    kpiCount: bundle.kpis.length, stageLabel: (s) => STAGE_LABELS[s as ProductionStage] ?? s,
+    kpiCount: bundle.kpis.length, stageLabel,
     links: { strategy: `${base}/strategy`, calendar: `${base}/calendar?view=list`, overdue: `${base}/calendar?view=list&overdue=1`, production: `${base}/production`, team: "/team/workload", history: `${base}/history`, settings: `${base}/settings`, integrations: `${base}/integrations` },
   };
-  const issues = actionCenter(ceoInput);
-  const ceo = { issues, summary: executiveSummary(ceoInput, issues), answers: fiveQuestions(ceoInput, issues), explain: explain(ceoInput) };
+  const issues = actionCenter(ceoInput, t);
+  const ceo = { issues, summary: executiveSummary(ceoInput, issues, t), answers: fiveQuestions(ceoInput, issues, t), explain: explain(ceoInput, t) };
 
   return {
     ceo,

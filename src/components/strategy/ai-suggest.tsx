@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { suggestStrategyAction } from "@/server/actions/strategy";
 import type { StrategySection } from "@/server/ai/strategy";
+import { useT } from "@/i18n/client";
 
 export type SuggestionNotes = { assumptions: string[]; questions: string[] };
 
@@ -18,12 +19,12 @@ export type SuggestionNotes = { assumptions: string[]; questions: string[] };
 export function AISuggest<T extends { notes: SuggestionNotes }>({
   projectId,
   section,
-  label = "Suggest with AI",
+  label,
   disabled,
   aiEnabled,
   renderPreview,
   onApply,
-  applyLabel = "Apply to form",
+  applyLabel,
 }: {
   projectId: string;
   section: StrategySection;
@@ -34,6 +35,8 @@ export function AISuggest<T extends { notes: SuggestionNotes }>({
   onApply: (data: T, selected: Set<number>) => Promise<boolean | void> | boolean | void;
   applyLabel?: string;
 }) {
+  const t = useT("strategy");
+  const tc = useT("common");
   const [stage, setStage] = React.useState<"closed" | "ask" | "loading" | "review">("closed");
   const [instruction, setInstruction] = React.useState("");
   const [data, setData] = React.useState<T | null>(null);
@@ -70,32 +73,30 @@ export function AISuggest<T extends { notes: SuggestionNotes }>({
         variant="outline"
         size="sm"
         disabled={disabled || !aiEnabled}
-        title={aiEnabled ? undefined : "Add GEMINI_API_KEY or ANTHROPIC_API_KEY to enable AI features"}
+        title={aiEnabled ? undefined : t("aiSuggest.notConfigured")}
         onClick={() => setStage(data ? "review" : "ask")}
       >
-        <Sparkles className="text-primary" /> {label}
+        <Sparkles className="text-primary" /> {label ?? t("aiSuggest.label")}
       </Button>
       <Dialog open={stage !== "closed"} onOpenChange={(o) => !o && stage !== "loading" && setStage("closed")}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>AI suggestion</DialogTitle>
-            <DialogDescription>
-              Based only on what this project contains. Review and edit before saving; assumptions are listed below.
-            </DialogDescription>
+            <DialogTitle>{t("aiSuggest.title")}</DialogTitle>
+            <DialogDescription>{t("aiSuggest.description")}</DialogDescription>
           </DialogHeader>
           {stage === "ask" || stage === "loading" ? (
             <div className="grid gap-3">
               <Textarea
                 value={instruction}
                 onChange={(e) => setInstruction(e.target.value)}
-                placeholder="Optional: steer the suggestion (e.g. “focus on B2B buyers”, “more premium positioning”)"
+                placeholder={t("aiSuggest.instructionPlaceholder")}
                 rows={3}
                 disabled={stage === "loading"}
               />
               <DialogFooter>
                 <Button onClick={run} disabled={stage === "loading"}>
                   {stage === "loading" ? <Loader2 className="animate-spin" /> : <Sparkles />}
-                  {stage === "loading" ? "Thinking… this can take up to a minute" : "Generate"}
+                  {stage === "loading" ? t("aiSuggest.thinking") : tc("actions.generate")}
                 </Button>
               </DialogFooter>
             </div>
@@ -107,7 +108,7 @@ export function AISuggest<T extends { notes: SuggestionNotes }>({
                 <div className="grid gap-3 rounded-lg border bg-muted/40 p-3 text-[13px]">
                   {data.notes.assumptions.length ? (
                     <div>
-                      <p className="mb-1 font-medium">Assumptions made</p>
+                      <p className="mb-1 font-medium">{t("aiSuggest.assumptions")}</p>
                       <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
                         {data.notes.assumptions.map((a, i) => <li key={i}>{a}</li>)}
                       </ul>
@@ -115,7 +116,7 @@ export function AISuggest<T extends { notes: SuggestionNotes }>({
                   ) : null}
                   {data.notes.questions.length ? (
                     <div>
-                      <p className="mb-1 font-medium">Questions that would sharpen this</p>
+                      <p className="mb-1 font-medium">{t("aiSuggest.questions")}</p>
                       <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
                         {data.notes.questions.map((q, i) => <li key={i}>{q}</li>)}
                       </ul>
@@ -128,7 +129,7 @@ export function AISuggest<T extends { notes: SuggestionNotes }>({
           {stage === "review" && data ? (
             <DialogFooter>
               <Button variant="outline" onClick={() => setStage("ask")}>
-                Regenerate
+                {t("aiSuggest.regenerate")}
               </Button>
               <Button
                 disabled={applying}
@@ -143,7 +144,7 @@ export function AISuggest<T extends { notes: SuggestionNotes }>({
                 }}
               >
                 {applying ? <Loader2 className="animate-spin" /> : null}
-                {applyLabel}
+                {applyLabel ?? t("aiSuggest.apply")}
               </Button>
             </DialogFooter>
           ) : null}

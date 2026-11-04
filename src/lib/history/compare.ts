@@ -1,7 +1,7 @@
-import { PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
+import type { TFor } from "@/i18n/messages";
 import type { AnalysisItem } from "./analysis";
 import { effectiveDate } from "./analysis";
-import { normalizeFormat } from "./parse";
+import { formatLabel, normalizeFormat, platformLabel } from "./parse";
 import { schoolYearOf } from "./seasons";
 import { normalizeText } from "./text";
 
@@ -31,21 +31,21 @@ export function itemsInPeriod(items: AnalysisItem[], p: PeriodSpec) {
 }
 
 /** Periods the user can pick, derived from the data actually imported. */
-export function availablePeriods(items: AnalysisItem[], imports: { id: string; label: string | null; file_name: string }[]) {
+export function availablePeriods(items: AnalysisItem[], imports: { id: string; label: string | null; file_name: string }[], t: TFor<"history">) {
   const dates = items.map(effectiveDate).filter((d): d is string => Boolean(d));
   const schoolYears = [...new Set(dates.map(schoolYearOf))].sort();
   const years = [...new Set(dates.map((d) => d.slice(0, 4)))].sort();
   return [
-    ...schoolYears.map((v) => ({ key: `school_year:${v}`, label: `School year ${v}` })),
-    ...years.map((v) => ({ key: `year:${v}`, label: `Calendar year ${v}` })),
-    ...imports.map((i) => ({ key: `import:${i.id}`, label: `Import: ${i.label || i.file_name}` })),
+    ...schoolYears.map((v) => ({ key: `school_year:${v}`, label: t("compare.periods.schoolYear", { value: v }) })),
+    ...years.map((v) => ({ key: `year:${v}`, label: t("compare.periods.year", { value: v }) })),
+    ...imports.map((i) => ({ key: `import:${i.id}`, label: t("compare.periods.import", { name: i.label || i.file_name }) })),
   ];
 }
 
-function shares(items: AnalysisItem[], keyOf: (i: AnalysisItem) => string | null) {
+function shares(items: AnalysisItem[], keyOf: (i: AnalysisItem) => string | null, notSpecified: string) {
   const map = new Map<string, number>();
   for (const i of items) {
-    const k = keyOf(i) ?? "Not specified";
+    const k = keyOf(i) ?? notSpecified;
     map.set(k, (map.get(k) ?? 0) + 1);
   }
   return map;
@@ -57,16 +57,20 @@ function weeksSpanned(items: AnalysisItem[]) {
   return Math.max(1, (Date.parse(dates[dates.length - 1]) - Date.parse(dates[0])) / 86400000 / 7 + 1 / 7);
 }
 
-/** Side-by-side comparison of two periods. Pure counts and shares; interpretation is left to the reader or the AI. */
-export function comparePeriods(a: AnalysisItem[], b: AnalysisItem[], pillarName: (id: string) => string | undefined) {
+/**
+ * Side-by-side comparison of two periods. Pure counts and shares; interpretation is left to the reader or the AI.
+ * `t` / `td` word the dimension and row labels (history and domain namespaces).
+ */
+export function comparePeriods(a: AnalysisItem[], b: AnalysisItem[], pillarName: (id: string) => string | undefined, t: TFor<"history">, td: TFor<"domain">) {
   const dims: { key: string; label: string; keyOf: (i: AnalysisItem) => string | null }[] = [
-    { key: "pillar", label: "Content pillars", keyOf: (i) => (i.pillar_id ? pillarName(i.pillar_id) ?? null : i.content_pillar) },
-    { key: "format", label: "Formats", keyOf: (i) => normalizeFormat(i.format) },
-    { key: "platform", label: "Platforms", keyOf: (i) => (i.platform ? PLATFORM_LABELS[i.platform as Platform] : null) },
+    { key: "pillar", label: t("compare.dimensions.pillar"), keyOf: (i) => (i.pillar_id ? pillarName(i.pillar_id) ?? null : i.content_pillar) },
+    { key: "format", label: t("compare.dimensions.format"), keyOf: (i) => formatLabel(t, normalizeFormat(i.format)) },
+    { key: "platform", label: t("compare.dimensions.platform"), keyOf: (i) => (i.platform ? platformLabel(td, i.platform) : null) },
   ];
+  const notSpecified = t("common.notSpecified");
   const table = dims.map((d) => {
-    const ma = shares(a, d.keyOf);
-    const mb = shares(b, d.keyOf);
+    const ma = shares(a, d.keyOf, notSpecified);
+    const mb = shares(b, d.keyOf, notSpecified);
     const keys = [...new Set([...ma.keys(), ...mb.keys()])];
     return {
       key: d.key,

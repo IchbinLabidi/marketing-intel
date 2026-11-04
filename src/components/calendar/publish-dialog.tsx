@@ -19,12 +19,13 @@ import { finishMediaUploadAction, mediaUploadTicketAction } from "@/server/actio
 import type { ContentItem } from "@/types/domain";
 import { DrivePicker } from "./drive-picker";
 import { DeleteMediaDialog, Maximize2, MediaLightbox, MediaPreview, TileButton, Trash2, type TileAsset } from "./media-tile";
+import { useFormatter, useT } from "@/i18n/client";
 
-const STATUS: Record<string, { label: string; tone: "success" | "info" | "warning" | "destructive" | "outline" }> = {
-  published: { label: "Published", tone: "success" }, scheduled: { label: "Scheduled on Facebook", tone: "info" }, processing: { label: "Processing", tone: "info" },
-  uploading: { label: "Sending…", tone: "info" }, queued: { label: "Queued", tone: "outline" }, failed: { label: "Failed", tone: "destructive" }, cancelled: { label: "Cancelled", tone: "outline" },
+type StatusKey = "published" | "scheduled" | "processing" | "uploading" | "queued" | "failed" | "cancelled";
+const STATUS: Record<string, { key: StatusKey; tone: "success" | "info" | "warning" | "destructive" | "outline" }> = {
+  published: { key: "published", tone: "success" }, scheduled: { key: "scheduled", tone: "info" }, processing: { key: "processing", tone: "info" },
+  uploading: { key: "uploading", tone: "info" }, queued: { key: "queued", tone: "outline" }, failed: { key: "failed", tone: "destructive" }, cancelled: { key: "cancelled", tone: "outline" },
 };
-const fmtSize = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
 
 /**
  * Select media and publish an approved post to the connected Facebook Page / Instagram account.
@@ -33,6 +34,10 @@ const fmtSize = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1
  */
 const LABEL: Record<PublishTarget, string> = { facebook: "Facebook", instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube" };
 export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { projectId: string; post: ContentItem; tz: string; onClose: () => void; onPublished: () => void }) {
+  const t = useT("calendar");
+  const tc = useT("common");
+  const fmt = useFormatter();
+  const fmtSize = (n: number) => (n > 1024 * 1024 ? t("units.mb", { size: fmt.number(n / 1024 / 1024, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }) : t("units.kb", { size: Math.round(n / 1024) }));
   const [ctx, setCtx] = React.useState<PublishContext | null>(null);
   const [tab, setTab] = React.useState<"post" | "computer" | "drive">("post");
   const [assetIds, setAssetIds] = React.useState<string[] | null>(null); // selection order = carousel order
@@ -72,26 +77,26 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
   const pick = (file: File | undefined) => {
     if (!file) return;
     if (local) URL.revokeObjectURL(local.url);
-    setLocal({ file, url: URL.createObjectURL(file), error: validateLocalFile(file) });
+    setLocal({ file, url: URL.createObjectURL(file), error: validateLocalFile(file, t) });
   };
   const keep = async () => {
     if (!local || local.error) return;
     setBusy("keep");
     try {
       const ticket = await mediaUploadTicketAction(projectId, post.id, local.file.name, local.file.type, local.file.size);
-      if (!ticket.ok || !ticket.data) throw new Error(ticket.ok ? "Could not prepare the upload." : ticket.error);
+      if (!ticket.ok || !ticket.data) throw new Error(ticket.ok ? t("publish.prepareFailed") : ticket.error);
       const { error } = await createClient().storage.from("production-media").uploadToSignedUrl(ticket.data.path, ticket.data.token, local.file, { contentType: local.file.type });
       if (error) throw error;
       const done = await finishMediaUploadAction(projectId, post.id, ticket.data.path, local.file.name, local.file.type);
       if (!done.ok) throw new Error(done.error);
-      toast.success("File kept for publishing");
+      toast.success(t("publish.kept"));
       URL.revokeObjectURL(local.url);
       setLocal(null);
       setAssetIds(null);
       await load();
       setTab("post");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload failed");
+      toast.error(e instanceof Error ? e.message : t("publish.uploadFailed"));
     } finally {
       setBusy(null);
     }
@@ -102,7 +107,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
     const r = await publishPostAction(projectId, post.id, { targets, mediaAssetIds: selected.map((a) => a.id), scheduleAt, allowTemporaryLink: consent, youtubeVariant });
     setBusy(null);
     if (!r.ok) { toast.error(r.error); await load(); return; }
-    toast.success(r.message ?? "Done");
+    toast.success(r.message ?? t("publish.done"));
     await load();
     onPublished();
   };
@@ -110,7 +115,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
     setBusy(p.id);
     const r = await checkPublicationAction(projectId, p.id);
     setBusy(null);
-    if (r.ok) toast.success(r.message ?? "Updated"); else toast.error(r.error);
+    if (r.ok) toast.success(r.message ?? t("publish.updated")); else toast.error(r.error);
     await load();
     onPublished();
   };
@@ -118,55 +123,59 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
     setBusy(`cancel-${p.id}`);
     const r = await cancelScheduledAction(projectId, p.id);
     setBusy(null);
-    if (r.ok) toast.success(r.message ?? "Updated"); else toast.error(r.error);
+    if (r.ok) toast.success(r.message ?? t("publish.updated")); else toast.error(r.error);
     await load();
     onPublished();
   };
   // the person deleted the post on the network: reset that row so the post can be published again (nothing is deleted there)
   const unpublish = async (p: Publication) => {
     const where = LABEL[p.provider as PublishTarget] ?? p.provider;
-    if (!(await confirm({ title: `Mark as not published on ${where}?`, description: `Do this only if you deleted the post on ${where}. Orix Signals forgets the old link and lets you publish it again. Nothing is deleted on ${where}.`, confirmLabel: "Mark as not published" }))) return;
+    if (!(await confirm({ title: t("publish.unpublishTitle", { where }), description: t("publish.unpublishDescription", { where }), confirmLabel: t("publish.unpublishConfirm") }))) return;
     setBusy(`un-${p.id}`);
     const r = await unpublishPublicationAction(projectId, p.id);
     setBusy(null);
-    if (r.ok) toast.success(r.message ?? "Updated"); else toast.error(r.error);
+    if (r.ok) toast.success(r.message ?? t("publish.updated")); else toast.error(r.error);
     await load();
     onPublished();
   };
 
+  const alreadyLabel = (status: string) => {
+    const k = status === "queued" ? "scheduled" : status;
+    return k === "published" || k === "scheduled" || k === "processing" || k === "uploading" ? t(`publish.already.${k}`) : status;
+  };
   const needsConsent = targets.includes("instagram") && selected.some((a) => a.source === "stored" || a.source === "google_drive");
   const approved = ["approved", "scheduled"].includes(post.status);
   const canSchedule = true;
-  const toggle = (t: PublishTarget) => {
-    if (t !== "facebook" && !targets.includes(t)) setWhen("now"); // Instagram and TikTok can only be published now
-    setTargets((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]));
+  const toggle = (target: PublishTarget) => {
+    if (target !== "facebook" && !targets.includes(target)) setWhen("now"); // Instagram and TikTok can only be published now
+    setTargets((cur) => (cur.includes(target) ? cur.filter((x) => x !== target) : [...cur, target]));
   };
-  const done = (t: PublishTarget) => ctx?.publications.find((p) => p.provider === t && (["published", "scheduled", "processing", "uploading"].includes(p.status) || (p.status === "queued" && Boolean(p.scheduled_for))));
+  const done = (target: PublishTarget) => ctx?.publications.find((p) => p.provider === target && (["published", "scheduled", "processing", "uploading"].includes(p.status) || (p.status === "queued" && Boolean(p.scheduled_for))));
 
   return (
     <Dialog open modal={!picking} onOpenChange={(o) => !o && !busy && !picking && onClose()}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Send className="size-4" /> Publish “{post.title}”</DialogTitle>
-          <DialogDescription>Choose the media, the accounts and when. Each network uses its own caption from Content Studio, or the general caption when it has none.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><Send className="size-4" /> {t("publish.title", { title: post.title })}</DialogTitle>
+          <DialogDescription>{t("publish.description")}</DialogDescription>
         </DialogHeader>
         {!ctx ? <div className="h-40 animate-pulse rounded-lg bg-muted" /> : (
           <div className="space-y-4 text-[13px]">
-            {!approved ? <Alert variant="warning">Only approved posts can be published. Approve it in Content Production first.</Alert> : null}
-            {!ctx.facebook && !ctx.tiktok && !ctx.youtube ? <Alert variant="warning">Connect Meta, TikTok or YouTube on the Integrations page to publish.</Alert> : null}
-            {ctx.youtube && !ctx.youtube.canPost ? <Alert variant="warning">YouTube is connected for statistics only. <a className="font-medium text-primary hover:underline" href={`/api/integrations/youtube/connect?project=${projectId}`}>Reconnect YouTube</a> and accept uploading videos to publish there.</Alert> : null}
-            {ctx.tiktok && !ctx.tiktok.canPost ? <Alert variant="warning">TikTok is connected for statistics only. <a className="font-medium text-primary hover:underline" href={`/api/integrations/tiktok/connect?project=${projectId}`}>Reconnect TikTok</a> and accept posting videos to publish there.</Alert> : null}
+            {!approved ? <Alert variant="warning">{t("publish.notApproved")}</Alert> : null}
+            {!ctx.facebook && !ctx.tiktok && !ctx.youtube ? <Alert variant="warning">{t("publish.noAccounts")}</Alert> : null}
+            {ctx.youtube && !ctx.youtube.canPost ? <Alert variant="warning">{t.rich("publish.youtubeStatsOnly", { link: (c) => <a className="font-medium text-primary hover:underline" href={`/api/integrations/youtube/connect?project=${projectId}`}>{c}</a> })}</Alert> : null}
+            {ctx.tiktok && !ctx.tiktok.canPost ? <Alert variant="warning">{t.rich("publish.tiktokStatsOnly", { link: (c) => <a className="font-medium text-primary hover:underline" href={`/api/integrations/tiktok/connect?project=${projectId}`}>{c}</a> })}</Alert> : null}
             {ctx.facebook && ctx.missingScopes.length ? (
-              <Alert variant="warning" title="Publishing permission needed">
-                Meta access is read-only for now. <a className="font-medium text-primary hover:underline" href={`/api/meta/connect?project=${projectId}&publish=1`}>Enable publishing</a> (you&apos;ll confirm {ctx.missingScopes.join(" and ")} on Facebook). As an admin of the Meta app you can publish right away; other team members need Meta App Review first.
+              <Alert variant="warning" title={t("publish.permissionTitle")}>
+                {t.rich("publish.permissionBody", { scopes: fmt.list(ctx.missingScopes), link: (c) => <a className="font-medium text-primary hover:underline" href={`/api/meta/connect?project=${projectId}&publish=1`}>{c}</a> })}
               </Alert>
             ) : null}
 
             {/* Media */}
             <section className="space-y-2">
-              <p className="font-medium">Media</p>
+              <p className="font-medium">{t("publish.media")}</p>
               <div role="tablist" className="inline-flex gap-0.5 rounded-md bg-secondary p-0.5">
-                {([["post", "On this post", CheckCircle2], ["computer", "From your computer", Laptop], ["drive", "Google Drive", HardDrive]] as const).map(([k, label, Icon]) => (
+                {([["post", t("publish.tabPost"), CheckCircle2], ["computer", t("publish.tabComputer"), Laptop], ["drive", t("publish.tabDrive"), HardDrive]] as const).map(([k, label, Icon]) => (
                   <button key={k} role="tab" type="button" aria-selected={tab === k} onClick={() => setTab(k)} className={cn("inline-flex h-7 items-center gap-1.5 rounded-[5px] px-2.5 text-[13px] font-medium", tab === k ? "bg-card shadow-xs" : "text-muted-foreground")}>
                     <Icon className="size-3.5" /> {label}
                   </button>
@@ -175,31 +184,31 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
               {tab === "post" ? (
                 ctx.assets.length ? (
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <button type="button" onClick={() => setAssetIds([])} className={cn("flex h-32 items-center justify-center rounded-lg border text-xs text-muted-foreground", !selected.length && "ring-2 ring-primary")}>No media</button>
+                    <button type="button" onClick={() => setAssetIds([])} className={cn("flex h-32 items-center justify-center rounded-lg border text-xs text-muted-foreground", !selected.length && "ring-2 ring-primary")}>{t("publish.noMedia")}</button>
                     {ctx.assets.map((a) => (
                       <div key={a.id} className={cn("group relative h-32 overflow-hidden rounded-lg border bg-muted", selected.includes(a) && "ring-2 ring-primary")}>
-                        <button type="button" aria-pressed={selected.includes(a)} onClick={() => toggleAsset(a.id)} title={`Select ${a.name}`} className="absolute inset-0">
+                        <button type="button" aria-pressed={selected.includes(a)} onClick={() => toggleAsset(a.id)} title={t("publish.select", { name: a.name })} className="absolute inset-0">
                           <MediaPreview asset={a} className="size-full" />
                         </button>
                         {selected.includes(a) ? <span className="pointer-events-none absolute left-1 top-1 z-10 flex size-5 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">{selected.indexOf(a) + 1}</span> : null}
                         <div className="absolute right-1 top-1 z-10 flex gap-1">
-                          <TileButton label={`View ${a.name} larger`} onClick={() => setZoom({ list: ctx.assets, index: ctx.assets.indexOf(a) })}><Maximize2 className="size-3.5" /></TileButton>
-                          <TileButton label={`Delete ${a.name}`} danger onClick={() => setToDelete(a)}><Trash2 className="size-3.5" /></TileButton>
+                          <TileButton label={t("publish.viewLarger", { name: a.name })} onClick={() => setZoom({ list: ctx.assets, index: ctx.assets.indexOf(a) })}><Maximize2 className="size-3.5" /></TileButton>
+                          <TileButton label={t("publish.delete", { name: a.name })} danger onClick={() => setToDelete(a)}><Trash2 className="size-3.5" /></TileButton>
                         </div>
-                        <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-background/80 px-1 text-[10px]">{a.source === "stored" ? "Stored" : a.source === "link" ? "Link" : "Drive"} · {a.name}</span>
+                        <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-background/80 px-1 text-[10px]">{a.source === "stored" ? t("publish.source.stored") : a.source === "link" ? t("publish.source.link") : t("publish.source.drive")} · {a.name}</span>
                       </div>
                     ))}
                   </div>
-                ) : <p className="text-muted-foreground">No media attached yet. Choose a file from your computer, or publish text only on Facebook.</p>
+                ) : <p className="text-muted-foreground">{t("publish.noneAttached")}</p>
               ) : null}
-              {tab === "post" && ctx.assets.length > 1 ? <p className="text-xs text-muted-foreground">Click several photos to publish them together (Instagram carousel or Facebook multi-photo post, up to 10). The numbers show the order.</p> : null}
+              {tab === "post" && ctx.assets.length > 1 ? <p className="text-xs text-muted-foreground">{t("publish.multiHint")}</p> : null}
               {tab === "post" && selected.length > 1 ? (
                 <div className="space-y-1">
-                  <p className="text-xs font-medium">Carousel order</p>
+                  <p className="text-xs font-medium">{t("publish.carouselOrder")}</p>
                   <ol className="flex gap-2 overflow-x-auto pb-1">
                     {selected.map((a, i) => (
                       <li key={a.id} className="relative shrink-0">
-                        <button type="button" onClick={() => setZoom({ list: selected, index: i })} className="block size-16 overflow-hidden rounded-md border bg-muted" aria-label={`View photo ${i + 1}, ${a.name}`}>
+                        <button type="button" onClick={() => setZoom({ list: selected, index: i })} className="block size-16 overflow-hidden rounded-md border bg-muted" aria-label={t("publish.viewPhoto", { index: i + 1, name: a.name })}>
                           <MediaPreview asset={a} className="size-full" />
                         </button>
                         <span className="absolute left-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">{i + 1}</span>
@@ -210,7 +219,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
               ) : null}
               {tab === "post" ? null : tab === "computer" ? (
                 <div className="space-y-2">
-                  <Input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime" onChange={(e) => pick(e.target.files?.[0])} aria-label="Choose a file from your computer" />
+                  <Input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime" onChange={(e) => pick(e.target.files?.[0])} aria-label={t("publish.chooseFile")} />
                   {local ? (
                     <div className="flex gap-3 rounded-lg border p-2">
                       {local.file.type.startsWith("image/") ? (
@@ -219,11 +228,11 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
                       ) : <video src={local.url} controls className="h-24 rounded" />}
                       <div className="min-w-0 space-y-1">
                         <p className="truncate font-medium">{local.file.name}</p>
-                        <p className="text-xs text-muted-foreground">{local.file.type || "unknown type"} · {fmtSize(local.file.size)}</p>
+                        <p className="text-xs text-muted-foreground">{local.file.type || t("publish.unknownType")} · {fmtSize(local.file.size)}</p>
                         {local.error ? <p className="text-xs text-destructive">{local.error}</p> : (
                           <>
-                            <p className="text-xs text-muted-foreground">Only on this computer for now: nothing has been uploaded. It disappears when you close this window, so it can&apos;t be used for a later publication until you keep it.</p>
-                            <Button size="sm" disabled={busy !== null} onClick={keep}>{busy === "keep" ? <Loader2 className="animate-spin" /> : null} Keep for publishing (upload to the project&apos;s private storage)</Button>
+                            <p className="text-xs text-muted-foreground">{t("publish.localOnly")}</p>
+                            <Button size="sm" disabled={busy !== null} onClick={keep}>{busy === "keep" ? <Loader2 className="animate-spin" /> : null} {t("publish.keep")}</Button>
                           </>
                         )}
                       </div>
@@ -237,18 +246,18 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
 
             {/* Accounts */}
             <section className="space-y-2">
-              <p className="font-medium">Publish to</p>
-              {([["facebook", ctx.facebook], ["instagram", ctx.instagram], ["tiktok", ctx.tiktok?.canPost ? ctx.tiktok : null], ["youtube", ctx.youtube?.canPost ? ctx.youtube : null]] as const).map(([t, acc]) => (
-                <label key={t} className={cn("flex items-center gap-2", !acc && "opacity-50")}>
-                  <input type="checkbox" checked={targets.includes(t)} disabled={!acc || Boolean(done(t))} onChange={() => toggle(t)} />
-                  {LABEL[t]} {acc ? <span className="text-muted-foreground">· {acc.name}</span> : <span className="text-muted-foreground">· not connected</span>}
-                  {done(t) ? <Badge variant="outline">already {done(t)!.status === "queued" ? "scheduled" : done(t)!.status}</Badge> : null}
+              <p className="font-medium">{t("publish.publishTo")}</p>
+              {([["facebook", ctx.facebook], ["instagram", ctx.instagram], ["tiktok", ctx.tiktok?.canPost ? ctx.tiktok : null], ["youtube", ctx.youtube?.canPost ? ctx.youtube : null]] as const).map(([target, acc]) => (
+                <label key={target} className={cn("flex items-center gap-2", !acc && "opacity-50")}>
+                  <input type="checkbox" checked={targets.includes(target)} disabled={!acc || Boolean(done(target))} onChange={() => toggle(target)} />
+                  {LABEL[target]} {acc ? <span className="text-muted-foreground">· {acc.name}</span> : <span className="text-muted-foreground">{t("publish.notConnected")}</span>}
+                  {done(target) ? <Badge variant="outline">{alreadyLabel(done(target)!.status)}</Badge> : null}
                 </label>
               ))}
               {needsConsent ? (
                 <label className="flex items-start gap-2 rounded-lg border border-warning/40 p-2 text-xs">
                   <input type="checkbox" className="mt-0.5" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-                  <span>Instagram only accepts media by link. Allow a private link to this file that only works for 1 hour, for Instagram to download it. The file stays private otherwise.</span>
+                  <span>{t("publish.consent")}</span>
                 </label>
               ) : null}
             </section>
@@ -256,23 +265,23 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
             {/* Copy each network sends */}
             {targets.length ? (
               <section className="space-y-2">
-                <p className="font-medium">Caption used</p>
-                {targets.map((t) => {
-                  const copy = publicationCopy(post, t, composeCaption, youtubeVariant);
+                <p className="font-medium">{t("publish.captionUsed")}</p>
+                {targets.map((target) => {
+                  const copy = publicationCopy(post, target, composeCaption, youtubeVariant);
                   return (
-                    <div key={t} className="rounded-lg border p-2 text-xs">
+                    <div key={target} className="rounded-lg border p-2 text-xs">
                       <div className="flex flex-wrap items-center gap-2">
-                        <strong>{LABEL[t]}</strong>
-                        <Badge variant={copy.source === "platform" ? "info" : "outline"}>{copy.source === "platform" ? `${COPY_PLATFORM_LABELS[copy.platform]} caption` : "General caption"}</Badge>
-                        {t === "youtube" ? (
+                        <strong>{LABEL[target]}</strong>
+                        <Badge variant={copy.source === "platform" ? "info" : "outline"}>{copy.source === "platform" ? t("publish.platformCaption", { platform: COPY_PLATFORM_LABELS[copy.platform] }) : t("publish.generalCaption")}</Badge>
+                        {target === "youtube" ? (
                           <span className="ms-auto flex gap-2">
-                            <label className="flex items-center gap-1"><input type="radio" checked={youtubeVariant === "shorts"} onChange={() => setYoutubeVariant("shorts")} /> Shorts copy</label>
-                            <label className="flex items-center gap-1"><input type="radio" checked={youtubeVariant === "video"} onChange={() => setYoutubeVariant("video")} /> Video copy</label>
+                            <label className="flex items-center gap-1"><input type="radio" checked={youtubeVariant === "shorts"} onChange={() => setYoutubeVariant("shorts")} /> {t("publish.shortsCopy")}</label>
+                            <label className="flex items-center gap-1"><input type="radio" checked={youtubeVariant === "video"} onChange={() => setYoutubeVariant("video")} /> {t("publish.videoCopy")}</label>
                           </span>
                         ) : null}
                       </div>
                       {copy.title ? <p dir="auto" className="mt-1 font-medium">{copy.title}</p> : null}
-                      <p dir="auto" className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-muted-foreground">{copy.text || "(no caption)"}</p>
+                      <p dir="auto" className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-muted-foreground">{copy.text || t("publish.noCaption")}</p>
                     </div>
                   );
                 })}
@@ -281,34 +290,34 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
 
             {/* When */}
             <section className="space-y-2">
-              <p className="font-medium">When</p>
+              <p className="font-medium">{t("publish.when")}</p>
               <div className="flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-1.5"><input type="radio" checked={when === "now"} onChange={() => setWhen("now")} /> Now</label>
+                <label className="flex items-center gap-1.5"><input type="radio" checked={when === "now"} onChange={() => setWhen("now")} /> {t("publish.now")}</label>
                 <label className={cn("flex items-center gap-1.5", !canSchedule && "opacity-50")}>
-                  <input type="radio" checked={when === "schedule"} disabled={!canSchedule} onChange={() => setWhen("schedule")} /> Schedule
+                  <input type="radio" checked={when === "schedule"} disabled={!canSchedule} onChange={() => setWhen("schedule")} /> {t("publish.schedule")}
                 </label>
                 {when === "schedule" ? <><Input type="date" className="h-8 w-40" value={date} onChange={(e) => setDate(e.target.value)} /><Input type="time" className="h-8 w-28" value={time} onChange={(e) => setTime(e.target.value)} /><span className="text-xs text-muted-foreground">{tz}</span></> : null}
               </div>
-              <p className="text-xs text-muted-foreground">Facebook keeps the scheduled post and publishes it itself (10 minutes to 30 days ahead). Instagram, TikTok and YouTube can&apos;t schedule through their API, so Orix Signals publishes them at that time (within 5 minutes, up to 75 days ahead). Keep the media attached until then.</p>
-              {targets.includes("youtube") ? <p className="text-xs text-muted-foreground">YouTube: one video, titled with the YouTube title from Content Studio (or the post title); its description, CTA and hashtags become the description. Vertical videos under 3 minutes appear as Shorts. Until Google approves Orix Signals&apos;s YouTube access, uploads stay private (you can make them public in YouTube Studio).</p> : null}
-              {targets.includes("tiktok") ? <p className="text-xs text-muted-foreground">TikTok: one video (MP4 or MOV, up to 50 MB). Until TikTok approves Orix Signals, videos are posted as private (only you can see them); you can make them public in the TikTok app.</p> : null}
+              <p className="text-xs text-muted-foreground">{t("publish.scheduleNote")}</p>
+              {targets.includes("youtube") ? <p className="text-xs text-muted-foreground">{t("publish.youtubeNote")}</p> : null}
+              {targets.includes("tiktok") ? <p className="text-xs text-muted-foreground">{t("publish.tiktokNote")}</p> : null}
             </section>
 
             {/* Status */}
             {ctx.publications.length ? (
               <section className="space-y-1.5">
-                <p className="font-medium">Status</p>
+                <p className="font-medium">{t("publish.statusTitle")}</p>
                 <ul className="divide-y rounded-lg border">
                   {ctx.publications.map((p) => (
                     <li key={p.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
                       <span className="font-medium">{LABEL[p.provider as PublishTarget] ?? p.provider}</span>
-                      {p.status === "queued" && p.scheduled_for ? <Badge variant="info" dot>Scheduled in Orix Signals</Badge> : <Badge variant={STATUS[p.status]?.tone ?? "outline"} dot>{STATUS[p.status]?.label ?? p.status}</Badge>}
-                      {p.scheduled_for ? <span className="text-xs text-muted-foreground">{new Date(p.scheduled_for).toLocaleString("en-GB", { timeZone: tz })}</span> : null}
-                      {p.platform_url ? <a href={p.platform_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">View post <ExternalLink className="size-3" /></a> : null}
-                      {p.status === "processing" ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => check(p)}><RefreshCcw /> Check again</Button> : null}
-                      {p.status === "queued" && p.scheduled_for ? <Button size="sm" variant="ghost" className="ml-auto text-xs" disabled={busy !== null} onClick={() => void cancelSchedule(p)}>{busy === `cancel-${p.id}` ? <Loader2 className="animate-spin" /> : <X />} Cancel schedule</Button> : null}
-                      {p.status === "published" || p.status === "scheduled" ? <Button size="sm" variant="ghost" className="ml-auto text-xs" disabled={busy !== null} onClick={() => void unpublish(p)}>{busy === `un-${p.id}` ? <Loader2 className="animate-spin" /> : <Undo2 />} Deleted there? Mark as not published</Button> : null}
-                      {p.error ? <p className="basis-full text-xs text-destructive"><CircleAlert className="mr-1 inline size-3" />{p.error}{p.error_kind === "transient" ? " You can try again." : ""}</p> : null}
+                      {p.status === "queued" && p.scheduled_for ? <Badge variant="info" dot>{t("publish.scheduledInApp")}</Badge> : <Badge variant={STATUS[p.status]?.tone ?? "outline"} dot>{STATUS[p.status] ? t(`publish.status.${STATUS[p.status].key}`) : p.status}</Badge>}
+                      {p.scheduled_for ? <span className="text-xs text-muted-foreground">{new Date(p.scheduled_for).toLocaleString(fmt.intl, { timeZone: tz })}</span> : null}
+                      {p.platform_url ? <a href={p.platform_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">{t("publish.viewPost")} <ExternalLink className="size-3" /></a> : null}
+                      {p.status === "processing" ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => check(p)}><RefreshCcw /> {t("publish.checkAgain")}</Button> : null}
+                      {p.status === "queued" && p.scheduled_for ? <Button size="sm" variant="ghost" className="ml-auto text-xs" disabled={busy !== null} onClick={() => void cancelSchedule(p)}>{busy === `cancel-${p.id}` ? <Loader2 className="animate-spin" /> : <X />} {t("publish.cancelSchedule")}</Button> : null}
+                      {p.status === "published" || p.status === "scheduled" ? <Button size="sm" variant="ghost" className="ml-auto text-xs" disabled={busy !== null} onClick={() => void unpublish(p)}>{busy === `un-${p.id}` ? <Loader2 className="animate-spin" /> : <Undo2 />} {t("publish.unpublish")}</Button> : null}
+                      {p.error ? <p className="basis-full text-xs text-destructive"><CircleAlert className="mr-1 inline size-3" />{p.error}{p.error_kind === "transient" ? t("publish.tryAgain") : ""}</p> : null}
                     </li>
                   ))}
                 </ul>
@@ -317,9 +326,9 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
           </div>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={busy !== null}>Close</Button>
-          <Button disabled={!ctx || busy !== null || !approved || !targets.length || targets.some((t) => (t === "tiktok" ? !ctx.tiktok?.canPost : t === "youtube" ? !ctx.youtube?.canPost : !ctx.facebook)) || (needsConsent && !consent) || targets.every((t) => done(t))} onClick={publish}>
-            {busy === "publish" ? <Loader2 className="animate-spin" /> : <Send />} {when === "schedule" ? "Schedule" : "Publish now"}
+          <Button variant="outline" onClick={onClose} disabled={busy !== null}>{tc("actions.close")}</Button>
+          <Button disabled={!ctx || busy !== null || !approved || !targets.length || targets.some((x) => (x === "tiktok" ? !ctx.tiktok?.canPost : x === "youtube" ? !ctx.youtube?.canPost : !ctx.facebook)) || (needsConsent && !consent) || targets.every((x) => done(x))} onClick={publish}>
+            {busy === "publish" ? <Loader2 className="animate-spin" /> : <Send />} {when === "schedule" ? t("publish.schedule") : t("publish.publishNow")}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { getFormatter } from "@/i18n/server";
 
 /** URL-driven section tabs (one link per section), styled like the in-page Tabs component. */
-export function TabNav({
+export async function TabNav({
   items,
   label,
   className,
@@ -11,6 +12,7 @@ export function TabNav({
   label: string;
   className?: string;
 }) {
+  const fmt = await getFormatter();
   return (
     <nav
       aria-label={label}
@@ -28,7 +30,7 @@ export function TabNav({
         >
           {t.label}
           {t.count ? (
-            <span className="rounded-[4px] bg-secondary px-1 text-[11px] tabular-nums text-muted-foreground">{t.count.toLocaleString("en")}</span>
+            <span className="rounded-[4px] bg-secondary px-1 text-[11px] tabular-nums text-muted-foreground">{fmt.number(t.count)}</span>
           ) : null}
         </Link>
       ))}

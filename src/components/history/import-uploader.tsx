@@ -10,11 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/app/form";
 import { uploadImportAction, type UploadResult } from "@/server/actions/history";
 import { cn } from "@/lib/utils";
-import { formatDate } from "@/lib/format";
+import { useFormatter, useT } from "@/i18n/client";
 
 export const ACCEPT = ".xlsx,.xls,.xlsm,.csv,.txt,.pdf";
 
 export function DropZone({ file, onFile, disabled }: { file: File | null; onFile: (f: File | null) => void; disabled?: boolean }) {
+  const t = useT("history");
+  const fmt = useFormatter();
   const [over, setOver] = React.useState(false);
   const input = React.useRef<HTMLInputElement>(null);
   return (
@@ -34,11 +36,11 @@ export function DropZone({ file, onFile, disabled }: { file: File | null; onFile
     >
       <FileUp className="size-6 text-muted-foreground" />
       {file ? (
-        <p className="text-[13px] font-medium">{file.name} <span className="font-normal text-muted-foreground">· {(file.size / 1024).toFixed(0)} KB</span></p>
+        <p className="text-[13px] font-medium">{file.name} <span className="font-normal text-muted-foreground">· {t("upload.sizeKb", { size: fmt.number(Math.round(file.size / 1024)) })}</span></p>
       ) : (
-        <p className="text-[13px] font-medium">Drop a calendar file here or click to choose</p>
+        <p className="text-[13px] font-medium">{t("upload.drop")}</p>
       )}
-      <p className="text-xs text-muted-foreground">Excel (.xlsx, .xls), CSV or PDF · up to 10 MB · 5,000 rows</p>
+      <p className="text-xs text-muted-foreground">{t("upload.limits", { rows: fmt.number(5000) })}</p>
       <input ref={input} type="file" accept={ACCEPT} className="hidden" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
     </div>
   );
@@ -46,6 +48,8 @@ export function DropZone({ file, onFile, disabled }: { file: File | null; onFile
 
 export function ImportUploader({ projectId, aiEnabled, variant = "default" }: { projectId: string; aiEnabled: boolean; variant?: "default" | "outline" }) {
   const router = useRouter();
+  const t = useT("history");
+  const fmt = useFormatter();
   const [open, setOpen] = React.useState(false);
   const [file, setFile] = React.useState<File | null>(null);
   const [label, setLabel] = React.useState("");
@@ -55,7 +59,7 @@ export function ImportUploader({ projectId, aiEnabled, variant = "default" }: { 
   const isPdf = file?.name.toLowerCase().endsWith(".pdf");
 
   const submit = async (allowDuplicate = false) => {
-    if (!file) return toast.error("Choose a file first");
+    if (!file) return toast.error(t("upload.chooseFirst"));
     setPending(true);
     const fd = new FormData();
     fd.set("file", file);
@@ -75,14 +79,14 @@ export function ImportUploader({ projectId, aiEnabled, variant = "default" }: { 
   return (
     <>
       <Button size="sm" variant={variant} onClick={() => setOpen(true)}>
-        <Upload /> Import calendar
+        <Upload /> {t("upload.button")}
       </Button>
       <Dialog open={open} onOpenChange={(o) => !pending && setOpen(o)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Import a historical calendar</DialogTitle>
+            <DialogTitle>{t("upload.title")}</DialogTitle>
             <DialogDescription>
-              The file is stored privately. You will preview the content, map columns and fix problems before anything is imported.
+              {t("upload.description")}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">
@@ -90,30 +94,30 @@ export function ImportUploader({ projectId, aiEnabled, variant = "default" }: { 
             {isPdf ? (
               <p className={cn("rounded-lg border p-3 text-xs", aiEnabled ? "bg-muted/40 text-muted-foreground" : "border-warning/40 bg-warning/10")}>
                 {aiEnabled
-                  ? "PDF tables are read with AI. Extraction can be imperfect: you will check every row before importing. Excel or CSV gives the most reliable result."
-                  : "PDF import needs AI, which is not configured on this server. Export the calendar to Excel or CSV instead."}
+                  ? t("upload.pdfAi")
+                  : t("upload.pdfNoAi")}
               </p>
             ) : null}
-            <Field label="Name for this calendar" htmlFor="import_label" hint="e.g. “Calendar 2024-2025”. Defaults to the file name.">
+            <Field label={t("upload.name")} htmlFor="import_label" hint={t("upload.nameHint")}>
               <Input id="import_label" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={160} disabled={pending} />
             </Field>
             {duplicate?.length ? (
               <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-[13px]">
-                <p className="font-medium">This exact file was already uploaded</p>
+                <p className="font-medium">{t("upload.duplicateTitle")}</p>
                 <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
-                  {duplicate.map((d) => <li key={d.id}>{d.label || d.file_name} · {formatDate(d.created_at)}</li>)}
+                  {duplicate.map((d) => <li key={d.id}>{d.label || d.file_name} · {fmt.date(d.created_at)}</li>)}
                 </ul>
-                <p className="mt-2 text-xs">Importing it again would double-count its content. To update an existing import, open it and use “Replace file”.</p>
+                <p className="mt-2 text-xs">{t("upload.duplicateHint")}</p>
               </div>
             ) : null}
           </div>
           <DialogFooter>
             {duplicate?.length ? (
-              <Button variant="outline" disabled={pending} onClick={() => submit(true)}>Import anyway</Button>
+              <Button variant="outline" disabled={pending} onClick={() => submit(true)}>{t("upload.importAnyway")}</Button>
             ) : null}
             <Button disabled={!file || pending || (isPdf && !aiEnabled)} onClick={() => submit(false)}>
               {pending ? <Loader2 className="animate-spin" /> : null}
-              {pending ? (isPdf ? "Reading the PDF… up to a minute" : "Reading the file…") : "Upload and preview"}
+              {pending ? (isPdf ? t("upload.readingPdf") : t("upload.reading")) : t("upload.submit")}
             </Button>
           </DialogFooter>
         </DialogContent>

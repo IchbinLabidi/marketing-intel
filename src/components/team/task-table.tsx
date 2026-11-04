@@ -5,10 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { allowedTaskTransitions, TASK_TYPE_LABELS } from "@/lib/permissions";
+import { allowedTaskTransitions } from "@/lib/permissions";
 import { updateTaskStatusAction } from "@/server/actions/team";
 import type { TaskWithContent } from "@/server/services/team";
 import { DueLabel, PersonChip, PriorityBadge, TaskStatusBadge } from "./task-badges";
+import { useT } from "@/i18n/client";
+import type { TFor } from "@/i18n/messages";
+
+// domain.taskType has an "other" key, so its type reads as plural forms; the full path still resolves to the label.
+type TaskTypeKey = Parameters<TFor<"domain">>[0];
 
 /** Tasks as a responsive table: rows on desktop, stacked cards on phones. */
 export function TaskTable({
@@ -18,6 +23,8 @@ export function TaskTable({
   people?: Record<string, { name: string; roleName: string | null }>; showAssignee?: boolean; emptyText: string;
 }) {
   const router = useRouter();
+  const tt = useT("team");
+  const td = useT("domain");
   const permSet = React.useMemo(() => new Set(perms), [perms]);
   const [busy, setBusy] = React.useState<string | null>(null);
 
@@ -26,7 +33,7 @@ export function TaskTable({
     const r = await updateTaskStatusAction(t.id, status);
     setBusy(null);
     if (!r.ok) return toast.error(r.error);
-    toast.success(status === "in_review" ? "Submitted for review" : "Marked in progress");
+    toast.success(status === "in_review" ? tt("taskTable.submitted") : tt("taskTable.started"));
     router.refresh();
   };
 
@@ -45,14 +52,14 @@ export function TaskTable({
             <li key={t.id} className="grid gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:bg-muted/30 md:grid-cols-[minmax(0,1fr)_9rem_8rem_7rem_auto] md:items-center">
               <div className="min-w-0">
                 <Link href={href} className="block truncate text-[13.5px] font-medium hover:text-primary" dir="auto">
-                  {t.content?.title ?? "Content no longer available"}
+                  {t.content?.title ?? tt("taskTable.noContent")}
                 </Link>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {TASK_TYPE_LABELS[t.task_type]} · {t.project?.name}
+                  {td(`taskType.${t.task_type}` as TaskTypeKey)} · {t.project?.name}
                 </p>
               </div>
               {showAssignee ? (
-                <div className="min-w-0">{person ? <PersonChip name={person.name} role={person.roleName} /> : <span className="text-xs text-muted-foreground">Former member</span>}</div>
+                <div className="min-w-0">{person ? <PersonChip name={person.name} role={person.roleName} /> : <span className="text-xs text-muted-foreground">{tt("page.formerMember")}</span>}</div>
               ) : (
                 <div><TaskStatusBadge status={t.status} /></div>
               )}
@@ -62,13 +69,13 @@ export function TaskTable({
               <div><DueLabel due={t.due_date} today={today} closed={closed} /></div>
               <div className="flex justify-start gap-1.5 md:justify-end">
                 {next.includes("in_progress") && t.status !== "in_review" ? (
-                  <Button size="xs" variant="outline" loading={busy === t.id} onClick={() => quick(t, "in_progress")}>Start</Button>
+                  <Button size="xs" variant="outline" loading={busy === t.id} onClick={() => quick(t, "in_progress")}>{tt("taskTable.start")}</Button>
                 ) : null}
                 {next.includes("in_review") ? (
-                  <Button size="xs" loading={busy === t.id} onClick={() => quick(t, "in_review")}>Submit</Button>
+                  <Button size="xs" loading={busy === t.id} onClick={() => quick(t, "in_review")}>{tt("taskTable.submit")}</Button>
                 ) : null}
                 {!next.length || closed ? (
-                  <Button asChild size="xs" variant="ghost"><Link href={href}>Open</Link></Button>
+                  <Button asChild size="xs" variant="ghost"><Link href={href}>{tt("taskTable.open")}</Link></Button>
                 ) : null}
               </div>
             </li>

@@ -3,6 +3,7 @@
 //   ad link or Library ID, start date, end date or "active", platforms, ad text…
 // Platforms: words like "facebook instagram" or "fb/ig"; everything after the platforms column is the ad text.
 
+import type { TFor } from "@/i18n/messages";
 import { parseDate } from "./bulk";
 
 export const AD_PLATFORMS = ["facebook", "instagram", "messenger", "audience_network", "threads"] as const;
@@ -34,7 +35,8 @@ export function parsePlatforms(raw: string | undefined): AdPlatform[] {
   return [...out];
 }
 
-export function parseAdLines(text: string, today: string): AdRow[] {
+/** `t`: the "competitors" translator, for the per-line error shown in the preview. */
+export function parseAdLines(text: string, today: string, t: TFor<"competitors">): AdRow[] {
   const rows: AdRow[] = [];
   text.split(/\r?\n/).forEach((rawLine, i) => {
     const line = rawLine.trim();
@@ -47,11 +49,11 @@ export function parseAdLines(text: string, today: string): AdRow[] {
     const started = parseDate(start);
     const active = !end || /^(active|actif|running|en cours|-)$/i.test(end);
     const ended = active ? null : parseDate(end);
-    const error = !libraryId ? "First column: the ad's Ad Library link or Library ID"
-      : !started ? "Start date not recognised (use 2026-10-28 or 28/10/2026)"
-      : started > today ? "Start date is in the future"
-      : !active && !ended ? "End date not recognised (or write “active”)"
-      : ended && ended < started ? "End date is before the start date"
+    const error = !libraryId ? t("ads.errors.libraryId")
+      : !started ? t("ads.errors.start")
+      : started > today ? t("ads.errors.startFuture")
+      : !active && !ended ? t("ads.errors.end")
+      : ended && ended < started ? t("ads.errors.endBefore")
       : null;
     rows.push({
       line: i + 1, library_id: libraryId, url: libraryId ? adUrl(libraryId) : ref, started_on: started, ended_on: ended,

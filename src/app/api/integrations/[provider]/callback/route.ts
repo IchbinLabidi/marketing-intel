@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getT } from "@/i18n/server";
 import { SCOPES } from "@/server/social/config";
 import { isSocialProvider, PROVIDERS } from "@/server/social/providers";
 import { startSocialSync } from "@/server/social/start";
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/integrat
   const denied = request.nextUrl.searchParams.get("error");
   if (denied) return done({ error: denied === "access_denied" || denied === "user_cancelled" ? "denied" : "provider", detail: (request.nextUrl.searchParams.get("error_description") ?? denied).slice(0, 200) });
   const code = request.nextUrl.searchParams.get("code");
-  if (!code) return done({ error: "provider", detail: "No authorization code returned." });
+  if (!code) return done({ error: "provider", detail: (await getT("integrations"))("flash.noCode") });
 
   const { project } = await getProjectContext(projectId);
   if (!(await hasPermission(project.workspace_id, "intelligence.edit"))) return done({ error: "read_only" });

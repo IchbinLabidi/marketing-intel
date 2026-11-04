@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { adLibraryUrl, parseBulkPosts, parseCount, parseDate } from "@/lib/competitors/bulk";
+import { testT } from "@/i18n/testing";
 
 describe("bulk manual posts", () => {
   it("reads counts the way platforms display them", () => {
@@ -28,7 +29,7 @@ describe("bulk manual posts", () => {
       "not a link, 2026-10-20, 1",
       "https://www.facebook.com/tot/posts/3, 2026-12-01, 1",
     ].join("\n");
-    const rows = parseBulkPosts(text, "2026-10-29");
+    const rows = parseBulkPosts(text, "2026-10-29", testT("competitors"));
     expect(rows).toHaveLength(4);
     expect(rows[0]).toMatchObject({ line: 2, published_at: "2026-10-28", likes: 1200, comments: 40, shares: null, views: null, caption: "Bac revision, live tonight", error: null });
     expect(rows[1]).toMatchObject({ likes: 15, comments: 2, shares: 1, views: null, caption: "Offer: 20% off, this week", error: null });

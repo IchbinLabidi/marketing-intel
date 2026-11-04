@@ -8,13 +8,15 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { confirm } from "@/components/ui/confirm";
 import { PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
-import { WEEKDAY_LABELS } from "@/lib/calendar/insights";
-import type { SuggestedSlot } from "@/lib/backlog/slots";
+import { describeSlot, type SuggestedSlot } from "@/lib/backlog/slots";
+import { useFormatter, useT } from "@/i18n/client";
+import type { Formatter } from "@/i18n/format";
+import type { TFor } from "@/i18n/messages";
 import { placeIdeaAction } from "@/server/actions/backlog";
 import { PlatformIcon } from "@/components/calendar/platform-icon";
 
 const CHOICES = ["facebook", "instagram", "tiktok", "linkedin", "youtube"] as const;
-export const slotLabel = (date: string, time: string) => `${WEEKDAY_LABELS[new Date(`${date}T00:00:00Z`).getUTCDay()]} ${date.slice(8)}/${date.slice(5, 7)}, ${time}`;
+export const slotLabel = (fmt: Formatter, t: TFor<"backlog">, date: string, time: string) => t("schedule.slot", { day: fmt.day(date, { weekday: "long", day: "2-digit", month: "2-digit" }), time });
 
 /**
  * Places an idea on the calendar (planning only). Shows the suggested time and alternatives, lets the person adjust
@@ -25,6 +27,9 @@ export function ScheduleDialog({ projectId, idea, date: initialDate, tz, onClose
   idea: { id: string; title: string; platform: string | null; target_platforms: string[]; suggested_slot: SuggestedSlot | null };
   date?: string | null; onClose: () => void; onPlaced: () => void;
 }) {
+  const t = useT("backlog");
+  const tc = useT("common");
+  const fmt = useFormatter();
   const s = idea.suggested_slot;
   const sameDay = initialDate && s ? [s, ...s.alternatives].find((x) => x.date === initialDate) : null;
   const [date, setDate] = React.useState(initialDate ?? s?.date ?? "");
@@ -39,11 +44,11 @@ export function ScheduleDialog({ projectId, idea, date: initialDate, tz, onClose
     setBusy(false);
     if (!r.ok) return toast.error(r.error);
     if (r.data?.conflicts?.length) {
-      const ok = await confirm({ title: "Another post is planned close to this time", description: r.data.conflicts.map((c) => `${c.time} · ${c.title}`).join("\n"), confirmLabel: "Plan anyway" });
+      const ok = await confirm({ title: t("schedule.conflictTitle"), description: r.data.conflicts.map((c) => `${c.time} · ${c.title}`).join("\n"), confirmLabel: t("schedule.planAnyway") });
       if (ok) return save(true);
       return;
     }
-    toast.success(r.message ?? "Planned");
+    toast.success(r.message ?? t("schedule.planned"));
     onPlaced();
   };
 
@@ -51,30 +56,30 @@ export function ScheduleDialog({ projectId, idea, date: initialDate, tz, onClose
     <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><CalendarPlus className="size-4" /> Add to calendar</DialogTitle>
-          <DialogDescription className="line-clamp-2">“{idea.title}”. This only plans the post. Nothing is scheduled on a platform or published.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><CalendarPlus className="size-4" /> {t("schedule.title")}</DialogTitle>
+          <DialogDescription className="line-clamp-2">{t("schedule.description", { title: idea.title })}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 text-[13px]">
           {options.length ? (
             <section className="space-y-2">
-              <p className="flex items-center gap-1.5 font-medium"><Sparkles className="size-3.5 text-primary" /> Suggested times <span className="text-xs font-normal text-muted-foreground">({s!.source === "analytics" ? "from your posts" : "heuristic"}, confidence {s!.confidence})</span></p>
+              <p className="flex items-center gap-1.5 font-medium"><Sparkles className="size-3.5 text-primary" /> {t("schedule.suggestedTimes")} <span className="text-xs font-normal text-muted-foreground">{t("schedule.suggestedMeta", { source: s!.source === "analytics" ? t("schedule.fromPosts") : t("schedule.heuristic"), confidence: t(`confidence.${s!.confidence}`).toLowerCase() })}</span></p>
               <div className="flex flex-wrap gap-2">
                 {options.map((o) => (
                   <button key={`${o.date}${o.time}`} type="button" onClick={() => { setDate(o.date); setTime(o.time); }}
                     className={`rounded-md border px-2.5 py-1.5 text-xs ${date === o.date && time === o.time ? "border-primary bg-primary-soft text-primary" : "hover:bg-muted"}`}>
-                    {o.best ? "★ " : ""}{slotLabel(o.date, o.time)}
+                    {o.best ? "★ " : ""}{slotLabel(fmt, t, o.date, o.time)}
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground">{s!.reason}</p>
+              <p className="text-xs text-muted-foreground">{describeSlot(s!, t)}</p>
             </section>
           ) : null}
           <section className="grid gap-2 sm:grid-cols-[1fr_8rem]">
-            <label className="space-y-1"><span className="text-xs text-muted-foreground">Date</span><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
-            <label className="space-y-1"><span className="text-xs text-muted-foreground">Time ({tz})</span><Input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label>
+            <label className="space-y-1"><span className="text-xs text-muted-foreground">{t("schedule.date")}</span><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+            <label className="space-y-1"><span className="text-xs text-muted-foreground">{t("schedule.time", { tz })}</span><Input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label>
           </section>
           <section className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">Platforms</p>
+            <p className="text-xs text-muted-foreground">{t("schedule.platforms")}</p>
             <div className="flex flex-wrap gap-3">
               {CHOICES.map((p) => (
                 <label key={p} className="flex items-center gap-1.5">
@@ -86,8 +91,8 @@ export function ScheduleDialog({ projectId, idea, date: initialDate, tz, onClose
           </section>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button onClick={() => save()} disabled={busy || !date || !platforms.length}>{busy ? <Loader2 className="animate-spin" /> : <CalendarPlus />} Confirm placement</Button>
+          <Button variant="outline" onClick={onClose} disabled={busy}>{tc("actions.cancel")}</Button>
+          <Button onClick={() => save()} disabled={busy || !date || !platforms.length}>{busy ? <Loader2 className="animate-spin" /> : <CalendarPlus />} {t("schedule.confirm")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -12,10 +12,10 @@ import { ImportUploader } from "@/components/history/import-uploader";
 import { HistoryOverview } from "@/components/history/overview";
 import { Recommendations } from "@/components/history/recommendations";
 import { RecordsTable, type RecordFilters } from "@/components/history/records-table";
-import { canEdit, PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
+import { canEdit } from "@/lib/domain/constants";
 import { availablePeriods, comparePeriods, itemsInPeriod, parsePeriod } from "@/lib/history/compare";
 import { effectiveDate } from "@/lib/history/analysis";
-import { normalizeFormat, statusGroup } from "@/lib/history/parse";
+import { formatLabel, normalizeFormat, platformLabel, statusGroup } from "@/lib/history/parse";
 import { normalizeText } from "@/lib/history/text";
 import { isAIConfigured } from "@/server/ai/client";
 import { isBackgroundSyncConfigured, isMetaConfigured, metaMissingConfig } from "@/server/meta/config";
@@ -26,17 +26,20 @@ import { loadHistoryAnalysis } from "@/server/services/history-analysis";
 import { countMetaPosts, getMetaConnection, listSyncRuns } from "@/server/services/meta";
 import { MetaConnectionPanel } from "@/components/history/meta-connection";
 import { PerformanceView } from "@/components/history/performance-view";
-import { formatDateTime } from "@/lib/format";
+import { getFormatter, getT } from "@/i18n/server";
 
-export const metadata = { title: "Content history" };
+export async function generateMetadata() {
+  const t = await getT("history");
+  return { title: t("page.title") };
+}
 
 const TABS = [
-  { key: "performance", label: "Performance" },
-  { key: "overview", label: "Content analysis" },
-  { key: "recommendations", label: "Recommendations" },
-  { key: "compare", label: "Compare periods" },
-  { key: "records", label: "Posts" },
-  { key: "imports", label: "Manual import (fallback)" },
+  { key: "performance" },
+  { key: "overview" },
+  { key: "recommendations" },
+  { key: "compare" },
+  { key: "records" },
+  { key: "imports" },
 ] as const;
 type Tab = (typeof TABS)[number]["key"];
 
@@ -46,6 +49,7 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) 
 export default async function HistoryPage({ params, searchParams }: PageProps<"/p/[projectId]/history">) {
   const { projectId } = await params;
   const sp = await searchParams;
+  const [t, td, fmt] = await Promise.all([getT("history"), getT("domain"), getFormatter()]);
   const { role, items, bundle, channels, stats, performance, pillarName } = await loadHistoryAnalysis(projectId);
   const [jobs, report, opportunities, connection, runs, metaCounts] = await Promise.all([
     listImportJobs(projectId),
@@ -62,9 +66,9 @@ export default async function HistoryPage({ params, searchParams }: PageProps<"/
   if (autoStarted) runs.unshift({ id: "pending", kind: "incremental", trigger: "auto", status: "running", stats: {}, errors: [], started_at: connection?.last_sync_at ?? "", finished_at: null });
   const pageChoice = connection?.status === "pending_page" && !readOnly ? await listMetaPagesAction(projectId) : null;
 
-  const tab: Tab = (TABS.find((t) => t.key === one(sp.tab))?.key ?? (performance.length ? "performance" : items.length ? "overview" : "performance")) as Tab;
+  const tab: Tab = (TABS.find((x) => x.key === one(sp.tab))?.key ?? (performance.length ? "performance" : items.length ? "overview" : "performance")) as Tab;
   const base = `/p/${projectId}/history`;
-  const titleOf = (i: (typeof items)[number]) => i.title ?? i.topic ?? i.caption?.slice(0, 90) ?? i.description?.slice(0, 90) ?? "(untitled)";
+  const titleOf = (i: (typeof items)[number]) => i.title ?? i.topic ?? i.caption?.slice(0, 90) ?? i.description?.slice(0, 90) ?? t("common.untitled");
   const importLabels = jobs.map((j) => ({ id: j.id, label: j.label || j.file_name }));
   const { fb_user_id: _fbUserId, ...publicConnection } = connection ?? ({} as NonNullable<typeof connection>);
   void _fbUserId;
@@ -72,8 +76,8 @@ export default async function HistoryPage({ params, searchParams }: PageProps<"/
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Content history"
-        description="How your past Facebook and Instagram posts really performed, synced from Meta. Use it to see what your audience responds to before planning more."
+        title={t("page.title")}
+        description={t("page.description")}
         actions={
           !readOnly ? (
             <>
@@ -107,24 +111,23 @@ export default async function HistoryPage({ params, searchParams }: PageProps<"/
       />
 
       <TabNav
-        label="Content history sections"
-        items={TABS.map((t) => ({
-          key: t.key,
-          label: t.label,
-          href: `${base}?tab=${t.key}`,
-          active: tab === t.key,
-          count: t.key === "imports" ? jobs.length : t.key === "records" ? items.length : t.key === "recommendations" ? opportunities.length : undefined,
+        label={t("page.sections")}
+        items={TABS.map((x) => ({
+          key: x.key,
+          label: t(`page.tabs.${x.key}`),
+          href: `${base}?tab=${x.key}`,
+          active: tab === x.key,
+          count: x.key === "imports" ? jobs.length : x.key === "records" ? items.length : x.key === "recommendations" ? opportunities.length : undefined,
         }))}
       />
 
       {tab !== "imports" && !items.length ? (
         <EmptyState
           icon={History}
-          title="No historical content yet"
+          title={t("page.emptyTitle")}
           description={
             <>
-              Connect Meta above: your Facebook and Instagram posts and their metrics are synchronised automatically. No Meta account?{" "}
-              <Link className="text-primary hover:underline" href={`${base}?tab=imports`}>Import a file instead</Link>.
+              {t.rich("page.emptyDescription", { link: (c) => <Link className="text-primary hover:underline" href={`${base}?tab=imports`}>{c}</Link> })}
             </>
           }
         />
@@ -172,7 +175,7 @@ export default async function HistoryPage({ params, searchParams }: PageProps<"/
       ) : null}
 
       {tab === "compare" && items.length ? (() => {
-        const periods = availablePeriods(items, jobs.filter((j) => j.status === "imported" || j.imported_count > 0));
+        const periods = availablePeriods(items, jobs.filter((j) => j.status === "imported" || j.imported_count > 0), t);
         const a = parsePeriod(one(sp.a));
         const b = parsePeriod(one(sp.b));
         const label = (key?: string) => periods.find((p) => p.key === key)?.label;
@@ -184,7 +187,7 @@ export default async function HistoryPage({ params, searchParams }: PageProps<"/
             b={one(sp.b)}
             labelA={label(one(sp.a))}
             labelB={label(one(sp.b))}
-            result={a && b ? comparePeriods(itemsInPeriod(items, a), itemsInPeriod(items, b), pillarName) : null}
+            result={a && b ? comparePeriods(itemsInPeriod(items, a), itemsInPeriod(items, b), pillarName, t, td) : null}
           />
         );
       })() : null}
@@ -224,12 +227,12 @@ export default async function HistoryPage({ params, searchParams }: PageProps<"/
             campaigns={bundle.campaigns.map((c) => ({ id: c.id, name: c.name }))}
             imports={importLabels}
             options={{
-              platforms: uniq(items.map((i) => i.platform)).map((p) => ({ value: p, label: PLATFORM_LABELS[p as Platform] ?? p })),
-              formats: uniq(items.map((i) => normalizeFormat(i.format))).map((v) => ({ value: v, label: v })),
+              platforms: uniq(items.map((i) => i.platform)).map((p) => ({ value: p, label: platformLabel(td, p) })),
+              formats: uniq(items.map((i) => normalizeFormat(i.format))).map((v) => ({ value: v, label: formatLabel(t, v) })),
               campaigns: [...new Map(items.filter((i) => i.campaign).map((i) => [normalizeText(i.campaign), i.campaign!])).entries()].map(([value, label]) => ({ value, label })),
               statuses: [
-                { value: "published", label: "Marked published" }, { value: "planned", label: "Planned / scheduled" }, { value: "idea", label: "Idea / draft" },
-                { value: "cancelled", label: "Cancelled" }, { value: "unknown", label: "Not recorded / unclear" },
+                { value: "published", label: t("records.statuses.published") }, { value: "planned", label: t("records.statuses.planned") }, { value: "idea", label: t("records.statuses.idea") },
+                { value: "cancelled", label: t("records.statuses.cancelled") }, { value: "unknown", label: t("records.statuses.unknown") },
               ],
             }}
           />
@@ -239,8 +242,7 @@ export default async function HistoryPage({ params, searchParams }: PageProps<"/
       {tab === "imports" ? (
         <div className="flex flex-col gap-3 rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>
-            Optional fallback for content Meta can’t provide: older calendars, planned posts, other networks, or offline campaigns. Imported rows are analysed together with
-            synced posts and labelled with their source.
+            {t("page.importsFallback")}
           </p>
           {!readOnly ? <ImportUploader projectId={projectId} aiEnabled={aiEnabled} variant="outline" /> : null}
         </div>
@@ -259,16 +261,16 @@ export default async function HistoryPage({ params, searchParams }: PageProps<"/
                   <ImportStatusBadge status={j.status} />
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                  <dt className="text-muted-foreground">Covered period</dt><dd className="tabular-nums">{j.period_start ? `${j.period_start} → ${j.period_end}` : "—"}</dd>
-                  <dt className="text-muted-foreground">Records</dt><dd className="tabular-nums">{j.imported_count}</dd>
-                  <dt className="text-muted-foreground">Imported on</dt><dd>{j.imported_at ? formatDateTime(j.imported_at) : "not yet"}</dd>
-                  {j.reference_year ? (<><dt className="text-muted-foreground">Reference year</dt><dd>{j.reference_year}</dd></>) : null}
+                  <dt className="text-muted-foreground">{t("page.job.period")}</dt><dd className="tabular-nums">{j.period_start ? `${j.period_start} → ${j.period_end}` : "—"}</dd>
+                  <dt className="text-muted-foreground">{t("page.job.records")}</dt><dd className="tabular-nums">{j.imported_count}</dd>
+                  <dt className="text-muted-foreground">{t("page.job.importedOn")}</dt><dd>{j.imported_at ? fmt.dateTime(j.imported_at) : t("page.job.notYet")}</dd>
+                  {j.reference_year ? (<><dt className="text-muted-foreground">{t("page.job.referenceYear")}</dt><dd>{j.reference_year}</dd></>) : null}
                 </dl>
                 {j.error ? <p className="mt-2 text-xs text-destructive">{j.error}</p> : null}
                 <div className="mt-3 flex justify-end gap-2">
-                  {j.imported_count ? <Button asChild variant="ghost" size="sm"><Link href={`${base}?tab=records&import=${j.id}`}>Records</Link></Button> : null}
+                  {j.imported_count ? <Button asChild variant="ghost" size="sm"><Link href={`${base}?tab=records&import=${j.id}`}>{t("page.job.records")}</Link></Button> : null}
                   <Button asChild variant="outline" size="sm">
-                    <Link href={`${base}/imports/${j.id}`}>{j.status === "imported" ? "Manage" : j.status === "failed" ? "See error" : "Continue import"} <ArrowRight /></Link>
+                    <Link href={`${base}/imports/${j.id}`}>{j.status === "imported" ? t("page.job.manage") : j.status === "failed" ? t("page.job.seeError") : t("page.job.continue")} <ArrowRight /></Link>
                   </Button>
                 </div>
               </li>
@@ -277,11 +279,10 @@ export default async function HistoryPage({ params, searchParams }: PageProps<"/
         ) : (
           <EmptyState
             icon={FileSpreadsheet}
-            title="No files imported"
+            title={t("page.noImportsTitle")}
             description={
               <>
-                Supported: Excel (.xlsx, .xls), CSV and PDF. Typical columns: date, platform, format, title/topic, pillar, campaign, caption, CTA, status. Metric columns
-                (reach, engagement, clicks, leads, subscriptions…) are imported when present. <Badge variant="secondary">Column names can differ</Badge>
+                {t("page.noImportsDescription")} <Badge variant="secondary">{t("page.columnNamesDiffer")}</Badge>
               </>
             }
           />

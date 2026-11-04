@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { canEdit } from "@/lib/domain/constants";
-import { KIND_LABELS, redactSecrets, type FailureKind } from "@/lib/ai/errors";
+import { failureMessage, kindLabel, redactSecrets, type FailureKind } from "@/lib/ai/errors";
+import { getFormatter, getT } from "@/i18n/server";
 import { AI_PROVIDERS, estimateCost, PROVIDER_MODELS, type AIProvider } from "@/lib/ai/models";
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/lib/validation/common";
@@ -26,19 +27,22 @@ const testSchema = z.object({ reply: z.string() });
 export async function testAIAction(): Promise<ActionResult<{ results: AITestResult[] }>> {
   const user = await requireUser();
   const ws = await getActiveWorkspace();
-  if (!ws || !canEdit(ws.role)) return { ok: false, error: "Your role in this workspace is read-only." };
+  const [t, fmt] = await Promise.all([getT("errors"), getFormatter()]);
+  if (!ws || !canEdit(ws.role)) return { ok: false, error: t("aiTest.readOnly") };
   const db = await createClient();
   const results: AITestResult[] = [];
   for (const provider of AI_PROVIDERS) {
     const model = PROVIDER_MODELS[provider].standard;
     const at = new Date().toISOString();
     if (!providerConfigured(provider)) {
-      results.push({ provider, model, ok: false, kind: "not_configured", label: KIND_LABELS.not_configured, message: `${provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY"} is not set.`, latencyMs: 0, attempts: 0, at });
+      results.push({ provider, model, ok: false, kind: "not_configured", label: kindLabel("not_configured", t), message: t("aiTest.notSet", { envVar: provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY" }), latencyMs: 0, attempts: 0, at });
       continue;
     }
     const code = `T${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
     const started = Date.now();
     let result: AITestResult;
+    // The request log keeps the English wording; the result shown to the viewer is in their language.
+    let logMessage = "";
     let usage = null as null | { input: number; output: number; cacheRead: number; cacheWrite: number };
     try {
       const out = await generate(provider, {
@@ -47,14 +51,19 @@ export async function testAIAction(): Promise<ActionResult<{ results: AITestResu
         prompt: `Return JSON with "reply" set to exactly this code: ${code}`,
       }, "system.ai_test");
       usage = out.usage;
+      logMessage = "The model answered, but not with the expected JSON code: not counted as working.";
       const parsed = testSchema.safeParse((() => { try { return JSON.parse(out.text); } catch { return null; } })());
       const ok = parsed.success && parsed.data.reply.trim() === code;
       result = ok
-        ? { provider, model, ok: true, kind: null, label: "working", message: `Valid answer in ${(out.latencyMs / 1000).toFixed(1)} s.`, latencyMs: out.latencyMs, attempts: out.attempts, at }
-        : { provider, model, ok: false, kind: "invalid_output", label: KIND_LABELS.invalid_output, message: "The model answered, but not with the expected JSON code: not counted as working.", latencyMs: out.latencyMs, attempts: out.attempts, at };
+        ? { provider, model, ok: true, kind: null, label: t("aiTest.working"), message: t("aiTest.validAnswer", { seconds: fmt.number(out.latencyMs / 1000, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }), latencyMs: out.latencyMs, attempts: out.attempts, at }
+        : { provider, model, ok: false, kind: "invalid_output", label: kindLabel("invalid_output", t), message: t("aiTest.invalidJson"), latencyMs: out.latencyMs, attempts: out.attempts, at };
     } catch (e) {
-      const err = e instanceof AIProviderError ? e : new AIProviderError(e instanceof Error ? e.message : "Unexpected error", provider, "server");
-      result = { provider, model, ok: false, kind: err.kind, label: KIND_LABELS[err.kind], message: err.message, latencyMs: err.latencyMs || Date.now() - started, attempts: err.attempts, at };
+      const err = e instanceof AIProviderError ? e : new AIProviderError(e instanceof Error ? e.message : t("aiTest.unexpected"), provider, "server");
+      logMessage = err.message;
+      // Failures built by failureMessage are re-worded in the viewer's language; other errors keep the provider's own text.
+      const known = err.message === failureMessage(provider, err.kind, { status: err.status, attempts: err.attempts });
+      const message = known ? failureMessage(provider, err.kind, { status: err.status, attempts: err.attempts }, t) : err.message;
+      result = { provider, model, ok: false, kind: err.kind, label: kindLabel(err.kind, t), message, latencyMs: err.latencyMs || Date.now() - started, attempts: err.attempts, at };
     }
     results.push(result);
     await db.from("ai_runs").insert({
@@ -62,10 +71,10 @@ export async function testAIAction(): Promise<ActionResult<{ results: AITestResu
       status: result.ok ? "succeeded" : "failed", attempts: Math.max(1, result.attempts), duration_ms: result.latencyMs,
       input_tokens: usage ? usage.input + usage.cacheWrite : 0, cached_input_tokens: usage?.cacheRead ?? 0, cache_write_tokens: usage?.cacheWrite ?? 0, output_tokens: usage?.output ?? 0,
       cost_usd: usage ? estimateCost(model, usage) : 0,
-      error: result.ok ? null : redactSecrets(`[${provider}:${result.kind}] ${result.message}`).slice(0, 500), finished_at: new Date().toISOString(),
+      error: result.ok ? null : redactSecrets(`[${provider}:${result.kind}] ${logMessage || result.message}`).slice(0, 500), finished_at: new Date().toISOString(),
     });
   }
   revalidatePath("/ai-usage");
   const working = results.filter((r) => r.ok).length;
-  return { ok: true, data: { results }, message: working ? `${working} of ${results.length} provider(s) working` : "No AI provider is working right now" };
+  return { ok: true, data: { results }, message: working ? t("aiTest.summary", { working, total: results.length }) : t("aiTest.noneWorking") };
 }

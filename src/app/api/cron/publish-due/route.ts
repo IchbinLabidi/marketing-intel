@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { PublishTarget } from "@/lib/publishing/rules";
 import { loadAssets, prepareSenders, sendClaimed, syncItemStatus, type Env, type Publication } from "@/server/publishing/core";
 import type { ContentItem } from "@/types/domain";
+import { translatorFor } from "@/i18n/server";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -18,7 +19,9 @@ const MAX_ATTEMPTS = 5;
 export async function GET() {
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for scheduled publishing" }, { status: 501 });
-  const env: Env = { db: admin, admin: true };
+  // nobody is signed in: messages stored on failed publications stay in English (no request language)
+  const t = translatorFor("en", "publishing");
+  const env: Env = { db: admin, admin: true, t };
   const now = new Date().toISOString();
   // due posts, plus temporary failures of scheduled posts whose retry time has come
   const { data: due, error } = await admin.from("content_publications").select("*")
@@ -43,10 +46,10 @@ export async function GET() {
     const { data: item } = await admin.from("content_items").select("*").eq("id", row.content_item_id).eq("project_id", row.project_id).maybeSingle();
     const target = row.provider as PublishTarget;
     if (!item || !["approved", "scheduled"].includes((item as ContentItem).status)) {
-      pub = await fail("Not sent: the post is no longer approved.");
+      pub = await fail(t("core.notApprovedAnymore"));
     } else {
       const prep = await prepareSenders(env, row.project_id, [target]);
-      const loaded = await loadAssets(admin, row.project_id, row.content_item_id, row.media_asset_ids ?? []);
+      const loaded = await loadAssets(env, row.project_id, row.content_item_id, row.media_asset_ids ?? []);
       if (!prep.ok) pub = await fail(prep.error);
       else if (!loaded.ok) pub = await fail(loaded.error);
       else pub = await sendClaimed(env, prep.senders, { projectId: row.project_id, item: item as ContentItem, target, assets: loaded.assets, claimed, scheduleAt: null, allowTemporaryLink: row.allow_temp_link });

@@ -9,6 +9,7 @@ import { PlatformIcon } from "./platform-icon";
 import { STATE_STYLE } from "./styles";
 import { stateOf } from "./post-card";
 import { isOverdue, type Person } from "./planning";
+import { useT } from "@/i18n/client";
 
 type Row = { post: ContentItem; people: Person[] };
 
@@ -24,6 +25,7 @@ const days = (from: string, to: string) => {
  * Dependencies between items aren't tracked by the app, so none are drawn.
  */
 export function TimelineView({ rows, from, to, today, onOpen }: { rows: Row[]; from: string; to: string; today: string; onOpen: (post: ContentItem) => void }) {
+  const t = useT("calendar");
   const cols = days(from, to);
   const index = (d: string) => Math.max(0, Math.min(cols.length - 1, cols.indexOf(d < from ? from : d > to ? to : d)));
   const span = (p: ContentItem) => {
@@ -56,12 +58,12 @@ export function TimelineView({ rows, from, to, today, onOpen }: { rows: Row[]; f
   return (
     <div className="space-y-2">
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Info className="size-3.5" aria-hidden /> Bars run from the internal deadline to the publication date. Dependencies aren&apos;t tracked, so none are shown.
+        <Info className="size-3.5" aria-hidden /> {t("timeline.info")}
       </p>
       <div className="scrollbar-thin overflow-x-auto rounded-xl border bg-card shadow-xs">
         <div className="min-w-[900px]">
           <div className="sticky top-0 z-10 grid border-b bg-card text-[10px] text-muted-foreground" style={grid}>
-            <div className="px-3 py-1.5 font-medium">Owner / content</div>
+            <div className="px-3 py-1.5 font-medium">{t("timeline.header")}</div>
             {cols.map((d) => (
               <div key={d} className={cn("border-l py-1.5 text-center tabular-nums", d === today && "bg-primary-soft font-semibold text-primary")}>{Number(d.slice(8))}</div>
             ))}
@@ -72,9 +74,9 @@ export function TimelineView({ rows, from, to, today, onOpen }: { rows: Row[]; f
             return (
               <div key={g.person?.user_id ?? "none"} className="border-b last:border-0">
                 <div className="flex items-center gap-2 bg-muted/30 px-3 py-1.5 text-xs font-medium">
-                  {g.person ? g.person.name : "Unassigned"}
+                  {g.person ? g.person.name : t("people.unassigned")}
                   <span className="font-normal text-muted-foreground">· {g.items.length}</span>
-                  {clash.size ? <span className="ml-1 inline-flex items-center gap-1 font-normal text-warning-foreground"><AlertTriangle className="size-3" /> {clash.size} overlapping</span> : null}
+                  {clash.size ? <span className="ml-1 inline-flex items-center gap-1 font-normal text-warning-foreground"><AlertTriangle className="size-3" /> {t("timeline.overlapping", { count: clash.size })}</span> : null}
                 </div>
                 {g.items.map(({ post }) => {
                   const s = span(post)!;
@@ -91,7 +93,7 @@ export function TimelineView({ rows, from, to, today, onOpen }: { rows: Row[]; f
                         <button
                           type="button"
                           onClick={() => onOpen(post)}
-                          title={`${post.title}\nDeadline ${post.due_date ?? "—"} · Publication ${post.scheduled_date ?? "—"}`}
+                          title={t("timeline.barTitle", { title: post.title, deadline: post.due_date ?? "—", publication: post.scheduled_date ?? "—" })}
                           className={cn(
                             "absolute top-1 h-5 rounded border border-l-[3px] text-left text-[10px] leading-5 shadow-xs transition-shadow hover:shadow-sm",
                             STATE_STYLE[state].card,

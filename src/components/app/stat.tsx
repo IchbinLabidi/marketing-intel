@@ -1,12 +1,13 @@
 import type { LucideIcon } from "lucide-react";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getFormatter } from "@/i18n/server";
 
 /**
  * A single KPI: label, value, and optional context (comparison delta or a hint).
  * `delta` is a signed percentage; `goodWhen` says which direction is positive for this metric.
  */
-export function Stat({
+export async function Stat({
   label,
   value,
   hint,
@@ -26,6 +27,7 @@ export function Stat({
   info?: React.ReactNode;
   className?: string;
 }) {
+  const fmt = await getFormatter();
   const hasDelta = typeof delta === "number" && Number.isFinite(delta);
   const positive = hasDelta && (goodWhen === "up" ? delta! > 0 : delta! < 0);
   const negative = hasDelta && (goodWhen === "up" ? delta! < 0 : delta! > 0);
@@ -48,7 +50,7 @@ export function Stat({
             )}
           >
             {delta! > 0 ? <ArrowUpRight className="size-3.5" aria-hidden /> : delta! < 0 ? <ArrowDownRight className="size-3.5" aria-hidden /> : null}
-            {Math.abs(delta!).toFixed(Math.abs(delta!) < 10 ? 1 : 0)}%
+            {fmt.number(Math.abs(delta!) / 100, { style: "percent", minimumFractionDigits: Math.abs(delta!) < 10 ? 1 : 0, maximumFractionDigits: Math.abs(delta!) < 10 ? 1 : 0 })}
           </span>
         ) : null}
       </div>

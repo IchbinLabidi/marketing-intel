@@ -1,4 +1,5 @@
 import type { InsightType } from "@/lib/domain/constants";
+import type { TFor } from "@/i18n/messages";
 import { contentTokens } from "@/lib/history/text";
 import type { Signal } from "./signals";
 
@@ -40,7 +41,14 @@ export function normalizeWeights(raw: unknown): Weights {
 }
 
 export type Basis = "data" | "ai" | "neutral" | "excluded";
-export type DimensionScore = { score: number | null; weight: number; basis: Basis; reason: string };
+/**
+ * Calculated reasons keep their English sentence in `reason` (stored, read by the AI) plus `key` + `values`, so the screens
+ * show them in the viewer's language (messages `opportunities.reason.<key>`). AI reasons and older rows only have `reason`.
+ */
+export type ReasonKey =
+  | "historicalNone" | "historical" | "gapNone" | "searchExcluded" | "searchNone" | "search" | "differentiationExcluded" | "notEvaluated"
+  | "campaignNone" | "campaignMatched" | "campaignOther" | "freshnessClose" | "freshnessNone" | "effort";
+export type DimensionScore = { score: number | null; weight: number; basis: Basis; reason: string; key?: ReasonKey; values?: Record<string, string | number> };
 export type ScoreBreakdown = { dimensions: Record<Dimension, DimensionScore>; formula: string; weights: Weights; cap?: number | null };
 
 export type AIRatings = Record<"strategic" | "audience" | "platform" | "differentiation", { score: number; reason: string }>;
@@ -54,7 +62,7 @@ const GAP_KINDS = new Set(["pillar_gap", "pillar_dormant", "funnel_gap", "format
 
 function historicalDimension(cited: Signal[]): Omit<DimensionScore, "weight"> {
   const perf = cited.filter((s) => PERF_KINDS.has(s.kind) && s.lift != null && s.lift > 0);
-  if (!perf.length) return { score: 50, basis: "neutral", reason: "No historical performance signal supports this idea: neutral 50, confidence lowered." };
+  if (!perf.length) return { score: 50, basis: "neutral", reason: "No historical performance signal supports this idea: neutral 50, confidence lowered.", key: "historicalNone" };
   // sample-size-weighted mean of log lifts (a single post counts as 3 so outliers don't dominate a group of 200)
   const weightOf = (s: Signal) => Math.max(3, Math.min(s.n, 300));
   const total = perf.reduce((t, s) => t + weightOf(s), 0);
@@ -64,12 +72,14 @@ function historicalDimension(cited: Signal[]): Omit<DimensionScore, "weight"> {
     score: liftToScore(lift),
     basis: "data",
     reason: `Weighted lift ×${Math.round(lift * 100) / 100} from ${perf.length} cited signal${perf.length > 1 ? "s" : ""} (${perf.map((s) => `${s.key} ×${s.lift}, n=${s.n}`).join("; ")}).`,
+    key: "historical",
+    values: { lift: Math.round(lift * 100) / 100, count: perf.length, list: perf.map((s) => `${s.key} ×${s.lift}, n=${s.n}`).join("; ") },
   };
 }
 
 function gapDimension(cited: Signal[]): Omit<DimensionScore, "weight"> {
   const gaps = cited.filter((s) => GAP_KINDS.has(s.kind));
-  if (!gaps.length) return { score: 30, basis: "data", reason: "No coverage gap cited: the idea extends an area already covered." };
+  if (!gaps.length) return { score: 30, basis: "data", reason: "No coverage gap cited: the idea extends an area already covered.", key: "gapNone" };
   const scoreOf = (s: Signal) =>
     s.kind === "pillar_dormant" ? 85
     : s.kind === "pillar_gap" || s.kind === "funnel_gap" ? clamp(50 + (s.gap ?? 0) * 2.5)
@@ -82,10 +92,10 @@ function gapDimension(cited: Signal[]): Omit<DimensionScore, "weight"> {
 /** Search demand from cited SERP signals (real Google results); excluded when the project has no SERP analysis. */
 function searchDimension(cited: Signal[], serpData: boolean): Omit<DimensionScore, "weight"> {
   const s = cited.filter((x) => x.kind === "search_demand");
-  if (!serpData) return { score: null, basis: "excluded", reason: "No keyword analysed in Google search: excluded, its weight is spread over the other dimensions." };
-  if (!s.length) return { score: 30, basis: "data", reason: "No analysed search query is cited for this idea." };
+  if (!serpData) return { score: null, basis: "excluded", reason: "No keyword analysed in Google search: excluded, its weight is spread over the other dimensions.", key: "searchExcluded" };
+  if (!s.length) return { score: 30, basis: "data", reason: "No analysed search query is cited for this idea.", key: "searchNone" };
   const best = Math.max(...s.map((x) => 60 + (Number(x.metrics.questions ?? 0) > 0 ? 15 : 0) + (x.metrics.own_position == null ? 15 : Number(x.metrics.own_position) > 3 ? 10 : 0)));
-  return { score: clamp(best), basis: "data", reason: `${s.length} analysed search quer${s.length > 1 ? "ies" : "y"}: ${s.map((x) => x.metrics.keyword).join(", ")} (People also ask questions and your current position counted).` };
+  return { score: clamp(best), basis: "data", reason: `${s.length} analysed search quer${s.length > 1 ? "ies" : "y"}: ${s.map((x) => x.metrics.keyword).join(", ")} (People also ask questions and your current position counted).`, key: "search", values: { count: s.length, keywords: s.map((x) => x.metrics.keyword).join(", ") } };
 }
 
 export type ExtraDimensions = {
@@ -115,17 +125,19 @@ export function computeScore(input: {
     platform: { score: clamp(input.ai.platform.score), basis: "ai", reason: input.ai.platform.reason },
     differentiation: input.competitorData
       ? { score: clamp(input.ai.differentiation.score), basis: "ai", reason: input.ai.differentiation.reason }
-      : { score: null, basis: "excluded", reason: "No competitor data in this project yet: excluded, its weight is spread over the other dimensions." },
-    search: input.extra ? searchDimension(input.cited, Boolean(x.serpData)) : { score: null, basis: "excluded", reason: "Not evaluated for this idea." },
+      : { score: null, basis: "excluded", reason: "No competitor data in this project yet: excluded, its weight is spread over the other dimensions.", key: "differentiationExcluded" },
+    search: input.extra ? searchDimension(input.cited, Boolean(x.serpData)) : { score: null, basis: "excluded", reason: "Not evaluated for this idea.", key: "notEvaluated" },
     campaign: !x.campaign || !x.campaign.active
-      ? { score: null, basis: "excluded", reason: "No campaign active in the period: excluded." }
-      : x.campaign.matched ? { score: 90, basis: "data", reason: `Part of the active campaign "${x.campaign.matched}".` } : { score: 40, basis: "data", reason: `${x.campaign.active} campaign(s) active, this idea belongs to none of them.` },
+      ? { score: null, basis: "excluded", reason: "No campaign active in the period: excluded.", key: "campaignNone" }
+      : x.campaign.matched ? { score: 90, basis: "data", reason: `Part of the active campaign "${x.campaign.matched}".`, key: "campaignMatched", values: { campaign: x.campaign.matched } } : { score: 40, basis: "data", reason: `${x.campaign.active} campaign(s) active, this idea belongs to none of them.`, key: "campaignOther", values: { count: x.campaign.active } },
     freshness: !x.freshness
-      ? { score: null, basis: "excluded", reason: "Not evaluated for this idea." }
-      : { score: clamp(100 - x.freshness.similarity * 120), basis: "data", reason: x.freshness.similarity >= 0.3 && x.freshness.closest ? `Close to a recent post ("${x.freshness.closest.slice(0, 80)}", ${Math.round(x.freshness.similarity * 100)}% word overlap).` : "No similar post in the last 90 days." },
+      ? { score: null, basis: "excluded", reason: "Not evaluated for this idea.", key: "notEvaluated" }
+      : x.freshness.similarity >= 0.3 && x.freshness.closest
+        ? { score: clamp(100 - x.freshness.similarity * 120), basis: "data", reason: `Close to a recent post ("${x.freshness.closest.slice(0, 80)}", ${Math.round(x.freshness.similarity * 100)}% word overlap).`, key: "freshnessClose", values: { post: x.freshness.closest.slice(0, 80), overlap: Math.round(x.freshness.similarity * 100) } }
+        : { score: clamp(100 - x.freshness.similarity * 120), basis: "data", reason: "No similar post in the last 90 days.", key: "freshnessNone" },
     effort: input.extra && x.format != null
-      ? { score: effortPts, basis: "data", reason: `${x.format}: ${effortPts >= 85 ? "low" : effortPts >= 55 ? "medium" : "high"} production effort (reel/video high, carousel/article medium, image/text low).` }
-      : { score: null, basis: "excluded", reason: "Not evaluated for this idea." },
+      ? { score: effortPts, basis: "data", reason: `${x.format}: ${effortPts >= 85 ? "low" : effortPts >= 55 ? "medium" : "high"} production effort (reel/video high, carousel/article medium, image/text low).`, key: "effort", values: { format: x.format, level: effortPts >= 85 ? "low" : effortPts >= 55 ? "medium" : "high" } }
+      : { score: null, basis: "excluded", reason: "Not evaluated for this idea.", key: "notEvaluated" },
   };
   const active = DIMENSIONS.filter((d) => dims[d].score != null && input.weights[d] > 0);
   const totalWeight = active.reduce((t, d) => t + input.weights[d], 0) || 1;
@@ -140,6 +152,21 @@ export function computeScore(input: {
 
 const formulaText = (active: Dimension[], w: Weights, cap: number | null | undefined) =>
   `Σ(score × weight) ÷ Σ(weights) over ${active.map((d) => `${DIMENSION_LABELS[d]} ${w[d]}`).join(", ")}${cap != null ? ` · at most ${cap}: no data signal supports this idea` : ""}`;
+
+/** A dimension's reason in the viewer's language when it was calculated with a key, else the stored text (AI reasons, older rows). */
+export function reasonText(x: Pick<DimensionScore, "reason" | "key" | "values">, t: TFor<"opportunities">) {
+  if (!x.key) return x.reason;
+  const v = x.values ?? {};
+  if (x.key === "effort") return t("reason.effort", { format: String(v.format ?? ""), level: t(`effortLevel.${v.level === "low" ? "low" : v.level === "medium" ? "medium" : "high"}`) });
+  return t(`reason.${x.key}`, v as never);
+}
+
+/** The formula of a stored breakdown in the viewer's language (the stored `formula` text stays English). */
+export function formulaLabel(b: ScoreBreakdown, t: TFor<"opportunities">) {
+  const active = DIMENSIONS.filter((d) => b.dimensions[d]?.score != null && b.weights[d] > 0);
+  const over = t("formula.over", { list: active.map((d) => `${t(`dimensions.${d}`)} ${b.weights[d]}`).join(", ") });
+  return b.cap != null ? `${over} · ${t("formula.cap", { cap: b.cap })}` : over;
+}
 
 /** Recomputes the total from a stored breakdown with new weights (dimension scores stay as generated). */
 export function rescore(breakdown: ScoreBreakdown, weights: Weights) {

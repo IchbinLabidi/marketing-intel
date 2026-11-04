@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { overview, production, social, strategyBalance, type AnalyticsItem, type PerfRow } from "@/lib/analytics/compute";
 import { actionCenter, executiveSummary, explain, fiveQuestions, type CeoInput } from "@/lib/analytics/ceo";
+import { testT } from "@/i18n/testing";
+
+const t = testT("analytics");
 
 const TZ = "UTC";
 const P = { from: "2026-10-01", to: "2026-10-28" };
@@ -38,7 +41,7 @@ describe("CEO action center", () => {
       item({ scheduled_date: "2026-10-10", pillar_id: "pb", status: "published", published_at: "2026-10-10T10:00:00Z" }),
       ...[...Array(5)].map(() => item({ due_date: "2026-10-01", status: "in_production", production_stage: "in_production" })),
     ];
-    const issues = actionCenter(input(items));
+    const issues = actionCenter(input(items), t);
     const ids = issues.map((i) => i.id);
     expect(ids).toContain("overdue");
     expect(ids).toContain("slipped");
@@ -57,20 +60,20 @@ describe("CEO action center", () => {
       ...[...Array(5)].map((_, n) => item({ scheduled_date: `2026-10-1${n}`, pillar_id: n % 2 ? "pb" : "pa", status: "published", published_at: `2026-10-1${n}T10:00:00Z` })),
       item({ scheduled_date: "2026-10-30", pillar_id: "pb" }),
     ];
-    const issues = actionCenter(input(items, { hasChannelTargets: false, balance: strategyBalance(items.slice(0, 5), [], { pillars: [{ id: "pa", name: "A", target_share: 60 }, { id: "pb", name: "B", target_share: 40 }], funnel: [], funnelTargets: new Map(), platforms: [], periodDays: 28 }) }));
+    const issues = actionCenter(input(items, { hasChannelTargets: false, balance: strategyBalance(items.slice(0, 5), [], { pillars: [{ id: "pa", name: "A", target_share: 60 }, { id: "pb", name: "B", target_share: 40 }], funnel: [], funnelTargets: new Map(), platforms: [], periodDays: 28 }) }), t);
     expect(issues).toEqual([]);
   });
 
   it("flags a missing or failed integration instead of showing empty results", () => {
-    expect(actionCenter(input([], { meta: null })).map((i) => i.id)).toContain("no-data");
-    expect(actionCenter(input([], { meta: { status: "active", lastSyncStatus: "failed", error: "token" } })).map((i) => i.id)).toContain("sync-failed");
-    expect(actionCenter(input([], { meta: null, canSeeSocial: false })).map((i) => i.id)).not.toContain("no-data");
+    expect(actionCenter(input([], { meta: null }), t).map((i) => i.id)).toContain("no-data");
+    expect(actionCenter(input([], { meta: { status: "active", lastSyncStatus: "failed", error: "token" } }), t).map((i) => i.id)).toContain("sync-failed");
+    expect(actionCenter(input([], { meta: null, canSeeSocial: false }), t).map((i) => i.id)).not.toContain("no-data");
   });
 });
 
 describe("executive summary", () => {
   it("says when there isn't enough data to judge", () => {
-    const s = executiveSummary(input([]), []);
+    const s = executiveSummary(input([]), [], t);
     expect(s.level).toBe("insufficient");
     expect(s.headline).toMatch(/isn't enough data/);
   });
@@ -81,7 +84,7 @@ describe("executive summary", () => {
       item({ due_date: "2026-10-01", status: "in_production", production_stage: "in_production" }),
     ];
     const i = input(items);
-    const s = executiveSummary(i, actionCenter(i));
+    const s = executiveSummary(i, actionCenter(i, t), t);
     expect(s.signals.find((x) => x.label === "Delivering the plan")?.tone).toBe("good");
     expect(s.signals.find((x) => x.label === "Meeting deadlines")?.tone).toBe("watch");
     expect(s.level).toBe("watch");
@@ -92,7 +95,7 @@ describe("executive summary", () => {
     const now = social([...Array(12)].map(() => perf({ likes: 1 })), P);
     const prev = social([...Array(12)].map(() => perf({ likes: 5, date: "2026-09-10" })), { from: "2026-09-03", to: "2026-09-30" });
     const items = [...Array(6)].map((_, n) => item({ scheduled_date: `2026-10-0${n + 1}`, status: "published", published_at: `2026-10-0${n + 1}T10:00:00Z`, pillar_id: n % 2 ? "pb" : "pa" }));
-    const s = executiveSummary(input(items, { social: now, socialPrev: prev }), []);
+    const s = executiveSummary(input(items, { social: now, socialPrev: prev }), [], t);
     expect(s.signals.find((x) => x.label === "Audience response")?.tone).toBe("watch");
     expect(s.level).toBe("watch");
   });
@@ -101,7 +104,7 @@ describe("executive summary", () => {
 describe("five questions and explanations", () => {
   it("answers honestly when objectives have no recorded results", () => {
     const now = social([perf({ clicks: 3 })], P);
-    const a = fiveQuestions(input([], { social: now, kpiCount: 4 }), []);
+    const a = fiveQuestions(input([], { social: now, kpiCount: 4 }), [], t);
     expect(a[3].answer).toContain("4 strategy objectives have no recorded results");
     expect(a[0].answer).toContain("Nothing has a publication date");
   });
@@ -111,7 +114,7 @@ describe("five questions and explanations", () => {
       item({ scheduled_date: "2026-10-02", status: "published", published_at: "2026-10-02T10:00:00Z" }),
       item({ scheduled_date: "2026-10-03" }), item({ scheduled_date: "2026-10-04" }),
     ];
-    const e = explain(input(items)).completion;
+    const e = explain(input(items), t).completion;
     expect(e.example).toBe("Your team published 1 of the 3 publications planned for past dates in this period. 2 are still unpublished.");
     expect(e.action).toMatch(/delayed, waiting for approval, or no longer needed/);
   });

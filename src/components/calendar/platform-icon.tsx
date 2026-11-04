@@ -1,10 +1,16 @@
+"use client";
+
 import { Globe, Mail, Newspaper } from "lucide-react";
-import { PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
+import type { Platform } from "@/lib/domain/constants";
+import { useT } from "@/i18n/client";
+import { domainLabel } from "./planning";
 import { cn } from "@/lib/utils";
 
 /** Small platform glyphs (lucide has no brand icons). Unknown platforms fall back to a generic icon. */
 export function PlatformIcon({ platform, className }: { platform: Platform | string | null; className?: string }) {
-  const label = platform ? PLATFORM_LABELS[platform as Platform] ?? platform : "No platform";
+  const t = useT("calendar");
+  const td = useT("domain");
+  const label = platform ? domainLabel(td, "platform", platform) : t("detail.noPlatform");
   const cls = cn("size-3.5 shrink-0", className);
   if (platform === "instagram") {
     return (

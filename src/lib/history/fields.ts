@@ -1,4 +1,5 @@
 import { METRICS, METRIC_LABELS, type Metric } from "@/lib/domain/constants";
+import type { TFor } from "@/i18n/messages";
 import { normalizeText } from "./text";
 
 // Application fields an imported column can be mapped to. Aliases are compared after normalizeText()
@@ -93,6 +94,23 @@ export const TARGET_FIELDS: TargetField[] = [
 
 export const TARGET_FIELD_KEYS = TARGET_FIELDS.map((f) => f.key);
 export const fieldByKey = (key: string) => TARGET_FIELDS.find((f) => f.key === key);
+
+type TextFieldKey =
+  | "publication_date" | "actual_publication_date" | "title" | "topic" | "description" | "platform" | "format"
+  | "content_pillar" | "campaign" | "caption" | "cta" | "publication_status" | "marketing_objective" | "product";
+const TEXT_FIELD_KEYS = new Set<string>(TEXT_FIELDS.map((f) => f.key));
+const HINT_KEYS = new Set(["publication_date", "actual_publication_date", "publication_status"]);
+
+/** Label shown to users for a target field (the aliases above are matching data and stay as they are). */
+export function fieldLabel(t: TFor<"history">, td: TFor<"domain">, key: string): string {
+  if ((METRICS as readonly string[]).includes(key)) return td(`metric.${key as Metric}`);
+  return TEXT_FIELD_KEYS.has(key) ? t(`fields.${key as TextFieldKey}.label`) : key;
+}
+
+/** Hint shown under a target field, when it has one. */
+export function fieldHint(t: TFor<"history">, key: string): string | undefined {
+  return HINT_KEYS.has(key) ? t(`fieldHints.${key as "publication_date" | "actual_publication_date" | "publication_status"}`) : undefined;
+}
 
 /** Mapping is stored as { target_field: source_column }. */
 export type ColumnMapping = Record<string, string>;

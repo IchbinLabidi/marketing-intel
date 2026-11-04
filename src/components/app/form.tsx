@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import type { ActionResult } from "@/lib/validation/common";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/client";
 
 export function Field({
   label,
@@ -30,6 +31,7 @@ export function Field({
   className?: string;
   children: React.ReactNode;
 }) {
+  const t = useT("common");
   return (
     <div className={cn("grid content-start gap-1.5", className)}>
       <Label htmlFor={htmlFor}>
@@ -39,7 +41,7 @@ export function Field({
             *
           </span>
         ) : optional ? (
-          <span className="font-normal text-subtle-foreground">Optional</span>
+          <span className="font-normal text-subtle-foreground">{t("states.optional")}</span>
         ) : null}
       </Label>
       {children}

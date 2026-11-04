@@ -8,12 +8,16 @@ import { isAIConfigured } from "@/server/ai/client";
 import { availabilityFor } from "@/server/competitors/providers";
 import { followerHistory, getCompetitor, listCompetitorAds, listRuns, postsForAnalysis, projectCredentials } from "@/server/services/competitors";
 import { getProjectContext } from "@/server/services/projects";
+import { getT } from "@/i18n/server";
 
-export const metadata = { title: "Competitor" };
+export async function generateMetadata() {
+  const t = await getT("competitors");
+  return { title: t("detailTitle") };
+}
 
 export default async function Page({ params }: { params: Promise<{ projectId: string; competitorId: string }> }) {
   const { projectId, competitorId } = await params;
-  const { project, role } = await getProjectContext(projectId);
+  const [{ project, role }, t] = await Promise.all([getProjectContext(projectId), getT("competitors")]);
   const competitor = await getCompetitor(projectId, competitorId);
   if (!competitor) notFound();
   const db = await createClient();
@@ -31,7 +35,7 @@ export default async function Page({ params }: { params: Promise<{ projectId: st
   );
   const providers: ProviderStatus = Object.fromEntries(competitor.competitor_channels.map((c) => {
     const a = availabilityFor(c.platform as Platform, creds);
-    return [c.platform, { ok: a.ok, reason: a.ok ? undefined : a.reason, provider: a.provider }];
+    return [c.platform, { ok: a.ok, reason: a.ok ? undefined : a.reasonKey ? t(`providers.reason.${a.reasonKey}`) : a.reason, provider: a.provider }];
   }));
   const postLinks = Object.fromEntries(posts.map((p) => [p.id, { url: p.url, hook: p.hook }]));
   return (

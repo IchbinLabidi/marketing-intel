@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { analyzeKeywordAction } from "@/server/actions/serp";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/client";
 
 /** Keyword × country × languages × devices; one live SERP request per language and device. */
 export function AnalyzeForm({ projectId, countries, languages, configured, setupHint, readOnly, initial }: {
@@ -17,6 +18,7 @@ export function AnalyzeForm({ projectId, countries, languages, configured, setup
   configured: boolean; setupHint: string; readOnly: boolean; initial?: { keyword?: string; country?: string; language?: string };
 }) {
   const router = useRouter();
+  const t = useT("seo");
   const [keyword, setKeyword] = React.useState(initial?.keyword ?? "");
   const [country, setCountry] = React.useState(initial?.country ?? "tn");
   const [langs, setLangs] = React.useState<string[]>(initial?.language ? [initial.language] : ["fr"]);
@@ -35,7 +37,7 @@ export function AnalyzeForm({ projectId, countries, languages, configured, setup
     }
     setBusy(false);
     if (ids.length) {
-      toast.success(`${ids.length} SERP snapshot${ids.length > 1 ? "s" : ""} saved`);
+      toast.success(t("form.saved", { count: ids.length }));
       router.push(`/p/${projectId}/seo/${ids[0]}`);
     }
   };
@@ -43,28 +45,28 @@ export function AnalyzeForm({ projectId, countries, languages, configured, setup
   return (
     <section className="space-y-3 rounded-xl border bg-card p-4 shadow-xs">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(12rem,1fr)_13rem_auto_auto_auto]">
-        <label className="grid gap-1.5 text-[13px] font-medium">Keyword
-          <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="e.g. cours informatique bac tunisien" dir="auto" onKeyDown={(e) => { if (e.key === "Enter" && keyword.trim() && configured && !busy) void run(); }} />
+        <label className="grid gap-1.5 text-[13px] font-medium">{t("form.keyword")}
+          <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder={t("form.keywordPlaceholder")} dir="auto" onKeyDown={(e) => { if (e.key === "Enter" && keyword.trim() && configured && !busy) void run(); }} />
         </label>
-        <label className="grid gap-1.5 text-[13px] font-medium">Country
+        <label className="grid gap-1.5 text-[13px] font-medium">{t("form.country")}
           <NativeSelect value={country} onChange={(e) => setCountry(e.target.value)}>{countries.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}</NativeSelect>
         </label>
-        <fieldset className="grid gap-1.5 text-[13px] font-medium"><legend className="mb-1.5">Language</legend>
+        <fieldset className="grid gap-1.5 text-[13px] font-medium"><legend className="mb-1.5">{t("form.language")}</legend>
           <span className="flex gap-1">{languages.map((l) => <Chip key={l.code} on={langs.includes(l.code)} onClick={() => setLangs(toggle(langs, l.code))}>{l.label}</Chip>)}</span>
         </fieldset>
-        <fieldset className="grid gap-1.5 text-[13px] font-medium"><legend className="mb-1.5">Device</legend>
-          <span className="flex gap-1">{(["desktop", "mobile"] as const).map((d) => <Chip key={d} on={devices.includes(d)} onClick={() => setDevices(toggle(devices, d))}>{d === "desktop" ? "Desktop" : "Mobile"}</Chip>)}</span>
+        <fieldset className="grid gap-1.5 text-[13px] font-medium"><legend className="mb-1.5">{t("form.device")}</legend>
+          <span className="flex gap-1">{(["desktop", "mobile"] as const).map((d) => <Chip key={d} on={devices.includes(d)} onClick={() => setDevices(toggle(devices, d))}>{t(`form.devices.${d}`)}</Chip>)}</span>
         </fieldset>
         <div className="flex items-end sm:col-span-2 xl:col-span-1">
           <Button onClick={run} disabled={readOnly || busy || !configured || keyword.trim().length < 2 || !langs.length || !devices.length} className="w-full">
-            {busy ? <Loader2 className="animate-spin" /> : <Search />} {busy ? "Analysing…" : "Analyze SERP"}
+            {busy ? <Loader2 className="animate-spin" /> : <Search />} {busy ? t("form.analysing") : t("form.analyze")}
           </Button>
         </div>
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Search engine: Google, through SerpApi (official API, no scraping). {requests} request{requests > 1 ? "s" : ""} per analysis; the top 8 ranking pages are then read (robots.txt respected) for their structure. Each run is saved as a dated snapshot.
+        {t("form.hint", { requests: t("form.requests", { count: requests }) })}
       </p>
-      {!configured ? <Alert variant="warning" title="Requires configuration">{setupHint}</Alert> : null}
+      {!configured ? <Alert variant="warning" title={t("form.requiresConfig")}>{setupHint}</Alert> : null}
     </section>
   );
 }

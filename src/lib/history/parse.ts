@@ -1,4 +1,5 @@
 import { PLATFORMS, type Platform } from "@/lib/domain/constants";
+import type { TFor } from "@/i18n/messages";
 import { normalizeText, titleCase } from "./text";
 
 // ---------------------------------------------------------------------------
@@ -98,12 +99,13 @@ export function parsePlatforms(raw: string | null | undefined): Platform[] {
 // ---------------------------------------------------------------------------
 // Numbers (metrics are counts)
 // ---------------------------------------------------------------------------
-export type NumberResult = { value: number | null; error?: string };
+/** `error` is a machine code ("percentage" | "not_a_number" | "negative"), translated where it is shown. */
+export type NumberResult = { value: number | null; error?: "percentage" | "not_a_number" | "negative" };
 
 export function parseCount(raw: string | null | undefined): NumberResult {
   let v = (raw ?? "").trim().replace(/[\s  ]/g, "");
   if (!v || v === "-" || v === "—" || /^n\/?a$/i.test(v)) return { value: null };
-  if (v.endsWith("%")) return { value: null, error: "is a percentage, not a count" };
+  if (v.endsWith("%")) return { value: null, error: "percentage" };
   let mult = 1;
   const suffix = v.match(/([kKmM])$/);
   if (suffix) {
@@ -119,8 +121,8 @@ export function parseCount(raw: string | null | undefined): NumberResult {
     v = v.replace(/\./g, ""); // 1.234 = thousands in fr locale
   }
   const n = Number(v);
-  if (!Number.isFinite(n)) return { value: null, error: "is not a number" };
-  if (n < 0) return { value: null, error: "cannot be negative" };
+  if (!Number.isFinite(n)) return { value: null, error: "not_a_number" };
+  if (n < 0) return { value: null, error: "negative" };
   return { value: Math.round(n * mult) };
 }
 
@@ -140,6 +142,27 @@ const FORMAT_RULES: [string, RegExp][] = [
   ["Image post", /\b(image|photo|visuel|static|statique|post simple|single image|affiche|poster|post|publication)\b/],
   ["Text post", /\b(texte?|text|thread)\b/],
 ];
+
+// Display keys of the normalised format names (the English names stay the analysis/filter values).
+const FORMAT_KEYS: Record<string, "shortVideo" | "carousel" | "story" | "live" | "video" | "infographic" | "pollQuiz" | "article" | "newsletter" | "imagePost" | "textPost"> = {
+  "Short video": "shortVideo", Carousel: "carousel", Story: "story", Live: "live", Video: "video", Infographic: "infographic",
+  "Poll / quiz": "pollQuiz", Article: "article", Newsletter: "newsletter", "Image post": "imagePost", "Text post": "textPost",
+};
+
+/**
+ * Translated platform name. (The domain dictionary's `platform` group has an `other` key, which its key type
+ * mistakes for plural forms, so the dotted key is looked up untyped; the value is always a known platform.)
+ */
+export const platformLabel = (td: TFor<"domain">, platform: string) => (td as unknown as (key: string) => string)(`platform.${platform}`);
+
+/** Translated label of a normalised format; formats outside the known list are shown as written. */
+export function formatLabel(t: TFor<"history">, format: string): string;
+export function formatLabel(t: TFor<"history">, format: string | null): string | null;
+export function formatLabel(t: TFor<"history">, format: string | null) {
+  if (format == null) return null;
+  const key = FORMAT_KEYS[format];
+  return key ? t(`formats.${key}`) : format;
+}
 
 export function normalizeFormat(raw: string | null | undefined): string | null {
   const n = normalizeText(raw);

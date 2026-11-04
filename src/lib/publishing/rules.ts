@@ -1,4 +1,12 @@
 // Publishing rules per network (pure, tested). Limits are the documented ones for the APIs used.
+import { createTranslator, type MessageTree } from "@/i18n/core";
+import { createFormatter } from "@/i18n/format";
+import type { KeysOf, TFor } from "@/i18n/messages";
+import enCalendar from "@/i18n/locales/en/calendar";
+
+/** Messages come from the "calendar" namespace; callers pass the viewer's translator (English when omitted). */
+let english: TFor<"calendar"> | null = null;
+const fallback = () => (english ??= createTranslator<KeysOf["calendar"]>("en", "calendar", enCalendar as unknown as MessageTree));
 
 export type PublishTarget = "facebook" | "instagram" | "tiktok" | "youtube";
 
@@ -31,40 +39,40 @@ export function composeCaption(post: { caption: string | null; cta?: string | nu
 }
 
 /** Returns a readable problem, or null when the post can be sent to that network. */
-export function validateForTarget(target: PublishTarget, p: { caption: string; mime: string | null | undefined; hasMedia: boolean }): string | null {
-  if (!p.caption.trim() && !p.hasMedia) return "The post has no caption and no media.";
+export function validateForTarget(target: PublishTarget, p: { caption: string; mime: string | null | undefined; hasMedia: boolean }, t: TFor<"calendar"> = fallback()): string | null {
+  if (!p.caption.trim() && !p.hasMedia) return t("rules.empty");
   if (target === "youtube") {
-    if (!p.hasMedia || mediaKindOf(p.mime) !== "video") return "YouTube publishing from Orix Signals needs a video (MP4 or MOV).";
-    if (!(LIMITS.youtube.video as readonly string[]).includes(p.mime!)) return "YouTube accepts MP4, MOV, WebM, AVI or MPEG videos here.";
-    if (p.caption.length > LIMITS.youtube.caption) return `YouTube descriptions are limited to ${LIMITS.youtube.caption.toLocaleString("en")} characters.`;
+    if (!p.hasMedia || mediaKindOf(p.mime) !== "video") return t("rules.youtubeNeedsVideo");
+    if (!(LIMITS.youtube.video as readonly string[]).includes(p.mime!)) return t("rules.youtubeFormats");
+    if (p.caption.length > LIMITS.youtube.caption) return t("rules.youtubeLength", { max: LIMITS.youtube.caption });
     return null;
   }
   if (target === "tiktok") {
     const kind = p.hasMedia ? mediaKindOf(p.mime) : null;
     if (kind === "image") {
-      if (!(LIMITS.tiktok.image as readonly string[]).includes(p.mime!)) return "TikTok photo posts accept JPEG, PNG or WebP photos (sent as JPEG).";
-      if (p.caption.length > LIMITS.tiktok.photoCaption) return `TikTok photo descriptions are limited to ${LIMITS.tiktok.photoCaption.toLocaleString("en")} characters.`;
+      if (!(LIMITS.tiktok.image as readonly string[]).includes(p.mime!)) return t("rules.tiktokPhotoFormats");
+      if (p.caption.length > LIMITS.tiktok.photoCaption) return t("rules.tiktokPhotoLength", { max: LIMITS.tiktok.photoCaption });
       return null;
     }
-    if (kind !== "video") return "TikTok needs a video (MP4 or MOV) or photos.";
-    if (!(LIMITS.tiktok.video as readonly string[]).includes(p.mime!)) return "TikTok accepts MP4, MOV or WebM videos.";
-    if (p.caption.length > LIMITS.tiktok.caption) return `TikTok captions are limited to ${LIMITS.tiktok.caption.toLocaleString("en")} characters.`;
+    if (kind !== "video") return t("rules.tiktokNeedsMedia");
+    if (!(LIMITS.tiktok.video as readonly string[]).includes(p.mime!)) return t("rules.tiktokFormats");
+    if (p.caption.length > LIMITS.tiktok.caption) return t("rules.tiktokLength", { max: LIMITS.tiktok.caption });
     return null;
   }
   if (target === "instagram") {
-    if (!p.hasMedia) return "Instagram needs an image or a video.";
-    if (p.caption.length > LIMITS.instagram.caption) return `Instagram captions are limited to ${LIMITS.instagram.caption.toLocaleString("en")} characters (this one has ${p.caption.length.toLocaleString("en")}).`;
+    if (!p.hasMedia) return t("rules.instagramNeedsMedia");
+    if (p.caption.length > LIMITS.instagram.caption) return t("rules.instagramLength", { max: LIMITS.instagram.caption, count: p.caption.length });
     const tags = (p.caption.match(/#[\p{L}\p{N}_]+/gu) ?? []).length;
-    if (tags > LIMITS.instagram.hashtags) return `Instagram allows at most 30 hashtags (this post has ${tags}).`;
+    if (tags > LIMITS.instagram.hashtags) return t("rules.instagramHashtags", { count: tags });
     const kind = mediaKindOf(p.mime);
-    if (kind === "image" && !(LIMITS.instagram.image as readonly string[]).includes(p.mime!)) return "Instagram accepts JPEG, PNG, WebP or GIF photos (sent as JPEG).";
-    if (kind === "video" && !(LIMITS.instagram.video as readonly string[]).includes(p.mime!)) return "Instagram Reels must be MP4 or MOV videos.";
-    if (!kind) return "Instagram needs an image or a video.";
+    if (kind === "image" && !(LIMITS.instagram.image as readonly string[]).includes(p.mime!)) return t("rules.instagramPhotoFormats");
+    if (kind === "video" && !(LIMITS.instagram.video as readonly string[]).includes(p.mime!)) return t("rules.instagramVideoFormats");
+    if (!kind) return t("rules.instagramNeedsMedia");
   } else {
-    if (p.caption.length > LIMITS.facebook.caption) return "The caption is too long for Facebook.";
+    if (p.caption.length > LIMITS.facebook.caption) return t("rules.facebookLength");
     const kind = mediaKindOf(p.mime);
-    if (p.hasMedia && kind === "image" && !(LIMITS.facebook.image as readonly string[]).includes(p.mime!)) return "Facebook accepts JPEG, PNG, GIF or WebP images.";
-    if (p.hasMedia && kind === "video" && !(LIMITS.facebook.video as readonly string[]).includes(p.mime!)) return "Facebook accepts MP4 or MOV videos here.";
+    if (p.hasMedia && kind === "image" && !(LIMITS.facebook.image as readonly string[]).includes(p.mime!)) return t("rules.facebookImageFormats");
+    if (p.hasMedia && kind === "video" && !(LIMITS.facebook.video as readonly string[]).includes(p.mime!)) return t("rules.facebookVideoFormats");
   }
   return null;
 }
@@ -72,21 +80,21 @@ export function validateForTarget(target: PublishTarget, p: { caption: string; m
 export const MAX_GROUP = 10; // Instagram carousels and Facebook multi-photo posts
 
 /** Several files in one post: only photos, at most 10 (Instagram carousel limit). Null when fine. */
-export function validateGroup(target: PublishTarget, mimes: (string | null | undefined)[]): string | null {
+export function validateGroup(target: PublishTarget, mimes: (string | null | undefined)[], t: TFor<"calendar"> = fallback()): string | null {
   if (mimes.length < 2) return null;
-  if (target === "youtube") return "A YouTube upload is a single video. Select only one file for YouTube.";
-  if (mimes.length > MAX_GROUP) return `Choose at most ${MAX_GROUP} photos for one post.`;
-  if (mimes.some((m) => mediaKindOf(m) !== "image")) return "Several files in one post must all be photos. Publish a video on its own.";
-  if (target === "instagram" && mimes.some((m) => !(LIMITS.instagram.image as readonly string[]).includes(m!))) return "Instagram accepts JPEG, PNG, WebP or GIF photos (sent as JPEG).";
-  if (target === "tiktok" && mimes.some((m) => !(LIMITS.tiktok.image as readonly string[]).includes(m!))) return "TikTok photo posts accept JPEG, PNG or WebP photos (sent as JPEG).";
+  if (target === "youtube") return t("rules.youtubeSingle");
+  if (mimes.length > MAX_GROUP) return t("rules.groupMax", { max: MAX_GROUP });
+  if (mimes.some((m) => mediaKindOf(m) !== "image")) return t("rules.groupPhotosOnly");
+  if (target === "instagram" && mimes.some((m) => !(LIMITS.instagram.image as readonly string[]).includes(m!))) return t("rules.instagramPhotoFormats");
+  if (target === "tiktok" && mimes.some((m) => !(LIMITS.tiktok.image as readonly string[]).includes(m!))) return t("rules.tiktokPhotoFormats");
   return null;
 }
 
 /** Checks a file chosen on the computer before anything is uploaded. */
-export function validateLocalFile(f: { type: string; size: number }): string | null {
-  if (!mediaKindOf(f.type)) return "Choose an image or a video.";
-  if (!["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/quicktime"].includes(f.type)) return "Use JPG, PNG, WebP, GIF, MP4 or MOV.";
-  if (f.size > MAX_FILE_BYTES) return `The file is ${(f.size / 1024 / 1024).toFixed(1)} MB; the limit for files kept for publishing is 50 MB.`;
-  if (f.size === 0) return "The file is empty.";
+export function validateLocalFile(f: { type: string; size: number }, t: TFor<"calendar">): string | null {
+  if (!mediaKindOf(f.type)) return t("rules.localKind");
+  if (!["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/quicktime"].includes(f.type)) return t("rules.localFormats");
+  if (f.size > MAX_FILE_BYTES) return t("rules.localTooLarge", { size: createFormatter(t.locale).number(f.size / 1024 / 1024, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
+  if (f.size === 0) return t("rules.localEmpty");
   return null;
 }

@@ -13,15 +13,17 @@ import { Field } from "@/components/app/form";
 import { PERMISSION_GROUPS, type Permission } from "@/lib/permissions";
 import { deleteRoleAction, saveRoleAction } from "@/server/actions/team";
 import type { TeamMember, TeamRole } from "@/server/services/team";
+import { useT } from "@/i18n/client";
 
 export function RolesEditor({ roles, members, perms }: { roles: TeamRole[]; members: TeamMember[]; perms: string[] }) {
+  const t = useT("team");
   const mine = React.useMemo(() => new Set(perms), [perms]);
   const manage = mine.has("roles.manage");
   const [editing, setEditing] = React.useState<TeamRole | "new" | null>(null);
   const count = (id: string) => members.filter((m) => m.role_id === id).length;
 
   const remove = async (r: TeamRole) => {
-    if (!(await confirm({ title: `Delete the ${r.name} role?`, description: "Only roles nobody uses can be deleted.", confirmLabel: "Delete role", destructive: true }))) return;
+    if (!(await confirm({ title: t("roles.confirmDeleteTitle", { name: r.name }), description: t("roles.confirmDeleteBody"), confirmLabel: t("roles.confirmDeleteLabel"), destructive: true }))) return;
     const res = await deleteRoleAction(r.id);
     if (res.ok) toast.success(res.message);
     else toast.error(res.error);
@@ -31,9 +33,9 @@ export function RolesEditor({ roles, members, perms }: { roles: TeamRole[]; memb
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-2xl text-[13px] text-muted-foreground">
-          Roles bundle permissions per module and action. Members only see the modules and content their role allows; the database enforces the same rules.
+          {t("roles.intro")}
         </p>
-        {manage ? <Button size="sm" onClick={() => setEditing("new")}><Plus /> New role</Button> : null}
+        {manage ? <Button size="sm" onClick={() => setEditing("new")}><Plus /> {t("roles.newRole")}</Button> : null}
       </div>
       <ul className="grid gap-3 md:grid-cols-2">
         {roles.map((r) => (
@@ -42,20 +44,20 @@ export function RolesEditor({ roles, members, perms }: { roles: TeamRole[]; memb
               <div className="min-w-0">
                 <p className="flex items-center gap-2 text-[14px] font-semibold">
                   {r.name}
-                  {r.is_system ? <Badge variant="outline">System</Badge> : <Badge variant="info">Custom</Badge>}
+                  {r.is_system ? <Badge variant="outline">{t("roles.system")}</Badge> : <Badge variant="info">{t("roles.custom")}</Badge>}
                 </p>
-                <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{r.description || "No description."}</p>
+                <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{r.description || t("roles.noDescription")}</p>
               </div>
               {manage && !(r.is_system && r.key === "admin") ? (
                 <div className="flex shrink-0 gap-0.5">
-                  <Button variant="ghost" size="icon-sm" aria-label={`Edit ${r.name}`} onClick={() => setEditing(r)}><Pencil /></Button>
-                  {!r.is_system ? <Button variant="ghost" size="icon-sm" aria-label={`Delete ${r.name}`} onClick={() => remove(r)}><Trash2 /></Button> : null}
+                  <Button variant="ghost" size="icon-sm" aria-label={t("roles.edit", { name: r.name })} onClick={() => setEditing(r)}><Pencil /></Button>
+                  {!r.is_system ? <Button variant="ghost" size="icon-sm" aria-label={t("roles.delete", { name: r.name })} onClick={() => remove(r)}><Trash2 /></Button> : null}
                 </div>
-              ) : r.key === "admin" ? <Lock className="size-4 text-subtle-foreground" aria-label="Admin role cannot be edited" /> : null}
+              ) : r.key === "admin" ? <Lock className="size-4 text-subtle-foreground" aria-label={t("roles.adminLocked")} /> : null}
             </div>
             <div className="mt-auto flex items-center justify-between gap-3 border-t pt-3 mt-4 text-xs text-muted-foreground">
-              <span>{r.permissions.length} permission{r.permissions.length === 1 ? "" : "s"}</span>
-              <span>{count(r.id)} member{count(r.id) === 1 ? "" : "s"}</span>
+              <span>{t("roles.permissionCount", { count: r.permissions.length })}</span>
+              <span>{t("roles.memberCount", { count: count(r.id) })}</span>
             </div>
           </li>
         ))}
@@ -66,6 +68,9 @@ export function RolesEditor({ roles, members, perms }: { roles: TeamRole[]; memb
 }
 
 function RoleDialog({ role, mine, onClose }: { role: TeamRole | null; mine: ReadonlySet<string>; onClose: () => void }) {
+  const t = useT("team");
+  const td = useT("domain");
+  const tc = useT("common");
   const [name, setName] = React.useState(role?.name ?? "");
   const [description, setDescription] = React.useState(role?.description ?? "");
   const [selected, setSelected] = React.useState<Set<string>>(new Set(role?.permissions ?? ["strategy.view"]));
@@ -85,21 +90,21 @@ function RoleDialog({ role, mine, onClose }: { role: TeamRole | null; mine: Read
     <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{role ? `Edit ${role.name}` : "New role"}</DialogTitle>
-          <DialogDescription>You can only grant permissions you hold yourself. Content a member is assigned to stays editable for them regardless.</DialogDescription>
+          <DialogTitle>{role ? t("roles.dialogEdit", { name: role.name }) : t("roles.dialogNew")}</DialogTitle>
+          <DialogDescription>{t("roles.dialogDescription")}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Name" htmlFor="role-name" required>
+          <Field label={t("roles.name")} htmlFor="role-name" required>
             <Input id="role-name" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} disabled={role?.is_system} />
           </Field>
-          <Field label="Description" htmlFor="role-description" optional>
+          <Field label={t("roles.description")} htmlFor="role-description" optional>
             <Textarea id="role-description" rows={1} value={description} maxLength={300} onChange={(e) => setDescription(e.target.value)} />
           </Field>
         </div>
         <div className="space-y-4">
           {PERMISSION_GROUPS.map((g) => (
             <fieldset key={g.key} className="space-y-2">
-              <legend className="eyebrow mb-2">{g.label}</legend>
+              <legend className="eyebrow mb-2">{td(`permissionGroup.${g.key}`)}</legend>
               <div className="grid gap-1.5 sm:grid-cols-2">
                 {g.permissions.map((p) => {
                   const allowed = mine.has(p.key);
@@ -107,7 +112,7 @@ function RoleDialog({ role, mine, onClose }: { role: TeamRole | null; mine: Read
                     <label key={p.key} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2 text-[13px] transition-colors has-[:checked]:border-primary/30 has-[:checked]:bg-primary-soft has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
                       <input type="checkbox" className="mt-0.5 accent-[var(--primary)]" checked={selected.has(p.key)} disabled={!allowed} onChange={() => toggle(p.key)} />
                       <span>
-                        <span className="block font-medium">{p.label}</span>
+                        <span className="block font-medium">{td(`permission.${p.key}`)}</span>
                         <span className="block font-mono text-[11px] text-subtle-foreground">{p.key}</span>
                       </span>
                     </label>
@@ -118,8 +123,8 @@ function RoleDialog({ role, mine, onClose }: { role: TeamRole | null; mine: Read
           ))}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button onClick={save} loading={busy} disabled={!name.trim()}>{role ? "Save role" : "Create role"}</Button>
+          <Button variant="outline" onClick={onClose} disabled={busy}>{tc("actions.cancel")}</Button>
+          <Button onClick={save} loading={busy} disabled={!name.trim()}>{role ? t("roles.save") : t("roles.create")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

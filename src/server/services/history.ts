@@ -1,4 +1,5 @@
 import "server-only";
+import { getT } from "@/i18n/server";
 import { METRICS } from "@/lib/domain/constants";
 import { createClient } from "@/lib/supabase/server";
 import type { NormalizedRow } from "@/lib/history/rows";
@@ -50,10 +51,10 @@ export async function updateImportJob(projectId: string, jobId: string, values: 
 export async function deleteImportJob(projectId: string, jobId: string) {
   const supabase = await createClient();
   const job = await getImportJob(projectId, jobId);
-  if (!job) throw new Error("Import not found.");
+  if (!job) throw new Error((await getT("history"))("service.importNotFound"));
   const { error, count } = await supabase.from("import_jobs").delete({ count: "exact" }).eq("id", jobId).eq("project_id", projectId);
   if (error) throw error;
-  if (!count) throw new Error("You don't have permission to delete this import.");
+  if (!count) throw new Error((await getT("history"))("service.deleteDenied"));
   if (job.storage_path) await supabase.storage.from(BUCKET).remove([job.storage_path]);
 }
 
@@ -61,13 +62,13 @@ export async function deleteImportJob(projectId: string, jobId: string) {
 export async function uploadImportFile(path: string, body: Buffer, contentType: string) {
   const supabase = await createClient();
   const { error } = await supabase.storage.from(BUCKET).upload(path, body, { contentType, upsert: true });
-  if (error) throw new Error(`Could not store the file: ${error.message}`);
+  if (error) throw new Error((await getT("history"))("service.storeFailed", { detail: error.message }));
 }
 
 export async function downloadImportFile(path: string): Promise<Buffer> {
   const supabase = await createClient();
   const { data, error } = await supabase.storage.from(BUCKET).download(path);
-  if (error || !data) throw new Error("The original file could not be read from storage.");
+  if (error || !data) throw new Error((await getT("history"))("service.readFailed"));
   return Buffer.from(await data.arrayBuffer());
 }
 
@@ -133,7 +134,7 @@ export async function updateHistoricalItem(projectId: string, itemId: string, va
   const supabase = await createClient();
   const { error, count } = await supabase.from("historical_content_items").update(values, { count: "exact" }).eq("id", itemId).eq("project_id", projectId);
   if (error) throw error;
-  if (!count) throw new Error("Record not found or read-only.");
+  if (!count) throw new Error((await getT("history"))("service.recordNotFound"));
 }
 
 export async function deleteHistoricalItem(projectId: string, itemId: string) {

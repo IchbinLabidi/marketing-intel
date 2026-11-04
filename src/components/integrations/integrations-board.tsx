@@ -13,7 +13,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { PlatformIcon } from "@/components/calendar/platform-icon";
 import { STATE_INFO, type IntegrationState, type ProviderInfo } from "@/lib/social/catalog";
-import { formatDateTime } from "@/lib/format";
+import { useFormatter, useT } from "@/i18n/client";
+import type { Formatter } from "@/i18n/format";
+import type { TFor } from "@/i18n/messages";
 import { cn } from "@/lib/utils";
 import { syncMetaAction } from "@/server/actions/meta";
 import { addYouTubeChannelAction, disconnectSocialAction, setSocialAutoSyncAction, syncSocialAction } from "@/server/actions/social";
@@ -33,16 +35,11 @@ type MetaView = {
   connection: { status: string; page_name: string | null; ig_username: string | null; last_sync_at: string | null; last_sync_status: string | null; last_error: string | null; granted_scopes: string[]; declined_scopes: string[]; token_expires_at: string | null } | null;
 };
 
-const ERRORS: Record<string, string> = {
-  denied: "The authorization was cancelled. Nothing was connected.",
-  state: "The sign-in expired or didn't come from this browser. Start again.",
-  not_configured: "This provider isn't configured on the server yet.",
-  read_only: "Your role can't manage integrations for this project.",
-  no_accounts: "Sign-in worked, but no account you can read was found (for LinkedIn you must be an administrator of the page).",
-  provider: "The provider returned an error.",
-  scope: "Google didn't grant access to Drive files. Connect again and tick the Google Drive checkbox on Google's permission screen.",
-};
-const when = (d: string | null | undefined) => (d ? formatDateTime(d) : "never");
+/** Error codes of the connect callbacks (`?error=`); the text is `integrations.flash.errors.<code>`. */
+const ERRORS = ["denied", "state", "not_configured", "read_only", "no_accounts", "provider", "scope"] as const;
+type ErrorCode = (typeof ERRORS)[number];
+const isErrorCode = (e: string): e is ErrorCode => (ERRORS as readonly string[]).includes(e);
+const when = (t: TFor<"integrations">, fmt: Formatter, d: string | null | undefined) => (d ? fmt.dateTime(d) : t("common.never"));
 
 export function connectionState(c: Pick<SocialConnection, "status" | "last_sync_status">): IntegrationState {
   if (c.status === "disconnected") return "disconnected";
@@ -53,26 +50,29 @@ export function connectionState(c: Pick<SocialConnection, "status" | "last_sync_
 }
 
 function StateBadge({ state }: { state: IntegrationState }) {
+  const t = useT("integrations");
   const s = STATE_INFO[state];
-  return <Badge variant={s.tone} dot>{state === "syncing" ? <Loader2 className="animate-spin" /> : null}{s.label}</Badge>;
+  return <Badge variant={s.tone} dot>{state === "syncing" ? <Loader2 className="animate-spin" /> : null}{t(`states.${state}.label`)}</Badge>;
 }
 
 export function IntegrationsBoard({ projectId, canEdit, schemaReady, flash, meta, providers }: {
   projectId: string; canEdit: boolean; schemaReady: boolean; flash: { provider?: string; connected?: string; error?: string; detail?: string }; meta: MetaView; providers: ProviderView[];
 }) {
   const router = useRouter();
+  const t = useT("integrations");
   const syncing = meta.running || providers.some((p) => p.connections.some((c) => c.last_sync_status === "running"));
   React.useEffect(() => {
     if (!syncing) return;
-    const t = setInterval(() => router.refresh(), 4000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => router.refresh(), 4000);
+    return () => clearInterval(timer);
   }, [syncing, router]);
 
-  const label = (k?: string) => (k === "youtube" ? "YouTube" : k === "linkedin" ? "LinkedIn" : k === "tiktok" ? "TikTok" : k === "google_drive" ? "Google Drive" : "The provider");
+  const label = (k?: string) => (k === "youtube" ? "YouTube" : k === "linkedin" ? "LinkedIn" : k === "tiktok" ? "TikTok" : k === "google_drive" ? "Google Drive" : t("flash.theProvider"));
+  const connectedCount = Number(flash.connected);
   return (
     <div className="space-y-4">
-      {flash.connected ? <Alert variant="success" title={`${label(flash.provider)} connected`}>{flash.connected === "1" ? "One account was" : `${flash.connected} accounts were`} connected.{flash.provider === "google_drive" ? " Choose Drive files from a post's Publish… dialog." : " The first import has started."}</Alert> : null}
-      {flash.error ? <Alert variant="destructive" title={`${label(flash.provider)}: not connected`}>{ERRORS[flash.error] ?? "Something went wrong."}{flash.detail ? ` (${flash.detail})` : ""}</Alert> : null}
+      {flash.connected ? <Alert variant="success" title={t("flash.connectedTitle", { provider: label(flash.provider) })}>{Number.isFinite(connectedCount) ? t("flash.accountsConnected", { count: connectedCount }) : t("flash.accountsConnectedRaw", { count: flash.connected })}{flash.provider === "google_drive" ? t("flash.driveNext") : t("flash.importStarted")}</Alert> : null}
+      {flash.error ? <Alert variant="destructive" title={t("flash.errorTitle", { provider: label(flash.provider) })}>{isErrorCode(flash.error) ? t(`flash.errors.${flash.error}`) : t("flash.errors.generic")}{flash.detail ? ` (${flash.detail})` : ""}</Alert> : null}
       <MetaCard projectId={projectId} canEdit={canEdit} meta={meta} />
       {providers.map((p) => <ProviderCard key={p.key} projectId={projectId} canEdit={canEdit} schemaReady={schemaReady} p={p} />)}
     </div>
@@ -80,7 +80,7 @@ export function IntegrationsBoard({ projectId, canEdit, schemaReady, flash, meta
 }
 
 function Shell({ icon, name, connects, state, children, info, hideMeaning }: { icon: string; name: string; connects: string; state: IntegrationState; children: React.ReactNode; info: ProviderInfo; hideMeaning?: boolean }) {
-  const s = STATE_INFO[state];
+  const t = useT("integrations");
   return (
     <Card>
       <CardHeader className="flex-row flex-wrap items-start gap-3 space-y-0">
@@ -91,15 +91,15 @@ function Shell({ icon, name, connects, state, children, info, hideMeaning }: { i
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {hideMeaning ? null : <p className="text-[13px]"><span className="font-medium">{s.meaning}</span> <span className="text-muted-foreground">{s.next}</span></p>}
+        {hideMeaning ? null : <p className="text-[13px]"><span className="font-medium">{t(`states.${state}.meaning`)}</span> <span className="text-muted-foreground">{t(`states.${state}.next`)}</span></p>}
         {children}
         <details className="text-[13px]">
-          <summary>Metrics, permissions and requirements</summary>
+          <summary>{t("shell.details")}</summary>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            <List title="Imported" items={[...info.metrics, ...(info.extraWithOAuth ?? []).map((m) => `${m} (full access only)`)]} />
-            <List title="Not available" items={info.notAvailable} />
-            <List title="Permissions requested (read-only)" items={info.permissions} mono />
-            <List title="Requirements" items={info.requirements} />
+            <List title={t("shell.imported")} items={[...info.metrics, ...(info.extraWithOAuth ?? []).map((m) => t("shell.fullAccessOnly", { metric: m }))]} />
+            <List title={t("shell.notAvailable")} items={info.notAvailable} />
+            <List title={t("shell.permissions")} items={info.permissions} mono />
+            <List title={t("shell.requirements")} items={info.requirements} />
           </div>
         </details>
       </CardContent>
@@ -117,9 +117,10 @@ function List({ title, items, mono }: { title: string; items: string[]; mono?: b
 }
 
 function SetupHelp({ info, missing }: { info: ProviderInfo; missing: string[] }) {
+  const t = useT("integrations");
   return (
     <div className="space-y-2 rounded-lg border border-dashed p-3 text-[13px]">
-      <p className="font-medium">Server settings needed: {missing.map((m) => <code key={m} className="mx-0.5 rounded bg-secondary px-1 font-mono text-xs">{m}</code>)}</p>
+      <p className="font-medium">{t("setup.needed")} {missing.map((m) => <code key={m} className="mx-0.5 rounded bg-secondary px-1 font-mono text-xs">{m}</code>)}</p>
       <ol className="list-decimal space-y-0.5 pl-5 text-muted-foreground">{info.setup.map((s) => <li key={s}>{s}</li>)}</ol>
     </div>
   );
@@ -127,36 +128,38 @@ function SetupHelp({ info, missing }: { info: ProviderInfo; missing: string[] })
 
 function MetaCard({ projectId, canEdit, meta }: { projectId: string; canEdit: boolean; meta: MetaView }) {
   const router = useRouter();
+  const t = useT("integrations");
+  const fmt = useFormatter();
   const [busy, setBusy] = React.useState(false);
   const c = meta.connection;
   const state: IntegrationState = !meta.configured ? "not_configured" : !c || c.status === "disconnected" ? (c ? "disconnected" : "ready")
     : c.status === "pending_page" ? "awaiting" : meta.running ? "syncing" : c.status === "expired" || c.status === "error" || c.last_sync_status === "failed" ? "needs_attention" : "connected";
   const connectHref = `/api/meta/connect?project=${projectId}`;
   return (
-    <Shell icon="facebook" name="Meta (Facebook and Instagram)" connects={meta.info.connects} state={state} info={meta.info}>
+    <Shell icon="facebook" name={t("meta.name")} connects={meta.info.connects} state={state} info={meta.info}>
       {!meta.configured ? <SetupHelp info={meta.info} missing={meta.missing} /> : null}
       {c && c.status !== "disconnected" ? (
         <dl className="grid gap-x-6 gap-y-1.5 text-[13px] sm:grid-cols-2">
-          <Row k="Page">{c.page_name ?? "Not chosen yet"}</Row>
-          <Row k="Instagram">{c.ig_username ? `@${c.ig_username}` : "Not linked"}</Row>
-          <Row k="Imported posts">{meta.counts.facebook} Facebook · {meta.counts.instagram} Instagram</Row>
-          <Row k="Last successful sync">{when(meta.lastSuccess)}</Row>
-          {c.token_expires_at ? <Row k="Access expires">{when(c.token_expires_at)}</Row> : null}
-          {c.declined_scopes.length ? <Row k="Declined permissions"><span className="text-destructive">{c.declined_scopes.join(", ")}</span></Row> : null}
+          <Row k={t("meta.page")}>{c.page_name ?? t("meta.notChosen")}</Row>
+          <Row k="Instagram">{c.ig_username ? `@${c.ig_username}` : t("meta.notLinked")}</Row>
+          <Row k={t("meta.importedPosts")}>{t("meta.counts", { facebook: meta.counts.facebook, instagram: meta.counts.instagram })}</Row>
+          <Row k={t("meta.lastSuccess")}>{when(t, fmt, meta.lastSuccess)}</Row>
+          {c.token_expires_at ? <Row k={t("meta.accessExpires")}>{when(t, fmt, c.token_expires_at)}</Row> : null}
+          {c.declined_scopes.length ? <Row k={t("meta.declined")}><span className="text-destructive">{c.declined_scopes.join(", ")}</span></Row> : null}
         </dl>
       ) : null}
       {c?.last_error && state === "needs_attention" ? <Alert variant="warning">{c.last_error}</Alert> : null}
       {meta.configured && canEdit ? (
         <div className="flex flex-wrap gap-2">
           {!c || c.status === "disconnected" || state === "needs_attention" || state === "awaiting" ? (
-            <Button asChild size="sm"><a href={c?.status === "pending_page" ? `/p/${projectId}/history?tab=imports` : connectHref}><Plug className="size-3.5" /> {c && c.status !== "disconnected" ? (state === "awaiting" ? "Choose the Page" : "Reconnect") : "Connect Meta"}</a></Button>
+            <Button asChild size="sm"><a href={c?.status === "pending_page" ? `/p/${projectId}/history?tab=imports` : connectHref}><Plug className="size-3.5" /> {c && c.status !== "disconnected" ? (state === "awaiting" ? t("meta.choosePage") : t("common.reconnect")) : t("meta.connect")}</a></Button>
           ) : null}
           {c?.status === "active" ? (
-            <Button size="sm" variant="outline" disabled={busy || meta.running} onClick={async () => { setBusy(true); const r = await syncMetaAction(projectId, "incremental"); setBusy(false); if (r.ok) toast.success(r.message ?? "Started"); else toast.error(r.error); router.refresh(); }}>
-              <RefreshCcw className={cn("size-3.5", (busy || meta.running) && "animate-spin")} /> Sync now
+            <Button size="sm" variant="outline" disabled={busy || meta.running} onClick={async () => { setBusy(true); const r = await syncMetaAction(projectId, "incremental"); setBusy(false); if (r.ok) toast.success(r.message ?? t("common.started")); else toast.error(r.error); router.refresh(); }}>
+              <RefreshCcw className={cn("size-3.5", (busy || meta.running) && "animate-spin")} /> {t("common.syncNow")}
             </Button>
           ) : null}
-          <Button asChild size="sm" variant="ghost"><Link href={`/p/${projectId}/history`}>Manage in Content history <ExternalLink className="size-3.5" /></Link></Button>
+          <Button asChild size="sm" variant="ghost"><Link href={`/p/${projectId}/history`}>{t("meta.manage")} <ExternalLink className="size-3.5" /></Link></Button>
         </div>
       ) : null}
     </Shell>
@@ -168,6 +171,7 @@ function Row({ k, children }: { k: string; children: React.ReactNode }) {
 }
 
 function ProviderCard({ projectId, canEdit, schemaReady, p }: { projectId: string; canEdit: boolean; schemaReady: boolean; p: ProviderView }) {
+  const t = useT("integrations");
   const live = p.connections.filter((c) => c.status !== "disconnected");
   const states = live.map(connectionState);
   const order: IntegrationState[] = ["syncing", "permission_denied", "needs_attention", "connected"];
@@ -175,10 +179,10 @@ function ProviderCard({ projectId, canEdit, schemaReady, p }: { projectId: strin
   const state: IntegrationState = !schemaReady || !configured ? "not_configured" : states.length ? order.find((s) => states.includes(s))! : p.connections.length ? "disconnected" : "ready";
   return (
     <Shell icon={p.key} name={p.info.name} connects={p.info.connects} state={state} info={p.info} hideMeaning={!schemaReady && configured}>
-      {!schemaReady ? <p className="text-[13px] text-muted-foreground">Available once database migration 0015 is applied{configured ? "; the server settings are ready" : ""}.</p> : null}
+      {!schemaReady ? <p className="text-[13px] text-muted-foreground">{configured ? t("provider.migrationReady") : t("provider.migration")}</p> : null}
       {!configured ? <SetupHelp info={p.info} missing={p.missing} /> : null}
       {schemaReady && p.key === "youtube" && p.publicReady && !p.oauthReady ? (
-        <p className="text-[13px] text-muted-foreground">Public data is available now with the server&apos;s YouTube API key. Full access (watch time, shares, subscribers gained) needs <code className="font-mono text-xs">{p.missing.join(", ")}</code>.</p>
+        <p className="text-[13px] text-muted-foreground">{t.rich("provider.youtubePublic", { code: () => <code className="font-mono text-xs">{p.missing.join(", ")}</code> })}</p>
       ) : null}
       {p.connections.length ? (
         <ul className="divide-y rounded-lg border">
@@ -187,7 +191,7 @@ function ProviderCard({ projectId, canEdit, schemaReady, p }: { projectId: strin
       ) : null}
       {canEdit && schemaReady && configured ? (
         <div className="flex flex-wrap items-start gap-2">
-          {p.oauthReady ? <Button asChild size="sm"><a href={`/api/integrations/${p.key}/connect?project=${projectId}`}><Plug className="size-3.5" /> {live.some((c) => c.auth_type === "oauth") ? "Connect another account" : `Connect ${p.info.name}`}</a></Button> : null}
+          {p.oauthReady ? <Button asChild size="sm"><a href={`/api/integrations/${p.key}/connect?project=${projectId}`}><Plug className="size-3.5" /> {live.some((c) => c.auth_type === "oauth") ? t("provider.connectAnother") : t("provider.connect", { name: p.info.name })}</a></Button> : null}
           {p.key === "youtube" && p.publicReady ? <AddPublicChannel projectId={projectId} /> : null}
         </div>
       ) : null}
@@ -197,6 +201,9 @@ function ProviderCard({ projectId, canEdit, schemaReady, p }: { projectId: strin
 
 function AccountRow({ projectId, canEdit, c, oauthReady, provider, lastRun }: { projectId: string; canEdit: boolean; c: SocialConnection & { posts: number }; oauthReady: boolean; provider: string; lastRun?: SocialSyncRun }) {
   const router = useRouter();
+  const t = useT("integrations");
+  const tc = useT("common");
+  const fmt = useFormatter();
   const [busy, setBusy] = React.useState(false);
   const [disconnect, setDisconnect] = React.useState(false);
   const [deletePosts, setDeletePosts] = React.useState(false);
@@ -205,7 +212,7 @@ function AccountRow({ projectId, canEdit, c, oauthReady, provider, lastRun }: { 
     setBusy(true);
     const r = await fn();
     setBusy(false);
-    if (r.ok) toast.success(r.message ?? "Done"); else toast.error(r.error ?? "Failed");
+    if (r.ok) toast.success(r.message ?? t("common.done")); else toast.error(r.error ?? t("common.failed"));
     router.refresh();
   };
   return (
@@ -216,43 +223,43 @@ function AccountRow({ projectId, canEdit, c, oauthReady, provider, lastRun }: { 
             {c.account_url ? <a href={c.account_url} target="_blank" rel="noreferrer" className="hover:underline">{c.account_name ?? c.external_account_id}</a> : c.account_name ?? c.external_account_id}
             {c.account_handle ? <span className="font-normal text-muted-foreground">{c.account_handle}</span> : null}
             <StateBadge state={state} />
-            <Badge variant="outline">{c.auth_type === "api_key" ? "Public data" : "Full access"}</Badge>
+            <Badge variant="outline">{c.auth_type === "api_key" ? t("account.publicData") : t("account.fullAccess")}</Badge>
           </p>
           <p className="text-muted-foreground">
-            {c.posts} {provider === "youtube" ? "videos" : "posts"} imported · {c.followers != null ? <><Users className="inline size-3.5" /> {c.followers.toLocaleString("en")} {provider === "youtube" ? "subscribers" : "followers"} · </> : null}
-            Last successful sync {when(c.last_success_at)}{lastRun?.status === "partial" ? " (partial)" : ""}
-            {c.token_expires_at && c.auth_type === "oauth" ? ` · access renews ${when(c.token_expires_at)}` : ""}
+            {provider === "youtube" ? t("account.videosImported", { count: c.posts }) : t("account.postsImported", { count: c.posts })} · {c.followers != null ? <><Users className="inline size-3.5" /> {provider === "youtube" ? t("account.subscribers", { count: c.followers }) : t("account.followers", { count: c.followers })} · </> : null}
+            {t("account.lastSuccess", { when: when(t, fmt, c.last_success_at) })}{lastRun?.status === "partial" ? t("account.partial") : ""}
+            {c.token_expires_at && c.auth_type === "oauth" ? t("account.renews", { when: when(t, fmt, c.token_expires_at) }) : ""}
           </p>
-          {c.declined_scopes.length ? <p className="text-destructive">Permissions not granted: {c.declined_scopes.join(", ")}</p> : null}
+          {c.declined_scopes.length ? <p className="text-destructive">{t("account.notGranted", { scopes: c.declined_scopes.join(", ") })}</p> : null}
         </div>
         {canEdit && c.status !== "disconnected" ? (
           <div className="flex flex-wrap gap-1.5">
             <Button size="sm" variant="outline" disabled={busy || state === "syncing"} onClick={() => run(() => syncSocialAction(projectId, c.id))}>
-              <RefreshCcw className={cn("size-3.5", (busy || state === "syncing") && "animate-spin")} /> Sync now
+              <RefreshCcw className={cn("size-3.5", (busy || state === "syncing") && "animate-spin")} /> {t("common.syncNow")}
             </Button>
             {c.auth_type === "oauth" && oauthReady && (state === "needs_attention" || state === "permission_denied") ? (
-              <Button asChild size="sm"><a href={`/api/integrations/${provider}/connect?project=${projectId}`}>Reconnect</a></Button>
+              <Button asChild size="sm"><a href={`/api/integrations/${provider}/connect?project=${projectId}`}>{t("common.reconnect")}</a></Button>
             ) : null}
-            <Button size="sm" variant="ghost" onClick={() => setDisconnect(true)}><Unplug className="size-3.5" /> Disconnect</Button>
+            <Button size="sm" variant="ghost" onClick={() => setDisconnect(true)}><Unplug className="size-3.5" /> {t("account.disconnect")}</Button>
           </div>
         ) : null}
       </div>
       {c.last_error && state !== "connected" ? <Alert variant={state === "permission_denied" ? "destructive" : "warning"}>{c.last_error}</Alert> : null}
       {canEdit && c.status !== "disconnected" ? (
         <label className="flex items-center gap-2 text-muted-foreground">
-          <input type="checkbox" className="size-3.5 accent-[var(--primary)]" checked={c.auto_sync} disabled={busy} onChange={(e) => run(() => setSocialAutoSyncAction(projectId, c.id, e.target.checked))} /> Sync daily
+          <input type="checkbox" className="size-3.5 accent-[var(--primary)]" checked={c.auto_sync} disabled={busy} onChange={(e) => run(() => setSocialAutoSyncAction(projectId, c.id, e.target.checked))} /> {t("account.syncDaily")}
         </label>
       ) : null}
       <Dialog open={disconnect} onOpenChange={setDisconnect}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Disconnect {c.account_name ?? "this account"}?</DialogTitle>
-            <DialogDescription>{c.auth_type === "oauth" ? "Access is revoked with the provider and the stored token is deleted." : "The channel stops being synchronized."} Imported posts stay in Content history unless you delete them below.</DialogDescription>
+            <DialogTitle>{c.account_name ? t("account.disconnectTitle", { name: c.account_name }) : t("account.disconnectThis")}</DialogTitle>
+            <DialogDescription>{c.auth_type === "oauth" ? t("account.revokeOauth") : t("account.revokeKey")} {t("account.keptPosts")}</DialogDescription>
           </DialogHeader>
-          <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={deletePosts} onChange={(e) => setDeletePosts(e.target.checked)} /> Also delete the {c.posts} imported posts</label>
+          <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={deletePosts} onChange={(e) => setDeletePosts(e.target.checked)} /> {t("account.alsoDelete", { count: c.posts })}</label>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDisconnect(false)}>Cancel</Button>
-            <Button variant="destructive" disabled={busy} onClick={async () => { setDisconnect(false); await run(() => disconnectSocialAction(projectId, c.id, deletePosts)); }}>Disconnect</Button>
+            <Button variant="outline" onClick={() => setDisconnect(false)}>{tc("actions.cancel")}</Button>
+            <Button variant="destructive" disabled={busy} onClick={async () => { setDisconnect(false); await run(() => disconnectSocialAction(projectId, c.id, deletePosts)); }}>{t("account.disconnect")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -262,10 +269,12 @@ function AccountRow({ projectId, canEdit, c, oauthReady, provider, lastRun }: { 
 
 function AddPublicChannel({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const t = useT("integrations");
+  const tc = useT("common");
   const [open, setOpen] = React.useState(false);
   const [value, setValue] = React.useState("");
   const [busy, setBusy] = React.useState(false);
-  if (!open) return <Button size="sm" variant="outline" onClick={() => setOpen(true)}><Plus className="size-3.5" /> Add a channel (public data)</Button>;
+  if (!open) return <Button size="sm" variant="outline" onClick={() => setOpen(true)}><Plus className="size-3.5" /> {t("addChannel.open")}</Button>;
   return (
     <form className="flex w-full flex-wrap gap-2 sm:w-auto" onSubmit={async (e) => {
       e.preventDefault();
@@ -273,13 +282,13 @@ function AddPublicChannel({ projectId }: { projectId: string }) {
       const r = await addYouTubeChannelAction(projectId, value);
       setBusy(false);
       if (!r.ok) return toast.error(r.error);
-      toast.success(r.message ?? "Added");
+      toast.success(r.message ?? t("addChannel.added"));
       setOpen(false); setValue("");
       router.refresh();
     }}>
-      <Input autoFocus className="h-8 w-72 max-w-full text-[13px]" placeholder="youtube.com/@yourchannel or @handle" value={value} onChange={(e) => setValue(e.target.value)} aria-label="YouTube channel URL or handle" />
-      <Button size="sm" type="submit" loading={busy} disabled={!value.trim()}>Add</Button>
-      <Button size="sm" type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+      <Input autoFocus className="h-8 w-72 max-w-full text-[13px]" placeholder={t("addChannel.placeholder")} value={value} onChange={(e) => setValue(e.target.value)} aria-label={t("addChannel.label")} />
+      <Button size="sm" type="submit" loading={busy} disabled={!value.trim()}>{t("addChannel.add")}</Button>
+      <Button size="sm" type="button" variant="ghost" onClick={() => setOpen(false)}>{tc("actions.cancel")}</Button>
     </form>
   );
 }

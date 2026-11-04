@@ -1,7 +1,8 @@
 // Calendar Planner and gap detection (pure, tested). The planner proposes placements for Backlog ideas: it never
 // writes anything; the person reviews the preview and saves what they approve.
-import { WEEKDAY_LABELS, suggestedTime, type PlatformTiming } from "@/lib/calendar/insights";
-import { audienceOf } from "./slots";
+import { suggestedTime, type PlatformTiming } from "@/lib/calendar/insights";
+import type { TFor } from "@/i18n/messages";
+import { audienceOf, weekdayName } from "./slots";
 import { sideOf, SIDE_LABELS, type Side } from "./audience";
 
 export type PlanIdea = { id: string; title: string; score: number | null; pillar_id: string | null; format: string | null; platform: string | null; target_platforms: string[]; target_audience: string | null; priority?: string | null; segment?: string | null };
@@ -36,7 +37,8 @@ function heuristicTime(platform: string, audience: string | null, fmt: string | 
   return wd === 1 || wd === 4 ? "18:00" : "19:30";
 }
 
-export function planCalendar(ideas: PlanIdea[], req: PlanRequest, ctx: { timing: PlatformTiming[]; busy: Record<string, number>; today: string }): { placements: Placement[]; notes: string[] } {
+/** `sideLabel` names a marketplace side in the reasons (pass the `domain` translator's `side.*` labels). */
+export function planCalendar(ideas: PlanIdea[], req: PlanRequest, ctx: { timing: PlatformTiming[]; busy: Record<string, number>; today: string }, t: TFor<"backlog">, sideLabel: (s: Side) => string = (s) => SIDE_LABELS[s]): { placements: Placement[]; notes: string[] } {
   const notes: string[] = [];
   const platforms = req.platforms.length ? req.platforms : ["facebook"];
   const maxPerDay = req.maxPerDay ?? 2;
@@ -51,7 +53,7 @@ export function planCalendar(ideas: PlanIdea[], req: PlanRequest, ctx: { timing:
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)).filter((d) => d <= req.to);
     const ranked = [...days].sort((a, b) => order.indexOf(weekday(a)) - order.indexOf(weekday(b)));
     const picked = ranked.filter((d) => (busy[d] ?? 0) < maxPerDay).slice(0, req.postsPerWeek);
-    if (picked.length < Math.min(req.postsPerWeek, days.length)) notes.push(`Week of ${weekStart}: only ${picked.length} free day${picked.length === 1 ? "" : "s"} (others already have ${maxPerDay} posts).`);
+    if (picked.length < Math.min(req.postsPerWeek, days.length)) notes.push(t("plan.weekShort", { week: weekStart, count: picked.length, max: maxPerDay }));
     slots.push(...picked.sort());
   }
 
@@ -61,7 +63,7 @@ export function planCalendar(ideas: PlanIdea[], req: PlanRequest, ctx: { timing:
     && (!req.segments?.length || (i.segment != null && req.segments.includes(i.segment)))
     && (!req.pillarMix || !Object.keys(req.pillarMix).length || (i.pillar_id && i.pillar_id in req.pillarMix)));
   pool = pool.sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || (PRIORITY_RANK[b.priority ?? "medium"] ?? 1) - (PRIORITY_RANK[a.priority ?? "medium"] ?? 1));
-  if (pool.length < slots.length) notes.push(`${slots.length} slots but only ${pool.length} matching Backlog idea${pool.length === 1 ? "" : "s"}: add or score more ideas to fill the plan.`);
+  if (pool.length < slots.length) notes.push(t("plan.notEnough", { slots: slots.length, count: pool.length }));
 
   // 3. Fill each slot with the best idea of the most under-served pillar, avoiding the same pillar twice in a row
   const mix = req.pillarMix && Object.keys(req.pillarMix).length ? req.pillarMix : null;
@@ -93,12 +95,12 @@ export function planCalendar(ideas: PlanIdea[], req: PlanRequest, ctx: { timing:
     const idea = pool.splice(pick, 1)[0];
     const platform = (idea.target_platforms?.find((p) => platforms.includes(p)) ?? idea.platform ?? platforms[0])!;
     const wd = weekday(date);
-    const t = ctx.timing.find((x) => x.platform === platform);
-    const real = suggestedTime(t, wd);
+    const pt = ctx.timing.find((x) => x.platform === platform);
+    const real = suggestedTime(pt, wd);
     const time = real ?? heuristicTime(platform, idea.target_audience, idea.format, wd, idea.segment);
     placements.push({
       ideaId: idea.id, title: idea.title, date, time, platform, score: idea.score, pillar_id: idea.pillar_id,
-      reason: `${idea.score != null ? `Score ${idea.score}` : "Not scored"}${sides && sideOf(idea.segment) ? ` · ${SIDE_LABELS[sideOf(idea.segment)!]}` : ""}${mix && idea.pillar_id ? " · balances the pillar mix" : ""} · ${WEEKDAY_LABELS[wd]} ${time} ${real ? "from your best-performing slot" : "(heuristic time)"}`,
+      reason: `${idea.score != null ? t("plan.score", { score: idea.score }) : t("plan.notScored")}${sides && sideOf(idea.segment) ? ` · ${sideLabel(sideOf(idea.segment)!)}` : ""}${mix && idea.pillar_id ? t("plan.balancesPillars") : ""} · ${t(real ? "plan.bestSlot" : "plan.heuristicSlot", { weekday: weekdayName(t, wd), time })}`,
     });
     placed[idea.pillar_id ?? "none"] = (placed[idea.pillar_id ?? "none"] ?? 0) + 1;
     placedSide[sideOf(idea.segment) ?? "unset"] = (placedSide[sideOf(idea.segment) ?? "unset"] ?? 0) + 1;
@@ -115,7 +117,7 @@ export type Gap = { key: string; kind: "empty" | "overloaded" | "promo_streak" |
 
 const isPromo = (p: CalPost) => p.funnel_stage === "conversion" || /promo|offre|offer|annonce|announcement|pub/i.test(p.format ?? "");
 
-export function detectGaps(posts: CalPost[], range: { from: string; to: string; today: string }, opts: { pillarName: (id: string | null) => string; topIdea?: { title: string; score: number | null; slot?: { date: string; time: string } | null } | null; highUnscheduled?: number; maxPerDay?: number }): Gap[] {
+export function detectGaps(posts: CalPost[], range: { from: string; to: string; today: string }, opts: { pillarName: (id: string | null) => string; topIdea?: { title: string; score: number | null; slot?: { date: string; time: string } | null } | null; highUnscheduled?: number; maxPerDay?: number }, t: TFor<"backlog">): Gap[] {
   const gaps: Gap[] = [];
   const maxPerDay = opts.maxPerDay ?? 2;
   const byDate = new Map<string, CalPost[]>();
@@ -126,28 +128,28 @@ export function detectGaps(posts: CalPost[], range: { from: string; to: string; 
   // empty days only matter when the period is thin; list a few, with the best Backlog idea as a suggestion
   if (empty.length) {
     const first = empty[0];
-    const idea = opts.topIdea ? ` Consider “${opts.topIdea.title}”${opts.topIdea.slot ? ` (suggested ${opts.topIdea.slot.time})` : ""}.` : "";
-    gaps.push({ key: `empty-${first}-${empty.length}`, kind: "empty", date: first, message: `${empty.length} day${empty.length > 1 ? "s" : ""} without content, starting ${WEEKDAY_LABELS[weekday(first)]} ${first}.${idea}` });
+    const idea = opts.topIdea ? (opts.topIdea.slot ? t("gaps.emptyIdeaAt", { title: opts.topIdea.title, time: opts.topIdea.slot.time }) : t("gaps.emptyIdea", { title: opts.topIdea.title })) : "";
+    gaps.push({ key: `empty-${first}-${empty.length}`, kind: "empty", date: first, message: `${t("gaps.empty", { count: empty.length, weekday: weekdayName(t, weekday(first)), date: first })}${idea}` });
   }
   // overloaded = too many posts on the SAME platform that day (several platforms a day is a normal plan)
   for (const [d, list] of byDate) {
     if (d < from) continue;
     const perPlatform = new Map<string, number>();
     for (const p of list) perPlatform.set(p.platform ?? "other", (perPlatform.get(p.platform ?? "other") ?? 0) + 1);
-    for (const [platform, n] of perPlatform) if (n > maxPerDay) gaps.push({ key: `over-${d}-${platform}`, kind: "overloaded", date: d, message: `${WEEKDAY_LABELS[weekday(d)]} ${d} has ${n} ${platform === "other" ? "posts without a platform" : `${platform[0].toUpperCase()}${platform.slice(1)} posts`}. Consider moving one to a quieter day.` });
+    for (const [platform, n] of perPlatform) if (n > maxPerDay) gaps.push({ key: `over-${d}-${platform}`, kind: "overloaded", date: d, message: platform === "other" ? t("gaps.overloadedNoPlatform", { weekday: weekdayName(t, weekday(d)), date: d, count: n }) : t("gaps.overloaded", { weekday: weekdayName(t, weekday(d)), date: d, count: n, platform: `${platform[0].toUpperCase()}${platform.slice(1)}` }) });
   }
   const sorted = [...posts].sort((a, b) => (a.scheduled_at ?? `${a.date}T${a.time ?? "12:00"}`).localeCompare(b.scheduled_at ?? `${b.date}T${b.time ?? "12:00"}`));
   for (let i = 2; i < sorted.length; i++) {
     const trio = sorted.slice(i - 2, i + 1);
-    if (trio.every(isPromo)) gaps.push({ key: `promo-${trio[2].id}`, kind: "promo_streak", date: trio[2].date, message: `Three promotional posts in a row (until ${trio[2].date}). Alternate with educational or engagement content.` });
-    if (trio[0].pillar_id && trio.every((p) => p.pillar_id === trio[0].pillar_id)) gaps.push({ key: `pillar-${trio[2].id}`, kind: "pillar_streak", date: trio[2].date, message: `Three “${opts.pillarName(trio[0].pillar_id)}” posts in a row (until ${trio[2].date}). Mix in another pillar.` });
+    if (trio.every(isPromo)) gaps.push({ key: `promo-${trio[2].id}`, kind: "promo_streak", date: trio[2].date, message: t("gaps.promoStreak", { date: trio[2].date }) });
+    if (trio[0].pillar_id && trio.every((p) => p.pillar_id === trio[0].pillar_id)) gaps.push({ key: `pillar-${trio[2].id}`, kind: "pillar_streak", date: trio[2].date, message: t("gaps.pillarStreak", { pillar: opts.pillarName(trio[0].pillar_id), date: trio[2].date }) });
   }
   for (let i = 1; i < sorted.length; i++) {
     const a = sorted[i - 1], b = sorted[i];
     if (a.platform && a.platform === b.platform && a.scheduled_at && b.scheduled_at && Math.abs(Date.parse(b.scheduled_at) - Date.parse(a.scheduled_at)) < 3_600_000) {
-      gaps.push({ key: `conflict-${a.id}-${b.id}`, kind: "conflict", date: b.date, message: `“${a.title}” and “${b.title}” go out within an hour on the same platform (${b.date}).` });
+      gaps.push({ key: `conflict-${a.id}-${b.id}`, kind: "conflict", date: b.date, message: t("gaps.conflict", { a: a.title, b: b.title, date: b.date }) });
     }
   }
-  if (opts.highUnscheduled) gaps.push({ key: `unscheduled-${opts.highUnscheduled}`, kind: "unscheduled", message: `${opts.highUnscheduled} high-scoring idea${opts.highUnscheduled > 1 ? "s are" : " is"} still in the Backlog (score 85+).` });
+  if (opts.highUnscheduled) gaps.push({ key: `unscheduled-${opts.highUnscheduled}`, kind: "unscheduled", message: t("gaps.unscheduled", { count: opts.highUnscheduled }) });
   return gaps.slice(0, 8);
 }
