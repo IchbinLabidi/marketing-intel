@@ -58,8 +58,8 @@ export function projectNavSections(projectId: string, t: TFor<"nav">): NavSectio
       items: [
         { label: t("project.opportunities.label"), hint: t("project.opportunities.hint"), href: `${base}/opportunities`, icon: Lightbulb, permission: "opportunities.view" },
         { label: t("project.backlog.label"), hint: t("project.backlog.hint"), href: `${base}/backlog`, icon: Inbox },
-        { label: t("project.calendar.label"), hint: t("project.calendar.hint"), href: `${base}/calendar`, icon: CalendarDays, permission: "calendar.view" },
         { label: t("project.production.label"), hint: t("project.production.hint"), href: `${base}/production`, icon: PenSquare },
+        { label: t("project.calendar.label"), hint: t("project.calendar.hint"), href: `${base}/calendar`, icon: CalendarDays, permission: "calendar.view" },
       ],
     },
     {
