@@ -154,7 +154,7 @@ export async function opportunityToProductionAction(projectId: string, opportuni
     const item = await insertPost(projectId, user.id, {
       title: (opp.title || opp.idea).slice(0, 300), platform: opp.platform ?? "instagram", format: opp.format ?? "Social caption",
       pillar_id: opp.pillar_id, funnel_stage: opp.funnel_stage, hook: opp.hook, cta: opp.cta, opportunity_id: opp.id,
-      marketing_objective: opp.marketing_objective, status: "idea",
+      marketing_objective: opp.marketing_objective, status: "idea", idea_source: "opportunity",
       creative_brief: [t("opportunityBrief.rationale", { text: opp.rationale }), t("opportunityBrief.angle", { text: opp.creative_angle ?? "" }), t("opportunityBrief.audience", { text: opp.target_audience ?? "" }), t("opportunityBrief.evidence"), ...evidenceLines(t, opp.evidence)].join("\n").slice(0, 10000),
       ...{ target_audience: opp.target_audience, language: project.default_language, assignee_id: user.id },
     });

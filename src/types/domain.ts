@@ -342,6 +342,8 @@ export type ContentItem = MetricValues & {
   due_date?: string | null;
   priority?: "low" | "medium" | "high" | "urgent";
   created_by?: string | null;
+  /** where the idea came from (migration 0021): manual | ai | import | content | campaign | pillar | opportunity */
+  idea_source?: string | null;
   /** who the post targets (migration 0027); null = untagged (older items) */
   audience?: import("@/lib/backlog/audience").Audience | null;
   /** marketplace segment (migration 0022): students | parents | teachers | both */

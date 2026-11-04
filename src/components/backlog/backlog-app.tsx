@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import {
   Archive, ArchiveRestore, Bookmark, CalendarPlus, Columns3, Copy, Eye, Filter, LayoutGrid, List, Loader2, MoreHorizontal, Plus, Search,
-  Send, SlidersHorizontal, Sparkles, Tag, Trash2, Undo2, X,
+  Send, SlidersHorizontal, Sparkles, Tag, Trash2, Undo2, UserRound, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/app/page-header";
@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { PlatformIcon } from "@/components/calendar/platform-icon";
 import { PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
+import { ideaCreator } from "@/lib/backlog/creator";
 import { CRITERIA, impactEffort, normalizeWeights, scoreBand, type Weights } from "@/lib/backlog/score";
 import { ALL_CONVERSIONS, AUDIENCES, goalsFor, SEGMENTS, type Audience, type AudienceMix, type Side } from "@/lib/backlog/audience";
 import { useFormatter, useT } from "@/i18n/client";
@@ -48,6 +49,8 @@ export function BacklogApp(props: {
   projectId: string; projectName: string; tz: string; canEdit: boolean; canAdmin: boolean;
   initial: { ideas: Idea[]; total: number }; pillars: { id: string; name: string; segment?: string; target_share?: number | null }[]; tags: string[]; presets: FilterPreset[]; audienceMix: AudienceMix | null;
   weights: Weights; aiEnabled: boolean; today: string; defaultSort?: BacklogFilters["sort"];
+  /** workspace members by user id → display name (for "created by") */
+  members?: Record<string, string>;
 }) {
   const { projectId, tz, canEdit } = props;
   const t = useT("backlog");
@@ -271,7 +274,7 @@ export function BacklogApp(props: {
         </div>
       ) : view === "cards" ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {data.ideas.map((i) => <IdeaCard key={i.id} idea={i} pillar={pillarName(i.pillar_id)} canEdit={canEdit} selected={selected.has(i.id)} onToggle={() => toggle(i.id)} a={actions(i)} onAudience={(a) => void setTag(i, a)} />)}
+          {data.ideas.map((i) => <IdeaCard key={i.id} idea={i} members={props.members} pillar={pillarName(i.pillar_id)} canEdit={canEdit} selected={selected.has(i.id)} onToggle={() => toggle(i.id)} a={actions(i)} onAudience={(a) => void setTag(i, a)} />)}
         </div>
       ) : (
         <DndContext sensors={sensors} onDragEnd={onDragEnd}>
@@ -280,7 +283,7 @@ export function BacklogApp(props: {
               const col = data.ideas.filter((i) => (i.priority ?? "medium") === p);
               return (
                 <KanbanColumn key={p} id={p} label={t(`kanban.column.${p}`)} count={col.length}>
-                  {col.map((i) => <DraggableCard key={i.id} id={i.id} disabled={!canEdit}><IdeaCard idea={i} pillar={pillarName(i.pillar_id)} canEdit={canEdit} selected={selected.has(i.id)} onToggle={() => toggle(i.id)} a={actions(i)} onAudience={(a) => void setTag(i, a)} compact /></DraggableCard>)}
+                  {col.map((i) => <DraggableCard key={i.id} id={i.id} disabled={!canEdit}><IdeaCard idea={i} members={props.members} pillar={pillarName(i.pillar_id)} canEdit={canEdit} selected={selected.has(i.id)} onToggle={() => toggle(i.id)} a={actions(i)} onAudience={(a) => void setTag(i, a)} compact /></DraggableCard>)}
                 </KanbanColumn>
               );
             })}
@@ -352,7 +355,15 @@ function RowMenu({ idea, canEdit, a }: { idea: Idea; canEdit: boolean; a: Acts }
   );
 }
 
-function IdeaCard({ idea, pillar, canEdit, selected, onToggle, a, onAudience, compact }: { idea: Idea; pillar: string | null; canEdit: boolean; selected: boolean; onToggle: () => void; a: Acts; onAudience: (a: Audience) => void; compact?: boolean }) {
+function CreatedBy({ idea, members }: { idea: Idea; members?: Record<string, string> }) {
+  const t = useT("backlog");
+  const c = ideaCreator(idea);
+  if (c === "ai") return <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-medium text-primary" title={t("row.creatorAiHint")}><Sparkles className="size-3" /> {t("row.creatorAi")}</span>;
+  const name = members?.[c.userId] || t("row.creatorMember");
+  return <span className="ml-auto inline-flex min-w-0 max-w-[50%] shrink items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground" title={t("row.creatorHint", { name })}><UserRound className="size-3 shrink-0" /> <span className="truncate">{name}</span></span>;
+}
+
+function IdeaCard({ idea, members, pillar, canEdit, selected, onToggle, a, onAudience, compact }: { idea: Idea; members?: Record<string, string>; pillar: string | null; canEdit: boolean; selected: boolean; onToggle: () => void; a: Acts; onAudience: (a: Audience) => void; compact?: boolean }) {
   const t = useT("backlog");
   const td = useT("domain");
   const fmt = useFormatter();
@@ -373,12 +384,13 @@ function IdeaCard({ idea, pillar, canEdit, selected, onToggle, a, onAudience, co
         {!compact ? <Badge variant="secondary">{td(`priority.${prio(idea.priority)}`)}</Badge> : null}
       </div>
       <p className="text-xs text-muted-foreground">{idea.scheduled_date ? <>{t("row.onCalendar")}<span className="text-foreground">{slotLabel(fmt, t, idea.scheduled_date, idea.scheduled_time?.slice(0, 5) ?? "—")}</span></> : s ? <>{t("row.suggested")}<span className="text-foreground">{slotLabel(fmt, t, s.date, s.time)}</span> · {t(`confidence.${s.confidence}`).toLowerCase()}{s.source === "heuristic" ? t("row.heuristicSuffix") : ""}</> : t("row.noSuggestion")}</p>
-      {canEdit && !idea.scheduled_date && !compact ? (
-        <div className="flex gap-1.5" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="flex items-center gap-1.5" onPointerDown={(e) => e.stopPropagation()}>
+        {canEdit && !idea.scheduled_date && !compact ? <>
           <Button size="sm" variant="outline" onClick={a.place}><CalendarPlus /> {t("row.addToCalendar")}</Button>
           {idea.production_stage === "idea" ? <Button size="sm" variant="ghost" onClick={a.production}><Send /> {t("row.production")}</Button> : null}
-        </div>
-      ) : null}
+        </> : null}
+        <CreatedBy idea={idea} members={members} />
+      </div>
     </article>
   );
 }

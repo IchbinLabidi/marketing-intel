@@ -368,7 +368,7 @@ export async function generateCalendarAction(projectId: string, calendarId: stri
       const time = suggestedTime(timing.find((t) => t.platform === s.platform), weekdayOf(s.date));
       const article = isArticle(s.platform, s.format);
       return {
-        project_id: projectId, calendar_id: calendarId, created_by: user.id, status: "planned", position,
+        project_id: projectId, calendar_id: calendarId, created_by: user.id, idea_source: "ai", status: "planned", position,
         opportunity_id: oppFor.get(s.key) ?? null, scheduled_date: s.date, scheduled_time: time, scheduled_at: time ? zonedToUtc(s.date, time, tz) : null,
         platform: s.platform, format: s.format, pillar_id: s.pillar_id, campaign_id: s.campaign_id, funnel_stage: s.funnel_stage as FunnelStage,
         marketing_objective: OBJECTIVE_LABELS[(cal.objective ?? "engagement") as Plan["objective"]],
