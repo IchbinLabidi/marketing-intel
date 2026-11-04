@@ -116,6 +116,11 @@ const production: Translation<typeof en> = {
     sectionsLabel: "Sections du contenu",
     tabs: { write: "Rédaction", brief: "Brief et stratégie", media: "Médias", team: "Équipe et tâches", review: "Relecture et discussion", history: "Historique" },
     media: {
+      sourcesLabel: "Source des médias",
+      tabPost: "Sur ce contenu",
+      tabComputer: "Depuis votre ordinateur",
+      tabDrive: "Google Drive",
+      orLink: "Ou joignez un lien",
       intro: "Joignez fichiers de design, photos, vidéos ou références. Les imports sont privés à cet espace de travail. Modifier les médias renvoie un contenu approuvé en production.",
       saveFirst: "Enregistrez ce brouillon pour joindre des médias.",
       viewLarger: "Agrandir {name}",
