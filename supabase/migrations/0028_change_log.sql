@@ -4,7 +4,9 @@
 
 create table if not exists project_change_log (
   id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references projects(id) on delete cascade,
+  -- No foreign key on purpose: a cascaded project delete must never fail on a log row; the trigger on
+  -- projects below removes a deleted project's log instead.
+  project_id uuid not null,
   actor_id uuid references auth.users(id) on delete set null,       -- null = automatic (scheduled jobs, system)
   area text not null check (area in ('strategy', 'content')),
   entity text not null check (entity in ('strategy', 'brand', 'persona', 'pillar', 'campaign', 'kpi', 'content')),
@@ -78,3 +80,12 @@ drop trigger if exists change_log on kpis;
 create trigger change_log after insert or update or delete on kpis for each row execute function log_project_change('kpi');
 drop trigger if exists change_log on content_items;
 create trigger change_log after insert or update or delete on content_items for each row execute function log_project_change('content');
+
+create or replace function drop_project_change_log() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  delete from project_change_log where project_id = old.id;
+  return old;
+end $$;
+drop trigger if exists zz_drop_change_log on projects;
+create trigger zz_drop_change_log after delete on projects for each row execute function drop_project_change_log();
