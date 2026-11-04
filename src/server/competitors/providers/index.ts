@@ -1,7 +1,7 @@
 import "server-only";
 import type { Platform } from "@/lib/domain/constants";
 import { facebookProvider, instagramProvider } from "./meta";
-import type { Availability, DataProvider, ProviderCredentials } from "./types";
+import type { Availability, DataProvider, ProviderCredentials, ProviderReasonKey } from "./types";
 import { xProvider } from "./x";
 import { youtubeProvider } from "./youtube";
 
@@ -26,7 +26,10 @@ export function providerFor(platform: Platform) {
 
 export function availabilityFor(platform: Platform, creds: ProviderCredentials): Availability & { provider: string | null } {
   const p = providerFor(platform);
-  if (!p) return { ok: false, status: "unsupported", reason: UNSUPPORTED_REASON[platform] ?? "No data provider for this platform yet. Add posts manually.", provider: null };
+  if (!p) {
+    const known = UNSUPPORTED_REASON[platform];
+    return { ok: false, status: "unsupported", reason: known ?? "No data provider for this platform yet. Add posts manually.", reasonKey: known ? (platform as ProviderReasonKey) : "none", provider: null };
+  }
   return { ...p.availability(creds), provider: p.label };
 }
 

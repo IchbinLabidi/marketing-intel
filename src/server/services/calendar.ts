@@ -1,4 +1,5 @@
 import "server-only";
+import { getT } from "@/i18n/server";
 import { createClient } from "@/lib/supabase/server";
 import type { ContentItem, EditorialCalendar } from "@/types/domain";
 import { withAudience } from "@/server/ai/audience";
@@ -180,7 +181,7 @@ export async function updatePost(projectId: string, id: string, values: Partial<
   const supabase = await createClient();
   const { data, error } = await supabase.from("content_items").update(values).eq("id", id).eq("project_id", projectId).select("*").maybeSingle();
   if (error) throw error;
-  if (!data) throw new Error("Post not found or read-only.");
+  if (!data) throw new Error((await getT("calendar"))("service.postNotFound"));
   return data as ContentItem;
 }
 
@@ -188,7 +189,7 @@ export async function deletePost(projectId: string, id: string) {
   const supabase = await createClient();
   const { error, count } = await supabase.from("content_items").delete({ count: "exact" }).eq("id", id).eq("project_id", projectId);
   if (error) throw error;
-  if (!count) throw new Error("Post not found or read-only.");
+  if (!count) throw new Error((await getT("calendar"))("service.postNotFound"));
 }
 
 /** Recent post titles in the project, so AI generation avoids repeating them. */
@@ -205,5 +206,5 @@ export async function deleteCalendar(projectId: string, calendarId: string) {
   if (items.error) throw items.error;
   const { error, count } = await supabase.from("editorial_calendars").delete({ count: "exact" }).eq("id", calendarId).eq("project_id", projectId);
   if (error) throw error;
-  if (!count) throw new Error("Calendar not found or read-only.");
+  if (!count) throw new Error((await getT("calendar"))("service.calendarNotFound"));
 }

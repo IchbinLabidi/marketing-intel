@@ -4,6 +4,9 @@ import {
   type AnalyticsItem, type AnalyticsTask, type Filters, type PerfRow,
 } from "@/lib/analytics/compute";
 import { csvCell, toCsv } from "@/lib/analytics/csv";
+import { testT } from "@/i18n/testing";
+
+const t = testT("analytics");
 
 const TZ = "Africa/Tunis"; // UTC+1, no DST
 const P = { from: "2026-10-01", to: "2026-10-28" };
@@ -185,7 +188,7 @@ describe("insights", () => {
     const out = insights({
       period: P, balance, overview: overview(planned, [], P, TODAY, TZ), production: production(planned, [], P, TODAY, TZ, "2026-10-28T09:00:00Z"), team: null, social: null,
       links: { strategy: "/s", production: "/p", calendar: "/c?view=list", team: "/t", history: "/h" }, stageLabel: (s) => s,
-    });
+    }, t);
     const pillar = out.find((i) => i.id === "pillar-pa")!;
     expect(pillar.figures).toContain("11% planned vs 40% target (1 of 9 items, 2026-10-01 – 2026-10-28)");
     expect(pillar.href).toBe("/s");
@@ -194,7 +197,7 @@ describe("insights", () => {
 
   it("produces no insight from too little data", () => {
     const balance = strategyBalance([item({ pillar_id: "pb" })], [], { pillars: [{ id: "pa", name: "A", target_share: 50 }, { id: "pb", name: "B", target_share: 50 }], funnel: [], funnelTargets: new Map(), platforms: [], periodDays: 28 });
-    const out = insights({ period: P, balance, overview: overview([], [], P, TODAY, TZ), production: production([], [], P, TODAY, TZ, "2026-10-28T09:00:00Z"), team: null, social: null, links: { strategy: "", production: "", calendar: "", team: "", history: "" }, stageLabel: (s) => s });
+    const out = insights({ period: P, balance, overview: overview([], [], P, TODAY, TZ), production: production([], [], P, TODAY, TZ, "2026-10-28T09:00:00Z"), team: null, social: null, links: { strategy: "", production: "", calendar: "", team: "", history: "" }, stageLabel: (s) => s }, t);
     expect(out).toEqual([]);
   });
 });

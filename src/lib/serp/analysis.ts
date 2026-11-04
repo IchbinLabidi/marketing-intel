@@ -1,4 +1,5 @@
 import { normalizeText } from "@/lib/history/text";
+import type { TFor } from "@/i18n/messages";
 import { featureOf, type SerpItem } from "./normalize";
 
 // Deterministic SERP analytics. The intent is inferred from what Google actually shows (features and the kind of
@@ -37,41 +38,48 @@ export function contentTypeOf(i: Pick<SerpItem, "url" | "domain" | "title">): Co
   return "page";
 }
 
-export type IntentResult = { primary: Intent; secondary: Intent | null; scores: Record<Intent, number>; signals: { intent: Intent; points: number; reason: string }[]; basis: "serp" };
+/**
+ * `reason` is the English sentence (stored and given to the AI); `key` + `values` let the screens show it in the viewer's
+ * language (messages `seo.intentSignal.<key>`). Snapshots stored before keys existed only have `reason`.
+ */
+export type IntentSignalKey =
+  | "featuredSnippet" | "peopleAlsoAsk" | "videos" | "knowledgePanel" | "aiOverview" | "ads" | "adsPurchase" | "shopping" | "localPack" | "localBusinesses"
+  | "infoShare" | "commShare" | "offerPages" | "sameDomain" | "sitelinks" | "wordingLearning" | "wordingCompare" | "wordingPurchase" | "brandName";
+export type IntentResult = { primary: Intent; secondary: Intent | null; scores: Record<Intent, number>; signals: { intent: Intent; points: number; reason: string; key?: IntentSignalKey; values?: Record<string, string | number> }[]; basis: "serp" };
 
 /** SERP-based intent. Features and ranking page types weigh more than the keyword text. */
 export function classifyIntent(keyword: string, items: SerpItem[], ownDomain?: string | null): IntentResult {
   const signals: IntentResult["signals"] = [];
-  const add = (intent: Intent, points: number, reason: string) => signals.push({ intent, points, reason });
+  const add = (intent: Intent, points: number, reason: string, key: IntentSignalKey, values?: Record<string, string | number>) => signals.push({ intent, points, reason, key, ...(values ? { values } : {}) });
   const count = (t: SerpItem["type"]) => items.filter((i) => i.type === t).length;
   const organic = items.filter((i) => i.type === "organic").sort((a, b) => (a.position ?? 99) - (b.position ?? 99)).slice(0, 10);
 
-  if (count("featured_snippet")) add("informational", 2, "Google shows a featured snippet (a direct answer)");
-  if (count("people_also_ask")) add("informational", 2, `"People also ask" with ${count("people_also_ask")} questions`);
-  if (count("video")) add("informational", 1, `${count("video")} video results`);
-  if (count("knowledge_graph")) add("navigational", 1, "A knowledge panel is shown");
-  if (items.some((i) => featureOf(i) === "ai_overview")) add("informational", 1, "Google shows an AI Overview (an answer above the results)");
-  if (count("ad")) { add("commercial", 2, `${count("ad")} ads: advertisers pay for this query`); add("transactional", 1, "Ads indicate purchase intent"); }
-  if (count("shopping")) add("transactional", 3, "Shopping results are shown");
-  if (count("local")) { add("commercial", 2, `Local pack with ${count("local")} places`); add("transactional", 1, "Local businesses to contact or visit"); }
+  if (count("featured_snippet")) add("informational", 2, "Google shows a featured snippet (a direct answer)", "featuredSnippet");
+  if (count("people_also_ask")) add("informational", 2, `"People also ask" with ${count("people_also_ask")} questions`, "peopleAlsoAsk", { count: count("people_also_ask") });
+  if (count("video")) add("informational", 1, `${count("video")} video results`, "videos", { count: count("video") });
+  if (count("knowledge_graph")) add("navigational", 1, "A knowledge panel is shown", "knowledgePanel");
+  if (items.some((i) => featureOf(i) === "ai_overview")) add("informational", 1, "Google shows an AI Overview (an answer above the results)", "aiOverview");
+  if (count("ad")) { add("commercial", 2, `${count("ad")} ads: advertisers pay for this query`, "ads", { count: count("ad") }); add("transactional", 1, "Ads indicate purchase intent", "adsPurchase"); }
+  if (count("shopping")) add("transactional", 3, "Shopping results are shown", "shopping");
+  if (count("local")) { add("commercial", 2, `Local pack with ${count("local")} places`, "localPack", { count: count("local") }); add("transactional", 1, "Local businesses to contact or visit", "localBusinesses"); }
 
   const types = organic.map((o) => contentTypeOf(o));
   const share = (pred: (t: ContentType) => boolean) => (organic.length ? types.filter(pred).length / organic.length : 0);
   const infoShare = share((t) => ["article", "encyclopedia", "forum", "video", "document", "course_page"].includes(t));
   const commShare = share((t) => ["commercial_page", "listing", "homepage"].includes(t));
-  if (infoShare >= 0.5) add("informational", Math.round(infoShare * 4), `${Math.round(infoShare * 100)}% of the top results are articles, lessons, videos, documents or Q&A`);
-  if (commShare >= 0.3) add("commercial", Math.round(commShare * 4), `${Math.round(commShare * 100)}% of the top results are offer pages, listings or homepages`);
-  if (share((t) => t === "commercial_page") >= 0.3) add("transactional", 2, "Several top results are sign-up, pricing or offer pages");
+  if (infoShare >= 0.5) add("informational", Math.round(infoShare * 4), `${Math.round(infoShare * 100)}% of the top results are articles, lessons, videos, documents or Q&A`, "infoShare", { share: Math.round(infoShare * 100) });
+  if (commShare >= 0.3) add("commercial", Math.round(commShare * 4), `${Math.round(commShare * 100)}% of the top results are offer pages, listings or homepages`, "commShare", { share: Math.round(commShare * 100) });
+  if (share((t) => t === "commercial_page") >= 0.3) add("transactional", 2, "Several top results are sign-up, pricing or offer pages", "offerPages");
 
   const top3 = organic.slice(0, 3).map((o) => o.domain).filter(Boolean);
-  if (top3.length === 3 && new Set(top3).size === 1) add("navigational", 3, `The top 3 results all belong to ${top3[0]}`);
-  if (organic[0]?.data?.sitelinks) add("navigational", 2, `The first result (${organic[0].domain}) has sitelinks`);
+  if (top3.length === 3 && new Set(top3).size === 1) add("navigational", 3, `The top 3 results all belong to ${top3[0]}`, "sameDomain", { domain: top3[0]! });
+  if (organic[0]?.data?.sitelinks) add("navigational", 2, `The first result (${organic[0].domain}) has sitelinks`, "sitelinks", { domain: organic[0].domain ?? "" });
 
   const k = normalizeText(keyword);
-  if (/\b(comment|pourquoi|c est quoi|definition|qu est ce|exercices?|corrige|pdf|resume|cours|lecon|methode|how|what|why)\b/.test(k)) add("informational", 1, "Keyword wording: learning / how-to terms");
-  if (/\b(meilleurs?|avis|comparatif|top|vs|prix|tarifs?|particuliers?|prof|professeur|centre|ecole|plateforme)\b/.test(k)) add("commercial", 1, "Keyword wording: comparing providers or services");
-  if (/\b(inscription|acheter|reserver|abonnement|commander|essai gratuit|s inscrire|payer|offre)\b/.test(k)) add("transactional", 1, "Keyword wording: sign-up or purchase terms");
-  if (ownDomain && k.replace(/\s/g, "").includes(ownDomain.split(".")[0])) add("navigational", 2, "The keyword contains the brand's own name");
+  if (/\b(comment|pourquoi|c est quoi|definition|qu est ce|exercices?|corrige|pdf|resume|cours|lecon|methode|how|what|why)\b/.test(k)) add("informational", 1, "Keyword wording: learning / how-to terms", "wordingLearning");
+  if (/\b(meilleurs?|avis|comparatif|top|vs|prix|tarifs?|particuliers?|prof|professeur|centre|ecole|plateforme)\b/.test(k)) add("commercial", 1, "Keyword wording: comparing providers or services", "wordingCompare");
+  if (/\b(inscription|acheter|reserver|abonnement|commander|essai gratuit|s inscrire|payer|offre)\b/.test(k)) add("transactional", 1, "Keyword wording: sign-up or purchase terms", "wordingPurchase");
+  if (ownDomain && k.replace(/\s/g, "").includes(ownDomain.split(".")[0])) add("navigational", 2, "The keyword contains the brand's own name", "brandName");
 
   const scores = Object.fromEntries(INTENTS.map((i) => [i, signals.filter((s) => s.intent === i).reduce((t, s) => t + s.points, 0)])) as Record<Intent, number>;
   const ranked = [...INTENTS].sort((a, b) => scores[b] - scores[a]);
@@ -157,4 +165,22 @@ export const FEATURE_LABELS: Record<string, string> = {
 
 export function slugify(text: string) {
   return normalizeText(text).replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+}
+
+/**
+ * Display labels for SERP codes in the viewer's language (`t`: the "seo" translator). Unknown codes are shown as they
+ * are; the English constants above stay the values given to the AI.
+ */
+export function serpLabels(t: TFor<"seo">) {
+  const pick = (key: string, fallback: string) => (t.has(key) ? t(key as Parameters<typeof t>[0]) : fallback);
+  return {
+    country: (code: string) => pick(`countries.${code}.name`, code),
+    city: (code: string) => pick(`countries.${code}.city`, code),
+    language: (code: string) => pick(`languages.${code}`, code),
+    intent: (intent: string) => pick(`intent.${intent}`, intent),
+    feature: (feature: string) => pick(`feature.${feature === "other" ? "otherFeature" : feature}`, feature),
+    contentType: (type: string) => pick(`contentType.${type}`, type),
+    /** Intent signal sentence: from its key when stored with one, otherwise the stored English reason. */
+    signal: (s: { reason: string; key?: IntentSignalKey; values?: Record<string, string | number> }) => (s.key ? t(`intentSignal.${s.key}`, s.values) : s.reason),
+  };
 }

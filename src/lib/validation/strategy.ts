@@ -59,7 +59,7 @@ export const campaignSchema = z
     funnel_focus: optionalEnum(FUNNEL_STAGES),
   })
   .refine((c) => !c.starts_on || !c.ends_on || c.ends_on >= c.starts_on, {
-    message: "End date must be after start date",
+    message: "v:endAfterStart",
     path: ["ends_on"],
   });
 

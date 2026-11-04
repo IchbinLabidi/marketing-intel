@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { ContentItem, Opportunity, OpportunityFeedback, OpportunityState } from "@/types/domain";
+import { getT } from "@/i18n/server";
 
 export async function listOpportunities(projectId: string): Promise<Opportunity[]> {
   const supabase = await createClient();
@@ -34,7 +35,7 @@ export async function updateOpportunity(projectId: string, id: string, values: P
   const supabase = await createClient();
   const { data, error } = await supabase.from("opportunities").update(values).eq("id", id).eq("project_id", projectId).select("*").maybeSingle();
   if (error) throw error;
-  if (!data) throw new Error("Opportunity not found or read-only.");
+  if (!data) throw new Error((await getT("opportunities"))("errors.notFoundOrReadOnly"));
   return data as Opportunity;
 }
 

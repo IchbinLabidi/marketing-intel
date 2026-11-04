@@ -25,7 +25,16 @@ export const SERP_LANGUAGES: Record<string, string> = { fr: "French", ar: "Arabi
 export type SerpQuery = { keyword: string; country: string; language: string; device: "desktop" | "mobile" };
 export interface SerpProvider { id: string; label: string; configured(): boolean; setupHint: string; search(q: SerpQuery): Promise<NormalizedSerp> }
 
-export class SerpProviderError extends Error {}
+/** `key` + `values`: the message under `seo.provider.errors` for the screens; `message` stays English (stored on the snapshot). */
+export class SerpProviderError extends Error {
+  readonly key?: "country" | "unreachable" | "rejected" | "quota" | "error" | "status";
+  readonly values?: Record<string, string | number>;
+  constructor(message: string, key?: SerpProviderError["key"], values?: Record<string, string | number>) {
+    super(message);
+    this.key = key;
+    this.values = values;
+  }
+}
 
 export const serpApi: SerpProvider = {
   id: "serpapi",
@@ -34,7 +43,7 @@ export const serpApi: SerpProvider = {
   setupHint: "Add SERPAPI_API_KEY to .env.local (serpapi.com → Dashboard → Your Private API Key; the free plan includes 100 searches a month).",
   async search(q) {
     const c = COUNTRIES[q.country];
-    if (!c) throw new SerpProviderError("Unsupported country.");
+    if (!c) throw new SerpProviderError("Unsupported country.", "country");
     const url = new URL("https://serpapi.com/search.json");
     url.search = new URLSearchParams({
       engine: "google", q: q.keyword, google_domain: c.domain, gl: q.country, hl: q.language, location: c.location,
@@ -44,14 +53,14 @@ export const serpApi: SerpProvider = {
     try {
       res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(60_000) });
     } catch {
-      throw new SerpProviderError("SerpApi is unreachable. Try again in a moment.");
+      throw new SerpProviderError("SerpApi is unreachable. Try again in a moment.", "unreachable");
     }
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    if (res.status === 401 || /invalid api key/i.test(String(body.error ?? ""))) throw new SerpProviderError("The SerpApi key was rejected. Check SERPAPI_API_KEY.");
-    if (res.status === 429 || /run out of searches|plan|limit/i.test(String(body.error ?? ""))) throw new SerpProviderError(`SerpApi quota reached: ${body.error ?? "too many requests"}.`);
+    if (res.status === 401 || /invalid api key/i.test(String(body.error ?? ""))) throw new SerpProviderError("The SerpApi key was rejected. Check SERPAPI_API_KEY.", "rejected");
+    if (res.status === 429 || /run out of searches|plan|limit/i.test(String(body.error ?? ""))) throw new SerpProviderError(`SerpApi quota reached: ${body.error ?? "too many requests"}.`, "quota", { detail: String(body.error ?? "too many requests") });
     // "Google hasn't returned any results for this query." is a valid empty SERP, not a failure
-    if (body.error && !/hasn't returned any results/i.test(String(body.error))) throw new SerpProviderError(`SerpApi: ${body.error}`);
-    if (!res.ok && !body.search_metadata) throw new SerpProviderError(`SerpApi error (${res.status}).`);
+    if (body.error && !/hasn't returned any results/i.test(String(body.error))) throw new SerpProviderError(`SerpApi: ${body.error}`, "error", { detail: String(body.error) });
+    if (!res.ok && !body.search_metadata) throw new SerpProviderError(`SerpApi error (${res.status}).`, "status", { status: res.status });
     return normalizeSerpApi(body);
   },
 };

@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_WEIGHTS, impactEffort, normalizeWeights, weightedScore } from "@/lib/backlog/score";
 import { audienceOf, examPeriod, suggestSlot } from "@/lib/backlog/slots";
 import type { PlatformTiming } from "@/lib/calendar/insights";
+import { testT } from "@/i18n/testing";
+
+const t = testT("backlog");
 
 describe("idea scoring", () => {
   it("hook strength only counts for brands that weight it (SOSProf 30/25/15/10/10/10)", () => {
@@ -33,7 +36,7 @@ const timing = (n: number, lift: number): PlatformTiming => ({
 
 describe("best time to post", () => {
   it("uses the brand's real timing first, with confidence from the sample size", () => {
-    const s = suggestSlot({ platform: "facebook", today: "2026-10-30", timing: [timing(20, 1.5)] })!;
+    const s = suggestSlot({ platform: "facebook", today: "2026-10-30", timing: [timing(20, 1.5)] }, t)!;
     expect(s.source).toBe("analytics");
     expect(s.time).toBe("18:00");
     expect(new Date(`${s.date}T00:00:00Z`).getUTCDay()).toBe(2);
@@ -41,24 +44,24 @@ describe("best time to post", () => {
     expect(s.reason).toMatch(/Correlation, not a guarantee/);
   });
   it("falls back to a labelled heuristic with low confidence when there is no data", () => {
-    const s = suggestSlot({ platform: "instagram", format: "Carousel", audience: "Lycéens, Bac", today: "2026-10-30", timing: [] })!;
+    const s = suggestSlot({ platform: "instagram", format: "Carousel", audience: "Lycéens, Bac", today: "2026-10-30", timing: [] }, t)!;
     expect(s.source).toBe("heuristic");
     expect(s.confidence).toBe("low");
     expect(s.reason).toMatch(/^Heuristic/);
     expect(s.alternatives).toHaveLength(2);
   });
   it("skips days that are already full", () => {
-    const first = suggestSlot({ platform: "facebook", today: "2026-10-30", timing: [timing(20, 1.5)] })!;
-    const next = suggestSlot({ platform: "facebook", today: "2026-10-30", timing: [timing(20, 1.5)], busy: { [first.date]: 2 } })!;
+    const first = suggestSlot({ platform: "facebook", today: "2026-10-30", timing: [timing(20, 1.5)] }, t)!;
+    const next = suggestSlot({ platform: "facebook", today: "2026-10-30", timing: [timing(20, 1.5)], busy: { [first.date]: 2 } }, t)!;
     expect(next.date).not.toBe(first.date);
   });
   it("targets parents at weekends or after dinner, and knows Tunisian exam periods", () => {
     expect(audienceOf("Parents d'élèves")).toBe("parents");
     expect(audienceOf("الأولياء")).toBe("parents");
     expect(audienceOf("Élèves de 4e année")).toBe("students");
-    expect(examPeriod("2026-12-01")).toMatch(/first-term/);
-    expect(examPeriod("2026-10-01")).toBeNull();
-    const s = suggestSlot({ platform: "facebook", audience: "parents", today: "2026-10-30", timing: [] })!;
+    expect(examPeriod("2026-12-01", t)).toMatch(/first-term/);
+    expect(examPeriod("2026-10-01", t)).toBeNull();
+    const s = suggestSlot({ platform: "facebook", audience: "parents", today: "2026-10-30", timing: [] }, t)!;
     expect(["10:00", "20:30"]).toContain(s.time);
   });
 });
@@ -71,7 +74,7 @@ const idea = (id: string, score: number | null, pillar: string | null, extra: Pa
 describe("calendar planner", () => {
   it("places N posts per week, best scores first, without writing anything", () => {
     const ideas = [idea("a", 90, "edu"), idea("b", 70, "promo"), idea("c", 85, "edu"), idea("d", 60, "eng")];
-    const { placements } = planCalendar(ideas, { from: "2026-11-02", to: "2026-11-08", postsPerWeek: 3, platforms: ["facebook"] }, { timing: [], busy: {}, today: "2026-10-30" });
+    const { placements } = planCalendar(ideas, { from: "2026-11-02", to: "2026-11-08", postsPerWeek: 3, platforms: ["facebook"] }, { timing: [], busy: {}, today: "2026-10-30" }, t);
     expect(placements).toHaveLength(3);
     expect(placements[0].ideaId).toBe("a");
     expect(new Set(placements.map((p) => p.date)).size).toBe(3);
@@ -79,15 +82,15 @@ describe("calendar planner", () => {
   });
   it("respects a pillar mix and avoids the same pillar twice in a row", () => {
     const ideas = [idea("e1", 95, "edu"), idea("e2", 94, "edu"), idea("e3", 93, "edu"), idea("p1", 60, "promo"), idea("p2", 59, "promo")];
-    const { placements } = planCalendar(ideas, { from: "2026-11-02", to: "2026-11-08", postsPerWeek: 4, platforms: ["facebook"], pillarMix: { edu: 50, promo: 50 } }, { timing: [], busy: {}, today: "2026-10-30" });
+    const { placements } = planCalendar(ideas, { from: "2026-11-02", to: "2026-11-08", postsPerWeek: 4, platforms: ["facebook"], pillarMix: { edu: 50, promo: 50 } }, { timing: [], busy: {}, today: "2026-10-30" }, t);
     const promos = placements.filter((p) => p.pillar_id === "promo").length;
     expect(promos).toBe(2);
-    const noMix = planCalendar(ideas, { from: "2026-11-02", to: "2026-11-08", postsPerWeek: 2, platforms: ["facebook"] }, { timing: [], busy: {}, today: "2026-10-30" }).placements;
+    const noMix = planCalendar(ideas, { from: "2026-11-02", to: "2026-11-08", postsPerWeek: 2, platforms: ["facebook"] }, { timing: [], busy: {}, today: "2026-10-30" }, t).placements;
     expect(noMix[0].pillar_id).not.toBe(noMix[1].pillar_id);
   });
   it("skips full days and explains when there aren't enough ideas", () => {
     const busy = { "2026-11-03": 2, "2026-11-01": 2 };
-    const { placements, notes } = planCalendar([idea("a", 80, null)], { from: "2026-11-01", to: "2026-11-07", postsPerWeek: 3, platforms: ["facebook"] }, { timing: [], busy, today: "2026-10-30" });
+    const { placements, notes } = planCalendar([idea("a", 80, null)], { from: "2026-11-01", to: "2026-11-07", postsPerWeek: 3, platforms: ["facebook"] }, { timing: [], busy, today: "2026-10-30" }, t);
     expect(placements.map((p) => p.date)).not.toContain("2026-11-03");
     expect(notes.join(" ")).toMatch(/only 1 matching Backlog idea/);
   });
@@ -99,12 +102,12 @@ describe("gap detection", () => {
     const posts = [
       post("p1", "2026-11-02", "10:00", { funnel_stage: "conversion" }), post("p2", "2026-11-02", "10:30", { funnel_stage: "conversion" }), post("p3", "2026-11-02", "18:00", { funnel_stage: "conversion" }),
     ];
-    const gaps = detectGaps(posts, { from: "2026-11-02", to: "2026-11-04", today: "2026-11-01" }, { pillarName: () => "Education", topIdea: { title: "Forum tutorial", score: 88, slot: { date: "2026-11-03", time: "18:30" } }, highUnscheduled: 2 });
+    const gaps = detectGaps(posts, { from: "2026-11-02", to: "2026-11-04", today: "2026-11-01" }, { pillarName: () => "Education", topIdea: { title: "Forum tutorial", score: 88, slot: { date: "2026-11-03", time: "18:30" } }, highUnscheduled: 2 }, t);
     const kinds = gaps.map((g) => g.kind);
     expect(kinds).toEqual(expect.arrayContaining(["empty", "overloaded", "promo_streak", "pillar_streak", "conflict", "unscheduled"]));
     expect(gaps.find((g) => g.kind === "empty")!.message).toMatch(/Forum tutorial/);
     // 3 posts on 3 different platforms the same day is a normal plan, not an overload
-    const spread = detectGaps([post("a", "2026-11-02", "10:00"), post("b", "2026-11-02", "12:00", { platform: "instagram" }), post("c", "2026-11-02", "18:00", { platform: "tiktok" })], { from: "2026-11-02", to: "2026-11-02", today: "2026-11-01" }, { pillarName: () => "" });
+    const spread = detectGaps([post("a", "2026-11-02", "10:00"), post("b", "2026-11-02", "12:00", { platform: "instagram" }), post("c", "2026-11-02", "18:00", { platform: "tiktok" })], { from: "2026-11-02", to: "2026-11-02", today: "2026-11-01" }, { pillarName: () => "" }, t);
     expect(spread.some((g) => g.kind === "overloaded")).toBe(false);
   });
 });
@@ -133,7 +136,7 @@ describe("two-sided audiences (SOSProf)", () => {
       idea("s1", 95, null, { segment: "students" }), idea("s2", 94, null, { segment: "parents" }), idea("s3", 93, null, { segment: "students" }),
       idea("t1", 60, null, { segment: "teachers" }), idea("t2", 59, null, { segment: "teachers" }),
     ];
-    const { placements } = planCalendar(ideas, { from: "2026-11-02", to: "2026-11-08", postsPerWeek: 4, platforms: ["facebook"], audienceMix: { students_parents: 50, teachers: 50 } }, { timing: [], busy: {}, today: "2026-10-30" });
+    const { placements } = planCalendar(ideas, { from: "2026-11-02", to: "2026-11-08", postsPerWeek: 4, platforms: ["facebook"], audienceMix: { students_parents: 50, teachers: 50 } }, { timing: [], busy: {}, today: "2026-10-30" }, t);
     const teachers = placements.filter((p) => p.ideaId.startsWith("t"));
     expect(teachers).toHaveLength(2);
     expect(teachers.every((p) => p.time === "21:00" || p.time === "10:30")).toBe(true);

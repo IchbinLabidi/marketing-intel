@@ -1,13 +1,22 @@
 // Best time to post (pure, tested). Real timing from the brand's synced posts comes first; without enough data a
 // clearly labelled heuristic is used. All times are local to the project's timezone (Africa/Tunis by default).
-import { WEEKDAY_LABELS, type PlatformTiming } from "@/lib/calendar/insights";
+import { windowLabel, type PlatformTiming } from "@/lib/calendar/insights";
+import { createFormatter } from "@/i18n/format";
+import type { TFor } from "@/i18n/messages";
 
 export type Confidence = "low" | "medium" | "high";
+export type ExamKey = "firstTerm" | "secondTerm" | "endOfYear";
+export type WhyKey = "linkedin" | "teachersEvening" | "teachersSunday" | "parentsWeekend" | "parentsEvening" | "studentsVideo" | "studentsSaturday" | "studentsEvening" | "studentsEarly";
+/** What the reason is made of, so it can be shown in the viewer's language (the stored `reason` is in the language it was computed in). */
+export type SlotExplain =
+  | { kind: "analytics"; platform: string; weekday: number; window: number; lift: number | null; n: number; posts: number; exam: ExamKey | null }
+  | { kind: "heuristic"; why: WhyKey; weekday: number; time: string; platform: string | null; posts: number | null; exam: ExamKey | null };
 export type SuggestedSlot = {
   date: string; time: string; platform: string;
   alternatives: { date: string; time: string }[];
   confidence: Confidence; reason: string; source: "analytics" | "heuristic";
   sample: number | null; computed_at: string;
+  explain?: SlotExplain;
 };
 
 export type SlotInput = {
@@ -30,6 +39,9 @@ const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) 
 const weekdayOf = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay();
 const hhmm = (h: number, m = 0) => `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 
+/** Weekday name (0 = Sunday) in the translator's language: "Tuesday" / "mardi". */
+export const weekdayName = (t: { locale: TFor<"backlog">["locale"] }, wd: number) => createFormatter(t.locale).day(addDays("2026-11-01", wd), { weekday: "long" });
+
 /** Parents are reached in the evening and at weekends; students on weekday evenings after school. */
 export function audienceOf(text: string | null | undefined, segment?: string | null): "parents" | "students" | "teachers" | "general" {
   if (segment === "teachers" || segment === "parents" || segment === "students") return segment;
@@ -41,34 +53,38 @@ export function audienceOf(text: string | null | undefined, segment?: string | n
 }
 
 /** Tunisian school calendar periods when revision content is most timely (approximate, every year). */
-export function examPeriod(date: string): string | null {
+export function examKey(date: string): ExamKey | null {
   const md = date.slice(5);
-  if (md >= "11-20" && md <= "12-15") return "first-term exams";
-  if (md >= "02-25" && md <= "03-15") return "second-term exams";
-  if (md >= "05-10" && md <= "06-20") return "end-of-year exams and the Bac";
+  if (md >= "11-20" && md <= "12-15") return "firstTerm";
+  if (md >= "02-25" && md <= "03-15") return "secondTerm";
+  if (md >= "05-10" && md <= "06-20") return "endOfYear";
   return null;
 }
+export function examPeriod(date: string, t: TFor<"backlog">): string | null {
+  const k = examKey(date);
+  return k ? t(`slot.exam.${k}`) : null;
+}
 
-type Pattern = { weekdays: number[]; time: string; why: string };
+type Pattern = { weekdays: number[]; time: string; why: WhyKey };
 /** Heuristic slots by platform and audience. Labelled as heuristic everywhere they are shown. */
 function heuristicPatterns(platform: string, audience: ReturnType<typeof audienceOf>, format: string): Pattern[] {
   const video = /reel|video|vidéo|tiktok|short/i.test(format) || platform === "tiktok";
-  if (platform === "linkedin") return [{ weekdays: [2, 3, 4], time: "12:30", why: "professional audiences are more available around lunch on weekdays" }];
+  if (platform === "linkedin") return [{ weekdays: [2, 3, 4], time: "12:30", why: "linkedin" }];
   if (audience === "teachers") return [
-    { weekdays: [1, 2, 3, 4], time: "21:00", why: "teachers are more available in the evening, after their lessons" },
-    { weekdays: [0], time: "10:30", why: "teachers often plan their week on Sunday mornings" },
+    { weekdays: [1, 2, 3, 4], time: "21:00", why: "teachersEvening" },
+    { weekdays: [0], time: "10:30", why: "teachersSunday" },
   ];
   if (audience === "parents") return [
-    { weekdays: [0, 6], time: "10:00", why: "parents are more available on weekend mornings" },
-    { weekdays: [1, 2, 3, 4], time: "20:30", why: "parents are more available after dinner on weekdays" },
+    { weekdays: [0, 6], time: "10:00", why: "parentsWeekend" },
+    { weekdays: [1, 2, 3, 4], time: "20:30", why: "parentsEvening" },
   ];
   if (video) return [
-    { weekdays: [2, 3, 4, 0], time: "20:00", why: "students scroll short videos in the evening after school" },
-    { weekdays: [6], time: "15:00", why: "students are free on Saturday afternoons" },
+    { weekdays: [2, 3, 4, 0], time: "20:00", why: "studentsVideo" },
+    { weekdays: [6], time: "15:00", why: "studentsSaturday" },
   ];
   return [
-    { weekdays: [2, 3, 0], time: "19:30", why: "students may be more available in the evening, after school and homework" },
-    { weekdays: [1, 4], time: "18:00", why: "students may be more available in the early evening" },
+    { weekdays: [2, 3, 0], time: "19:30", why: "studentsEvening" },
+    { weekdays: [1, 4], time: "18:00", why: "studentsEarly" },
   ];
 }
 
@@ -82,13 +98,25 @@ function nextDates(today: string, weekday: number, busy: Record<string, number>,
   return out;
 }
 
-export function suggestSlot(input: SlotInput): SuggestedSlot | null {
+/** The slot's reason in the translator's language (from its parts when stored, else the text saved with it). */
+export function describeSlot(slot: Pick<SuggestedSlot, "reason" | "explain">, t: TFor<"backlog">): string {
+  const x = slot.explain;
+  if (!x) return slot.reason;
+  const exam = x.exam ? t("slot.examSuffix", { period: t(`slot.exam.${x.exam}`) }) : "";
+  if (x.kind === "analytics") {
+    return t("slot.analytics", { platform: x.platform, slot: `${weekdayName(t, x.weekday)} ${windowLabel(x.window)}`, lift: x.lift, n: x.n, posts: x.posts }) + exam;
+  }
+  const missing = x.platform != null ? t("slot.notEnoughData", { platform: x.platform, posts: x.posts ?? 0 }) : t("slot.noHistory");
+  return t("slot.heuristic", { why: t(`slot.why.${x.why}`), weekday: weekdayName(t, x.weekday), time: x.time, missing }) + exam;
+}
+
+export function suggestSlot(input: SlotInput, t: TFor<"backlog">): SuggestedSlot | null {
   const platform = input.platform ?? input.targetPlatforms?.[0] ?? "facebook";
   const busy = input.busy ?? {};
   const horizon = input.horizonDays ?? 21;
   const maxPerDay = input.maxPerDay ?? 2;
   const computed_at = (input.now ?? new Date()).toISOString();
-  const exam = (d: string) => (examPeriod(d) && audienceOf(input.audience, input.segment) !== "teachers" && /educ|révis|revis|bac|exam|cours|astuce|méthod|tip/i.test(`${input.pillar ?? ""} ${input.format ?? ""}`) ? ` It falls during ${examPeriod(d)}, when revision content is timely.` : "");
+  const exam = (d: string) => (examKey(d) && audienceOf(input.audience, input.segment) !== "teachers" && /educ|révis|revis|bac|exam|cours|astuce|méthod|tip/i.test(`${input.pillar ?? ""} ${input.format ?? ""}`) ? examKey(d) : null);
 
   const timing = input.timing.find((t) => t.platform === platform);
   if (timing?.suggestions.length) {
@@ -99,9 +127,10 @@ export function suggestSlot(input: SlotInput): SuggestedSlot | null {
       const n = best.s.n;
       const confidence: Confidence = n >= 15 && (best.s.lift ?? 0) >= 1.2 ? "high" : n >= 8 ? "medium" : "low";
       const alternatives = candidates.filter((c) => c.date !== best.date).slice(0, 2).map(({ date, time }) => ({ date, time }));
+      const explain: SlotExplain = { kind: "analytics", platform: timing.label, weekday: best.s.weekday, window: best.s.window, lift: best.s.lift, n, posts: timing.posts, exam: exam(best.date) };
       return {
         date: best.date, time: best.time, platform, alternatives, confidence, source: "analytics", sample: timing.posts, computed_at,
-        reason: `On ${timing.label}, your posts on ${best.s.label} received ×${best.s.lift} the interactions of your median post (${n} posts in that slot, ${timing.posts} analysed). Correlation, not a guarantee.${exam(best.date)}`,
+        reason: describeSlot({ reason: "", explain }, t), explain,
       };
     }
   }
@@ -111,10 +140,10 @@ export function suggestSlot(input: SlotInput): SuggestedSlot | null {
     .sort((a, b) => a.date.localeCompare(b.date));
   if (!candidates.length) return null;
   const best = candidates[0];
-  const why = timing ? `not enough of your ${timing.label} posts per time slot yet (${timing.posts} analysed)` : "no synced post history for this platform yet";
+  const explain: SlotExplain = { kind: "heuristic", why: best.why, weekday: weekdayOf(best.date), time: best.time, platform: timing ? timing.label : null, posts: timing ? timing.posts : null, exam: exam(best.date) };
   return {
     date: best.date, time: best.time, platform, source: "heuristic", confidence: "low", sample: timing?.posts ?? null, computed_at,
     alternatives: candidates.slice(1, 3).map(({ date, time }) => ({ date, time })),
-    reason: `Heuristic: ${best.why} (${WEEKDAY_LABELS[weekdayOf(best.date)]} ${best.time}). Pending account analytics: ${why}.${exam(best.date)}`,
+    reason: describeSlot({ reason: "", explain }, t), explain,
   };
 }

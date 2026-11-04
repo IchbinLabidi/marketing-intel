@@ -10,14 +10,19 @@ import { BrandProfileForm } from "@/components/projects/brand-profile-form";
 import { ChannelsManager } from "@/components/projects/channels-manager";
 import { ProjectActions } from "@/components/projects/project-actions";
 import { ProjectSnapshot } from "@/components/analytics/project-snapshot";
-import { canAdmin, canEdit, LANGUAGE_LABELS } from "@/lib/domain/constants";
+import { canAdmin, canEdit } from "@/lib/domain/constants";
 import { getBrandProfile, getProjectContext, listChannels } from "@/server/services/projects";
 import { getStrategyBundle, strategyCompleteness } from "@/server/services/strategy";
+import { getT } from "@/i18n/server";
 
-export const metadata = { title: "Project overview" };
+export async function generateMetadata() {
+  const t = await getT("projects");
+  return { title: t("overview.metaTitle") };
+}
 
 export default async function ProjectOverviewPage({ params }: PageProps<"/p/[projectId]">) {
   const { projectId } = await params;
+  const [t, ts, td] = await Promise.all([getT("projects"), getT("strategy"), getT("domain")]);
   const { project, role } = await getProjectContext(projectId);
   const [brand, channels, bundle] = await Promise.all([getBrandProfile(projectId), listChannels(projectId), getStrategyBundle(projectId)]);
   const completeness = strategyCompleteness(bundle);
@@ -27,17 +32,17 @@ export default async function ProjectOverviewPage({ params }: PageProps<"/p/[pro
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Project overview"
+        eyebrow={t("overview.eyebrow")}
         title={
           <span className="flex flex-wrap items-center gap-2.5">
             {project.name}
-            {project.archived_at ? <Badge variant="warning">Archived</Badge> : null}
+            {project.archived_at ? <Badge variant="warning">{t("overview.archived")}</Badge> : null}
           </span>
         }
         description={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {project.industry ? <span>{project.industry}</span> : null}
-            <span>{LANGUAGE_LABELS[project.default_language]}</span>
+            <span>{td(`language.${project.default_language}`)}</span>
             {website ? (
               <a
                 href={project.website!}
@@ -54,39 +59,39 @@ export default async function ProjectOverviewPage({ params }: PageProps<"/p/[pro
         actions={<ProjectActions project={project} canEdit={canEdit(role)} canAdmin={canAdmin(role)} />}
       />
 
-      <Suspense fallback={<div className="h-40 animate-pulse rounded-xl bg-muted" aria-label="Loading the project summary" />}>
+      <Suspense fallback={<div className="h-40 animate-pulse rounded-xl bg-muted" aria-label={t("overview.loadingSummary")} />}>
         <ProjectSnapshot projectId={projectId} workspaceId={project.workspace_id} strategyPercent={completeness.percent} />
       </Suspense>
 
       <section
-        aria-label="Marketing strategy status"
+        aria-label={t("overview.strategyStatus")}
         className="grid gap-5 rounded-xl border bg-card p-5 shadow-xs md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
       >
         <div className="min-w-0 space-y-3">
           <div className="flex items-baseline justify-between gap-3 md:justify-start">
-            <p className="text-[14px] font-semibold">Marketing strategy</p>
+            <p className="text-[14px] font-semibold">{t("overview.strategyTitle")}</p>
             <p className="text-[13px] tabular-nums text-muted-foreground">
-              <span className="font-semibold text-foreground">{completeness.percent}%</span> complete
+              {t.rich("overview.percentComplete", { percent: completeness.percent, strong: (c) => <span className="font-semibold text-foreground">{c}</span> })}
             </p>
           </div>
-          <Progress value={completeness.percent} label="Strategy completeness" className="max-w-xl" />
+          <Progress value={completeness.percent} label={t("overview.completeness")} className="max-w-xl" />
           <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
             {completeness.checks.map((c) => (
               <li key={c.key} className="flex items-center gap-1.5">
                 {c.done ? (
-                  <CheckCircle2 className="size-3.5 text-success" aria-label="Done" />
+                  <CheckCircle2 className="size-3.5 text-success" aria-label={t("overview.done")} />
                 ) : (
-                  <CircleDashed className="size-3.5 text-subtle-foreground" aria-label="To do" />
+                  <CircleDashed className="size-3.5 text-subtle-foreground" aria-label={t("overview.toDo")} />
                 )}
-                <span className={c.done ? "" : "text-muted-foreground"}>{c.key}</span>
+                <span className={c.done ? "" : "text-muted-foreground"}>{ts(`completeness.${c.key}`)}</span>
               </li>
             ))}
           </ul>
-          <p className="text-xs text-muted-foreground">The strategy is the reference for everything else: content ideas, the calendar, and the targets Analytics checks.</p>
+          <p className="text-xs text-muted-foreground">{t("overview.strategyHint")}</p>
         </div>
         <Button asChild variant={completeness.percent < 100 ? "default" : "outline"} className="md:self-center">
           <Link href={`/p/${projectId}/strategy`}>
-            {completeness.percent < 100 ? "Complete strategy" : "Open strategy"} <ArrowRight />
+            {completeness.percent < 100 ? t("overview.completeStrategy") : t("overview.openStrategy")} <ArrowRight />
           </Link>
         </Button>
       </section>
@@ -94,16 +99,16 @@ export default async function ProjectOverviewPage({ params }: PageProps<"/p/[pro
       <div className="divide-y">
         <FormSection
           id="brand"
-          title="Brand identity"
-          description="Who the brand is. Used as context for every AI recommendation and piece of content."
+          title={t("overview.brandTitle")}
+          description={t("overview.brandDescription")}
         >
           <BrandProfileForm projectId={projectId} brand={brand} readOnly={readOnly} />
         </FormSection>
 
         <FormSection
           id="channels"
-          title="Social channels"
-          description="Platforms this brand publishes on, with the target publishing rhythm for each."
+          title={t("overview.channelsTitle")}
+          description={t("overview.channelsDescription")}
         >
           <ChannelsManager projectId={projectId} channels={channels} readOnly={readOnly} />
         </FormSection>

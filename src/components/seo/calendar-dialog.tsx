@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
+import { useT } from "@/i18n/client";
 
 type Result = { ok: boolean; error?: string; message?: string; data?: { contentItemId: string } };
 type Option = { id: string; name: string };
@@ -21,6 +22,8 @@ export function AddToCalendarDialog({ run, projectId, campaigns, pillars, format
   projectId: string; campaigns: Option[]; pillars: Option[]; formats: readonly string[]; defaultFormat: string;
 }) {
   const router = useRouter();
+  const t = useT("seo");
+  const tc = useT("common");
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -33,35 +36,35 @@ export function AddToCalendarDialog({ run, projectId, campaigns, pillars, format
     });
     setBusy(false);
     if (!r.ok) return toast.error(r.error);
-    toast.success(r.message ?? "Added");
+    toast.success(r.message ?? t("calendar.added"));
     setOpen(false);
     if (r.data) router.push(`/p/${projectId}/production?item=${r.data.contentItemId}`); else router.refresh();
   };
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm"><CalendarPlus /> Add to Editorial Calendar</Button></DialogTrigger>
+      <DialogTrigger asChild><Button size="sm"><CalendarPlus /> {t("calendar.title")}</Button></DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add to Editorial Calendar</DialogTitle>
-          <DialogDescription>Creates a planned item with this brief (and the draft, if written). Nothing is published.</DialogDescription>
+          <DialogTitle>{t("calendar.title")}</DialogTitle>
+          <DialogDescription>{t("calendar.description")}</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
-          <div className="grid gap-1.5"><Label htmlFor="cal-date">Date</Label><Input id="cal-date" name="date" type="date" /></div>
-          <div className="grid gap-1.5"><Label htmlFor="cal-platform">Channel</Label>
-            <NativeSelect id="cal-platform" name="platform" defaultValue="blog">{WEBSITE_PLATFORMS.map((p) => <option key={p} value={p}>{p === "blog" ? "Website / blog" : PLATFORM_LABELS[p]}</option>)}</NativeSelect>
+          <div className="grid gap-1.5"><Label htmlFor="cal-date">{t("calendar.date")}</Label><Input id="cal-date" name="date" type="date" /></div>
+          <div className="grid gap-1.5"><Label htmlFor="cal-platform">{t("calendar.channel")}</Label>
+            <NativeSelect id="cal-platform" name="platform" defaultValue="blog">{WEBSITE_PLATFORMS.map((p) => <option key={p} value={p}>{p === "blog" ? t("calendar.website") : PLATFORM_LABELS[p]}</option>)}</NativeSelect>
           </div>
-          <div className="grid gap-1.5"><Label htmlFor="cal-format">Format</Label>
+          <div className="grid gap-1.5"><Label htmlFor="cal-format">{t("calendar.format")}</Label>
             <NativeSelect id="cal-format" name="format" defaultValue={defaultFormat}>{formats.map((x) => <option key={x}>{x}</option>)}</NativeSelect>
           </div>
-          <div className="grid gap-1.5"><Label htmlFor="cal-pillar">Content pillar</Label>
-            <NativeSelect id="cal-pillar" name="pillar_id" defaultValue=""><option value="">None</option>{pillars.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</NativeSelect>
+          <div className="grid gap-1.5"><Label htmlFor="cal-pillar">{t("calendar.pillar")}</Label>
+            <NativeSelect id="cal-pillar" name="pillar_id" defaultValue=""><option value="">{tc("states.none")}</option>{pillars.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</NativeSelect>
           </div>
-          <div className="grid gap-1.5 sm:col-span-2"><Label htmlFor="cal-campaign">Campaign</Label>
-            <NativeSelect id="cal-campaign" name="campaign_id" defaultValue=""><option value="">None</option>{campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</NativeSelect>
+          <div className="grid gap-1.5 sm:col-span-2"><Label htmlFor="cal-campaign">{t("calendar.campaign")}</Label>
+            <NativeSelect id="cal-campaign" name="campaign_id" defaultValue=""><option value="">{tc("states.none")}</option>{campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</NativeSelect>
           </div>
           <DialogFooter className="sm:col-span-2">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : null} Add</Button>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>{tc("actions.cancel")}</Button>
+            <Button type="submit" disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : null} {tc("actions.add")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

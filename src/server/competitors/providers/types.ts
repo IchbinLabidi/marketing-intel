@@ -48,7 +48,9 @@ export type ProviderCredentials = {
   xBearer: string | null;
 };
 
-export type Availability = { ok: true } | { ok: false; status: "needs_config" | "unsupported"; reason: string };
+/** `reasonKey`: the reason's key under `providers.reason` of the "competitors" messages, for the screens (`reason` stays English for the stored status). */
+export type ProviderReasonKey = "metaConnect" | "metaNoInstagram" | "metaConnectShort" | "metaPublicContent" | "xToken" | "youtubeKey" | "tiktok" | "linkedin" | "threads" | "pinterest" | "snapchat" | "none";
+export type Availability = { ok: true } | { ok: false; status: "needs_config" | "unsupported"; reason: string; reasonKey?: ProviderReasonKey };
 
 export interface DataProvider {
   id: string;

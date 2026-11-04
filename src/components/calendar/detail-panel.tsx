@@ -12,9 +12,8 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
-import { STAGE_LABELS } from "@/lib/production/model";
-import { PRIORITIES, PRIORITY_LABELS, TASK_TYPE_LABELS } from "@/lib/permissions";
+import { PRIORITIES } from "@/lib/permissions";
+import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 import { updatePlanningAction } from "@/server/actions/calendar";
 import { commentProductionAction, transitionProductionAction } from "@/server/actions/production";
@@ -24,7 +23,7 @@ import { PersonChip, TaskStatusBadge } from "@/components/team/task-badges";
 import { PlatformIcon } from "./platform-icon";
 import { PublishDialog } from "./publish-dialog";
 import { StatePill, stateOf } from "./post-card";
-import { contentType, isOverdue, type Person } from "./planning";
+import { contentType, domainLabel, isOverdue, type Person } from "./planning";
 
 /**
  * Side panel for one calendar item: everything needed to plan it without leaving the calendar.
@@ -49,6 +48,9 @@ export function DetailPanel({
   onDuplicate: (post: ContentItem) => void;
   onEdit: (post: ContentItem) => void;
 }) {
+  const t = useT("calendar");
+  const tc = useT("common");
+  const td = useT("domain");
   const [busy, setBusy] = React.useState<string | null>(null);
   const [publishing, setPublishing] = React.useState(false);
   const [date, setDate] = React.useState(post.scheduled_date ?? "");
@@ -60,7 +62,7 @@ export function DetailPanel({
   const locked = readOnly || state === "published";
   const overdue = isOverdue(post, today);
   const lead = post.assignee_id ? people.get(post.assignee_id) : null;
-  const itemTasks = tasks.filter((t) => t.content_item_id === post.id);
+  const itemTasks = tasks.filter((x) => x.content_item_id === post.id);
   const brief = `/p/${projectId}/production?item=${post.id}`;
 
   React.useEffect(() => {
@@ -85,7 +87,7 @@ export function DetailPanel({
     setBusy(null);
     if (!r.ok) return toast.error(r.error);
     if (r.data) onChanged(r.data as unknown as ContentItem);
-    toast.success("Converted to a brief");
+    toast.success(t("detail.converted"));
   };
 
   const sendComment = async () => {
@@ -94,7 +96,7 @@ export function DetailPanel({
     setBusy(null);
     if (!r.ok) return toast.error(r.error);
     setComment("");
-    toast.success("Comment added");
+    toast.success(t("detail.commentAdded"));
   };
 
   return (
@@ -104,14 +106,14 @@ export function DetailPanel({
         ref={panelRef}
         tabIndex={-1}
         role="dialog"
-        aria-label={`Details: ${post.title}`}
+        aria-label={t("detail.aria", { title: post.title })}
         className="scrollbar-thin fixed inset-y-0 right-0 z-50 flex w-full max-w-[400px] flex-col border-l bg-card shadow-lg outline-none animate-fade-in"
       >
         <header className="flex items-start gap-3 border-b px-5 py-4">
           <div className="min-w-0 flex-1 space-y-1.5">
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <PlatformIcon platform={post.platform} />
-              {PLATFORM_LABELS[post.platform as Platform] ?? "No platform"} · {contentType(post.format)}
+              {post.platform && td.has(`platform.${post.platform}`) ? domainLabel(td, "platform", post.platform) : t("detail.noPlatform")} · {contentType(post.format, t)}
             </p>
             <h2 className="text-[16px] font-semibold leading-snug tracking-[-0.01em]" dir="auto">{post.title}</h2>
             <div className="flex flex-wrap items-center gap-2">
@@ -121,39 +123,39 @@ export function DetailPanel({
                 if (!r.ok) return void toast.error(r.error);
                 onChanged({ ...post, audience: a });
               }} />
-              {post.production_stage ? <Badge variant="outline">{STAGE_LABELS[post.production_stage]}</Badge> : null}
-              {overdue ? <Badge variant="destructive" dot>Overdue</Badge> : null}
+              {post.production_stage ? <Badge variant="outline">{t(`stage.${post.production_stage}`)}</Badge> : null}
+              {overdue ? <Badge variant="destructive" dot>{t("detail.overdue")}</Badge> : null}
             </div>
           </div>
-          <Button variant="ghost" size="icon-sm" aria-label="Close details" onClick={onClose}><X /></Button>
+          <Button variant="ghost" size="icon-sm" aria-label={t("detail.close")} onClick={onClose}><X /></Button>
         </header>
 
         <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
           {/* Two different dates, edited separately */}
           <section className="grid gap-3">
             <div className="rounded-lg border p-3">
-              <p className="flex items-center gap-1.5 text-xs font-medium"><CalendarClock className="size-3.5 text-primary" /> Publication</p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">When the post goes live. Moving it keeps assignments, comments, files and history.</p>
+              <p className="flex items-center gap-1.5 text-xs font-medium"><CalendarClock className="size-3.5 text-primary" /> {t("detail.publication")}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{t("detail.publicationHint")}</p>
               <div className="mt-2 grid grid-cols-[1fr_6.5rem_auto] gap-2">
-                <Input type="date" aria-label="Publication date" value={date} disabled={locked} onChange={(e) => setDate(e.target.value)} className="h-8 text-[13px]" />
-                <Input type="time" aria-label="Publication time" value={slot} disabled={locked} onChange={(e) => setSlot(e.target.value)} className="h-8 text-[13px]" />
-                <Button size="sm" variant="outline" disabled={locked || !date || (date === post.scheduled_date && (slot || null) === time)} onClick={() => onMove(post, date, slot || null)}>Move</Button>
+                <Input type="date" aria-label={t("detail.publicationDate")} value={date} disabled={locked} onChange={(e) => setDate(e.target.value)} className="h-8 text-[13px]" />
+                <Input type="time" aria-label={t("detail.publicationTime")} value={slot} disabled={locked} onChange={(e) => setSlot(e.target.value)} className="h-8 text-[13px]" />
+                <Button size="sm" variant="outline" disabled={locked || !date || (date === post.scheduled_date && (slot || null) === time)} onClick={() => onMove(post, date, slot || null)}>{t("detail.move")}</Button>
               </div>
             </div>
             <div className={cn("rounded-lg border p-3", overdue && "border-destructive/40 bg-destructive/5")}>
-              <p className="flex items-center gap-1.5 text-xs font-medium"><Flag className={cn("size-3.5", overdue ? "text-destructive" : "text-warning")} /> Internal deadline</p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">When the work must be ready for review. Not shown to your audience.</p>
+              <p className="flex items-center gap-1.5 text-xs font-medium"><Flag className={cn("size-3.5", overdue ? "text-destructive" : "text-warning")} /> {t("detail.deadline")}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{t("detail.deadlineHint")}</p>
               <div className="mt-2 flex gap-2">
                 <Input
                   type="date"
-                  aria-label="Internal deadline"
+                  aria-label={t("detail.deadline")}
                   defaultValue={post.due_date ?? ""}
                   disabled={locked || busy === "deadline"}
                   // Saves as soon as a complete date is picked (date inputs only report full dates).
                   onChange={(e) => { const v = e.target.value; if (/^\d{4}-\d{2}-\d{2}$/.test(v) && v !== post.due_date) void plan({ due_date: v }, "deadline"); }}
                   className="h-8 text-[13px]"
                 />
-                {post.due_date && !locked ? <Button size="sm" variant="ghost" onClick={() => plan({ due_date: null }, "deadline")}>Clear</Button> : null}
+                {post.due_date && !locked ? <Button size="sm" variant="ghost" onClick={() => plan({ due_date: null }, "deadline")}>{tc("actions.clear")}</Button> : null}
               </div>
             </div>
           </section>
@@ -161,74 +163,74 @@ export function DetailPanel({
           {state === "published" && post.historical_source_id ? <PublishedPerformanceBlock projectId={projectId} itemId={post.id} /> : null}
 
           <section className="space-y-3">
-            <h3 className="eyebrow">Owner and priority</h3>
+            <h3 className="eyebrow">{t("detail.ownerPriority")}</h3>
             <div className="grid grid-cols-2 gap-2">
               <label className="grid gap-1 text-xs font-medium">
-                Lead
+                {t("detail.lead")}
                 <NativeSelect className="h-8 text-[13px]" value={post.assignee_id ?? ""} disabled={locked || !canAssign || busy === "assignee"} onChange={(e) => plan({ assignee_id: e.target.value || null }, "assignee")}>
-                  <option value="">Unassigned</option>
-                  {[...people.values()].filter((p) => p.canEdit).map((p) => <option key={p.user_id} value={p.user_id}>{p.name || "Unnamed"}{p.roleName ? ` — ${p.roleName}` : ""}</option>)}
+                  <option value="">{t("people.unassigned")}</option>
+                  {[...people.values()].filter((p) => p.canEdit).map((p) => <option key={p.user_id} value={p.user_id}>{p.name || t("people.unnamed")}{p.roleName ? ` — ${p.roleName}` : ""}</option>)}
                 </NativeSelect>
               </label>
               <label className="grid gap-1 text-xs font-medium">
-                Priority
+                {t("detail.priority")}
                 <NativeSelect className="h-8 text-[13px]" value={post.priority ?? "medium"} disabled={locked || !canAssign || busy === "priority"} onChange={(e) => plan({ priority: e.target.value }, "priority")}>
-                  {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
+                  {PRIORITIES.map((p) => <option key={p} value={p}>{td(`priority.${p}`)}</option>)}
                 </NativeSelect>
               </label>
             </div>
-            {lead ? <p className="text-xs text-muted-foreground">{lead.user_id === userId ? "You lead this item." : `Led by ${lead.name}.`}</p> : null}
+            {lead ? <p className="text-xs text-muted-foreground">{lead.user_id === userId ? t("detail.youLead") : t("detail.ledBy", { name: lead.name })}</p> : null}
           </section>
 
           <section className="space-y-2">
-            <h3 className="eyebrow">Collaborators</h3>
+            <h3 className="eyebrow">{t("detail.collaborators")}</h3>
             {itemTasks.length ? (
               <ul className="space-y-2">
-                {itemTasks.map((t) => {
-                  const p = people.get(t.user_id);
+                {itemTasks.map((task) => {
+                  const p = people.get(task.user_id);
                   return (
-                    <li key={t.id} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
-                      <PersonChip name={p?.name ?? "Former member"} role={`${TASK_TYPE_LABELS[t.task_type]}${t.due_date ? ` · due ${t.due_date}` : ""}`} />
-                      <TaskStatusBadge status={t.status} />
+                    <li key={task.id} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
+                      <PersonChip name={p?.name ?? t("people.formerMember")} role={task.due_date ? t("detail.taskDue", { type: domainLabel(td, "taskType", task.task_type), date: task.due_date }) : domainLabel(td, "taskType", task.task_type)} />
+                      <TaskStatusBadge status={task.status} />
                     </li>
                   );
                 })}
               </ul>
             ) : (
-              <p className="text-[13px] text-muted-foreground">No collaborators yet.</p>
+              <p className="text-[13px] text-muted-foreground">{t("detail.noCollaborators")}</p>
             )}
             <Button asChild size="sm" variant="outline" className="w-full">
-              <Link href={`${brief}`}>{canAssign ? "Assign copy, design, video or SEO" : "Open tasks in the studio"}</Link>
+              <Link href={`${brief}`}>{canAssign ? t("detail.assign") : t("detail.openTasks")}</Link>
             </Button>
-            {itemTasks.some((t) => t.status === "in_review") ? (
+            {itemTasks.some((x) => x.status === "in_review") ? (
               <p className="text-xs font-medium text-primary">
-                Awaiting approval: {itemTasks.filter((t) => t.status === "in_review").map((t) => TASK_TYPE_LABELS[t.task_type]).join(", ")}
+                {t("detail.awaitingApproval", { list: itemTasks.filter((x) => x.status === "in_review").map((x) => domainLabel(td, "taskType", x.task_type)).join(", ") })}
               </p>
             ) : null}
           </section>
 
           {post.creative_brief || post.hook ? (
             <section className="space-y-1.5">
-              <h3 className="eyebrow">Brief</h3>
+              <h3 className="eyebrow">{t("detail.brief")}</h3>
               <p className="line-clamp-6 whitespace-pre-wrap text-[13px] leading-relaxed text-muted-foreground" dir="auto">{post.creative_brief || post.hook}</p>
             </section>
           ) : null}
 
           {!readOnly ? (
             <section className="space-y-2">
-              <h3 className="eyebrow">Comment</h3>
-              <Textarea rows={2} placeholder="Leave a note for the team…" value={comment} onChange={(e) => setComment(e.target.value)} />
-              <Button size="sm" variant="outline" disabled={!comment.trim()} loading={busy === "comment"} onClick={sendComment}><MessageSquare /> Comment</Button>
+              <h3 className="eyebrow">{t("detail.comment")}</h3>
+              <Textarea rows={2} placeholder={t("detail.commentPlaceholder")} value={comment} onChange={(e) => setComment(e.target.value)} />
+              <Button size="sm" variant="outline" disabled={!comment.trim()} loading={busy === "comment"} onClick={sendComment}><MessageSquare /> {t("detail.comment")}</Button>
             </section>
           ) : null}
         </div>
 
         <footer className="grid grid-cols-2 gap-2 border-t bg-muted/30 px-5 py-3">
-          <Button asChild size="sm"><Link href={brief}><ExternalLink /> Open full brief</Link></Button>
-          {!locked ? <Button size="sm" variant="outline" onClick={() => onEdit(post)}><Pencil /> Quick edit</Button> : <span />}
-          {!locked && post.production_stage === "idea" ? <Button size="sm" variant="outline" loading={busy === "brief"} onClick={toBrief}><FileText /> Make it a brief</Button> : null}
-          {!locked ? <Button size="sm" variant="ghost" onClick={() => onDuplicate(post)}><Copy /> Duplicate</Button> : null}
-          {!locked && (post.status === "approved" || post.status === "scheduled") && ["facebook", "instagram"].includes(post.platform ?? "") ? <Button size="sm" onClick={() => setPublishing(true)}><Send /> Publish…</Button> : null}
+          <Button asChild size="sm"><Link href={brief}><ExternalLink /> {t("detail.openBrief")}</Link></Button>
+          {!locked ? <Button size="sm" variant="outline" onClick={() => onEdit(post)}><Pencil /> {t("detail.quickEdit")}</Button> : <span />}
+          {!locked && post.production_stage === "idea" ? <Button size="sm" variant="outline" loading={busy === "brief"} onClick={toBrief}><FileText /> {t("detail.makeBrief")}</Button> : null}
+          {!locked ? <Button size="sm" variant="ghost" onClick={() => onDuplicate(post)}><Copy /> {tc("actions.duplicate")}</Button> : null}
+          {!locked && (post.status === "approved" || post.status === "scheduled") && ["facebook", "instagram"].includes(post.platform ?? "") ? <Button size="sm" onClick={() => setPublishing(true)}><Send /> {t("detail.publish")}</Button> : null}
         </footer>
       </aside>
       {publishing ? <PublishDialog projectId={projectId} post={post} tz={tz} onClose={() => setPublishing(false)} onPublished={() => onChanged(post)} /> : null}

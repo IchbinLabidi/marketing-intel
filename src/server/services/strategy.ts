@@ -48,21 +48,21 @@ export async function deleteStrategyEntity(entity: StrategyEntity, projectId: st
   if (error) throw error;
 }
 
-/** Share of strategy sections that have content. Used for dashboards and AI readiness. */
+/** Share of strategy sections that have content. Used for dashboards and AI readiness. `key` is a `strategy.completeness.*` message key. */
 export function strategyCompleteness(bundle: StrategyBundle) {
   const s = bundle.strategy;
   const checks = [
-    { key: "Business objectives", done: Boolean(s?.business_objectives) },
-    { key: "Marketing objectives", done: Boolean(s?.marketing_objectives) },
-    { key: "Positioning", done: Boolean(s?.brand_positioning) },
-    { key: "Value proposition", done: Boolean(s?.value_proposition) },
-    { key: "Brand voice", done: Boolean(s && Object.values(s.brand_voice ?? {}).some(Boolean)) },
-    { key: "Customer journey", done: Boolean(s && (s.customer_journey ?? []).length > 0) },
-    { key: "Funnel", done: Boolean(s && Object.values(s.funnel ?? {}).some(Boolean)) },
-    { key: "Personas", done: bundle.personas.length > 0 },
-    { key: "Content pillars", done: bundle.pillars.length > 0 },
-    { key: "Campaigns", done: bundle.campaigns.length > 0 },
-    { key: "KPIs", done: bundle.kpis.length > 0 },
+    { key: "businessObjectives" as const, done: Boolean(s?.business_objectives) },
+    { key: "marketingObjectives" as const, done: Boolean(s?.marketing_objectives) },
+    { key: "positioning" as const, done: Boolean(s?.brand_positioning) },
+    { key: "valueProposition" as const, done: Boolean(s?.value_proposition) },
+    { key: "brandVoice" as const, done: Boolean(s && Object.values(s.brand_voice ?? {}).some(Boolean)) },
+    { key: "customerJourney" as const, done: Boolean(s && (s.customer_journey ?? []).length > 0) },
+    { key: "funnel" as const, done: Boolean(s && Object.values(s.funnel ?? {}).some(Boolean)) },
+    { key: "personas" as const, done: bundle.personas.length > 0 },
+    { key: "contentPillars" as const, done: bundle.pillars.length > 0 },
+    { key: "campaigns" as const, done: bundle.campaigns.length > 0 },
+    { key: "kpis" as const, done: bundle.kpis.length > 0 },
   ];
   const done = checks.filter((c) => c.done).length;
   return { percent: Math.round((done / checks.length) * 100), checks };

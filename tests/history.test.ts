@@ -9,6 +9,7 @@ import { computeHistoricalStats, type AnalysisItem } from "@/lib/history/analysi
 import { comparePeriods, itemsInPeriod, parsePeriod } from "@/lib/history/compare";
 import { schoolYearOf, seasonWindows } from "@/lib/history/seasons";
 import { stripRefs, wellFormed } from "@/lib/history/text";
+import { testT } from "@/i18n/testing";
 import { extractCsv, extractSpreadsheet, fileKind, matrixToRows } from "@/server/imports/extract";
 import { calendarDraftSchema, pdfExtractionSchema, recommendationsSchema, statsDigest } from "@/server/ai/history";
 
@@ -84,7 +85,7 @@ describe("row validation", () => {
       row(7, { Date: "04/09/2024", Réseau: "Facebook" }),
       row(8, { Date: "05/09/2024", Titre: "Exclu", Portée: "12%" }),
     ];
-    const r = buildRows(raw, mapping, refs, { excluded: [8] });
+    const r = buildRows(raw, mapping, refs, { excluded: [8] }, testT("history"));
     expect(r.emptyRows).toBe(1);
     expect(r.excludedRows).toBe(1);
     expect(r.errors.map((e) => e.row).sort()).toEqual([3, 7]);
@@ -210,7 +211,7 @@ describe("analysis", () => {
     const items = [item("a1", "2023-10-01", { campaign: "Rentrée" }), item("a2", "2024-02-01"), item("b1", "2024-10-01", { campaign: "Rentrée", format: "Carousel" }), item("b2", "2024-11-01", { campaign: "Bac blanc" }), item("b3", "2025-03-01")];
     const a = itemsInPeriod(items, parsePeriod("school_year:2023-2024")!);
     const b = itemsInPeriod(items, parsePeriod("school_year:2024-2025")!);
-    const c = comparePeriods(a, b, () => undefined);
+    const c = comparePeriods(a, b, () => undefined, testT("history"), testT("domain"));
     expect(c.volume).toMatchObject({ a: 2, b: 3, delta: 1, deltaPct: 50 });
     expect(c.campaigns).toEqual({ onlyA: [], onlyB: ["Bac blanc"], both: ["Rentrée"] });
     expect(parsePeriod("school_year:bad")).toBeNull();

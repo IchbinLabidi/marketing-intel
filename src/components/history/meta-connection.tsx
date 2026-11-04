@@ -13,8 +13,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { disconnectMetaAction, listMetaPagesAction, selectMetaPageAction, setMetaAutoSyncAction, syncMetaAction } from "@/server/actions/meta";
 import type { MetaConnection, MetaSyncRun } from "@/types/domain";
 import { cn } from "@/lib/utils";
-import { formatDateTime, formatDate } from "@/lib/format";
 import { confirm } from "@/components/ui/confirm";
+import { useFormatter, useT } from "@/i18n/client";
+import type { TFor } from "@/i18n/messages";
+import type { Formatter } from "@/i18n/format";
 
 type Props = {
   projectId: string;
@@ -31,20 +33,16 @@ type Props = {
   pagesError: string | null;
 };
 
-const ERRORS: Record<string, string> = {
-  not_configured: "Meta is not configured on this server yet.",
-  denied: "The Facebook authorization was cancelled.",
-  state: "The Facebook login expired or didn't match this browser. Try again.",
-  oauth: "Facebook returned an error during login. Try again.",
-  exchange: "Facebook login worked but the token exchange failed.",
-  read_only: "Your role in this workspace is read-only.",
-};
-
-const fmt = (d: string | null | undefined) => (d ? formatDateTime(d) : "never");
+const ERRORS = ["not_configured", "denied", "state", "oauth", "exchange", "read_only"] as const;
+type ErrorCode = (typeof ERRORS)[number];
 
 export function MetaConnectionPanel(props: Props) {
   const { projectId, configured, missing, connection: c, runs, counts, readOnly, flash, backgroundSync, initialPages, pagesError } = props;
   const router = useRouter();
+  const t = useT("history");
+  const tc = useT("common");
+  const formatter = useFormatter();
+  const fmt = (d: string | null | undefined) => (d ? formatter.dateTime(d) : t("meta.never"));
   const [pending, startTransition] = useTransition();
   const [pages, setPages] = React.useState(initialPages);
   const [loadingPages, setLoadingPages] = React.useState(false);
@@ -61,9 +59,9 @@ export function MetaConnectionPanel(props: Props) {
   }, [running, router]);
 
   React.useEffect(() => {
-    if (flash.error) toast.error(`${ERRORS[flash.error] ?? "Meta connection failed."}${flash.message ? ` ${flash.message}` : ""}`);
-    else if (flash.meta === "reconnected") toast.success("Meta reconnected");
-  }, [flash.error, flash.meta, flash.message]);
+    if (flash.error) toast.error(`${(ERRORS as readonly string[]).includes(flash.error) ? t(`meta.errors.${flash.error as ErrorCode}`) : t("meta.errors.generic")}${flash.message ? ` ${flash.message}` : ""}`);
+    else if (flash.meta === "reconnected") toast.success(t("meta.reconnected"));
+  }, [flash.error, flash.meta, flash.message, t]);
 
   const loadPages = React.useCallback(async () => {
     setLoadingPages(true);
@@ -92,16 +90,16 @@ export function MetaConnectionPanel(props: Props) {
         <div className="space-y-1">
           <CardTitle className="flex items-center gap-2"><Plug className="size-4" /> Meta · Facebook & Instagram</CardTitle>
           <CardDescription>
-            Posts and their available metrics are retrieved automatically with the official Meta Graph API. Only metrics Meta returns for your account are stored.
+            {t("meta.description")}
           </CardDescription>
         </div>
         {connected && !readOnly ? (
           <div className="flex flex-wrap gap-2">
             <Button size="sm" disabled={pending || running || c.status !== "active"} onClick={() => run(() => syncMetaAction(projectId, "incremental"))}>
-              {running ? <Loader2 className="animate-spin" /> : <RefreshCcw />} {running ? "Syncing…" : "Sync now"}
+              {running ? <Loader2 className="animate-spin" /> : <RefreshCcw />} {running ? t("meta.syncing") : t("meta.syncNow")}
             </Button>
-            <Button size="sm" variant="outline" disabled={pending || running || c.status !== "active"} onClick={() => run(() => syncMetaAction(projectId, "refresh"))} title="Re-reads metrics of all synced posts and re-checks which metrics Meta supports">
-              Refresh all metrics
+            <Button size="sm" variant="outline" disabled={pending || running || c.status !== "active"} onClick={() => run(() => syncMetaAction(projectId, "refresh"))} title={t("meta.refreshAllHint")}>
+              {t("meta.refreshAll")}
             </Button>
           </div>
         ) : null}
@@ -109,9 +107,12 @@ export function MetaConnectionPanel(props: Props) {
       <CardContent className="space-y-4">
         {!configured ? (
           <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-[13px]">
-            <p className="flex items-center gap-2 font-medium"><AlertTriangle className="size-4 text-warning" /> Setup required before connecting</p>
+            <p className="flex items-center gap-2 font-medium"><AlertTriangle className="size-4 text-warning" /> {t("meta.setupRequired")}</p>
             <p className="mt-1 text-xs">
-              Add {missing.map((m) => <code key={m} className="mx-0.5 rounded bg-background px-1">{m}</code>)} to the server environment, then restart. The step-by-step Meta app setup is in <code className="rounded bg-background px-1">docs/META_SETUP.md</code>.
+              {t.rich("meta.setupHint", {
+                vars: () => missing.map((m) => <code key={m} className="mx-0.5 rounded bg-background px-1">{m}</code>),
+                doc: (d) => <code className="rounded bg-background px-1">{d}</code>,
+              })}
             </p>
           </div>
         ) : null}
@@ -119,11 +120,11 @@ export function MetaConnectionPanel(props: Props) {
         {(!c || c.status === "disconnected") && configured ? (
           <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-[13px] text-muted-foreground">
-              Connect the Facebook account that manages your Page. You will choose the Page; its linked Instagram Business or Creator account is detected automatically. Access is read-only.
+              {t("meta.connectHint")}
             </p>
             {!readOnly ? (
               <Button asChild>
-                <a href={connectHref}><Facebook /> Connect Meta</a>
+                <a href={connectHref}><Facebook /> {t("meta.connect")}</a>
               </Button>
             ) : null}
           </div>
@@ -131,10 +132,10 @@ export function MetaConnectionPanel(props: Props) {
 
         {c?.status === "pending_page" ? (
           <div className="space-y-3">
-            <p className="text-[13px]">Connected as <span className="font-medium">{c.fb_user_name}</span>. Choose the Facebook Page for this project:</p>
+            <p className="text-[13px]">{t.rich("meta.choosePage", { name: c.fb_user_name ?? "", b: (x) => <span className="font-medium">{x}</span> })}</p>
             {pagesError ? <p className="text-xs text-destructive">{pagesError}</p> : null}
             {pages && !pages.length ? (
-              <p className="text-xs text-warning">No Page was shared with this app. Reconnect and select at least one Page in the Facebook dialog, or check that you have a role on the Page.</p>
+              <p className="text-xs text-warning">{t("meta.noPages")}</p>
             ) : null}
             <ul className="grid gap-2 sm:grid-cols-2">
               {pages?.map((p) => (
@@ -148,15 +149,15 @@ export function MetaConnectionPanel(props: Props) {
                     <span className="min-w-0">
                       <span className="block font-medium">{p.name}</span>
                       <span className="block text-xs text-muted-foreground">
-                        {p.instagram ? <>Instagram: @{p.instagram}</> : "No Instagram professional account linked"}
+                        {p.instagram ? <>Instagram: @{p.instagram}</> : t("meta.noInstagramLinked")}
                       </span>
-                      {!p.canAnalyze ? <span className="block text-xs text-warning">Your Page role can’t read insights (needs the Analyze task)</span> : null}
+                      {!p.canAnalyze ? <span className="block text-xs text-warning">{t("meta.cannotAnalyze")}</span> : null}
                     </span>
                   </button>
                 </li>
               ))}
             </ul>
-            {!readOnly ? <Button asChild variant="ghost" size="sm"><a href={connectHref}>Use another Facebook account</a></Button> : null}
+            {!readOnly ? <Button asChild variant="ghost" size="sm"><a href={connectHref}>{t("meta.otherAccount")}</a></Button> : null}
           </div>
         ) : null}
 
@@ -165,50 +166,50 @@ export function MetaConnectionPanel(props: Props) {
             {c.status !== "active" ? (
               <Alert
                 variant="destructive"
-                title={c.status === "expired" ? "Meta access expired or was revoked." : "The connection has an error."}
-                action={!readOnly ? <Button asChild size="sm"><a href={connectHref}>Reconnect Meta</a></Button> : null}
+                title={c.status === "expired" ? t("meta.expired") : t("meta.connectionError")}
+                action={!readOnly ? <Button asChild size="sm"><a href={connectHref}>{t("meta.reconnectMeta")}</a></Button> : null}
               >
                 {c.last_error}
               </Alert>
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
-              <Account icon={Facebook} title={c.page_name ?? "Facebook Page"} subtitle={`Facebook Page · ${counts.facebook} posts synced`} ok={c.status === "active"} />
+              <Account icon={Facebook} title={c.page_name ?? t("meta.facebookPage")} subtitle={t("meta.pageSynced", { count: counts.facebook })} ok={c.status === "active"} />
               <Account
                 icon={Instagram}
-                title={c.ig_username ? `@${c.ig_username}` : "No Instagram account"}
-                subtitle={c.ig_user_id ? `Instagram professional account · ${counts.instagram} posts synced` : "Link an Instagram Business or Creator account to this Page in Meta Business Suite, then reconnect."}
+                title={c.ig_username ? `@${c.ig_username}` : t("meta.noInstagram")}
+                subtitle={c.ig_user_id ? t("meta.igSynced", { count: counts.instagram }) : t("meta.linkInstagram")}
                 ok={Boolean(c.ig_user_id) && c.status === "active"}
               />
             </div>
             <dl className="grid gap-x-6 gap-y-3 rounded-lg border bg-muted/30 px-4 py-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
-              <Row label="Last synchronization" value={`${fmt(c.last_sync_at)}${c.last_sync_status ? ` · ${c.last_sync_status}` : ""}`} />
-              <Row label="Connected as" value={c.fb_user_name ?? "—"} />
-              <Row label="Token valid until" value={c.token_expires_at ? formatDate(c.token_expires_at) : "no expiry reported"} />
+              <Row label={t("meta.lastSync")} value={`${fmt(c.last_sync_at)}${c.last_sync_status ? ` · ${runStatus(t, c.last_sync_status)}` : ""}`} />
+              <Row label={t("meta.connectedAs")} value={c.fb_user_name ?? "—"} />
+              <Row label={t("meta.tokenValid")} value={c.token_expires_at ? formatter.date(c.token_expires_at) : t("meta.noExpiry")} />
               <Row
-                label="Automatic sync"
+                label={t("meta.autoSync")}
                 value={
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                    {c.auto_sync ? "Daily" : "Off"}
+                    {c.auto_sync ? t("meta.daily") : t("meta.off")}
                     {!readOnly ? (
                       <button className="text-primary underline-offset-4 hover:underline" disabled={pending} onClick={() => run(() => setMetaAutoSyncAction(projectId, !c.auto_sync))}>
-                        {c.auto_sync ? "turn off" : "turn on"}
+                        {c.auto_sync ? t("meta.turnOff") : t("meta.turnOn")}
                       </button>
                     ) : null}
-                    {c.auto_sync && !backgroundSync ? <span className="basis-full text-muted-foreground">Runs when the page is opened (scheduler not configured)</span> : null}
+                    {c.auto_sync && !backgroundSync ? <span className="basis-full text-muted-foreground">{t("meta.noScheduler")}</span> : null}
                   </span>
                 }
               />
             </dl>
             {c.declined_scopes.length ? (
-              <p className="text-xs text-warning">Permissions declined in Facebook: {c.declined_scopes.join(", ")}. Some posts or metrics can’t be read until you reconnect and grant them.</p>
+              <p className="text-xs text-warning">{t("meta.declined", { scopes: c.declined_scopes.join(", ") })}</p>
             ) : null}
-            <SupportedMetrics supported={c.supported_metrics} />
-            <SyncLog runs={runs} />
+            <SupportedMetrics t={t} supported={c.supported_metrics} />
+            <SyncLog t={t} fmt={formatter} runs={runs} />
             {!readOnly ? (
               <div className="flex flex-wrap justify-end gap-2 border-t pt-3">
-                <Button variant="ghost" size="sm" disabled={pending} onClick={() => { void loadPages(); }}>{loadingPages ? <Loader2 className="animate-spin" /> : null} Change Page</Button>
-                <Button asChild variant="ghost" size="sm"><a href={connectHref}>Reconnect</a></Button>
-                <Button variant="outline" size="sm" className="text-destructive" onClick={() => setDisconnectOpen(true)}><Unplug /> Disconnect</Button>
+                <Button variant="ghost" size="sm" disabled={pending} onClick={() => { void loadPages(); }}>{loadingPages ? <Loader2 className="animate-spin" /> : null} {t("meta.changePage")}</Button>
+                <Button asChild variant="ghost" size="sm"><a href={connectHref}>{t("meta.reconnect")}</a></Button>
+                <Button variant="outline" size="sm" className="text-destructive" onClick={() => setDisconnectOpen(true)}><Unplug /> {tc("actions.disconnect")}</Button>
               </div>
             ) : null}
             {pages && c.status !== "pending_page" ? (
@@ -221,12 +222,12 @@ export function MetaConnectionPanel(props: Props) {
                       disabled={pending || (p.id === c.page_id && (p.instagram ?? null) === (c.ig_username ?? null))}
                       onClick={async () => {
                         if (p.id === c.page_id) return run(() => selectMetaPageAction(projectId, p.id), () => setPages(null));
-                        if (await confirm({ title: `Switch to “${p.name}”?`, description: `Posts synced from ${c.page_name} will be removed from this project.`, confirmLabel: "Switch Page", destructive: true })) run(() => selectMetaPageAction(projectId, p.id), () => setPages(null));
+                        if (await confirm({ title: t("meta.switchTitle", { name: p.name }), description: t("meta.switchDescription", { page: c.page_name ?? "" }), confirmLabel: t("meta.switchPage"), destructive: true })) run(() => selectMetaPageAction(projectId, p.id), () => setPages(null));
                       }}
                       className={cn("w-full rounded-lg border p-3 text-left text-[13px] hover:bg-accent disabled:opacity-60", p.id === c.page_id && "border-primary/50")}
                     >
                       <span className="font-medium">{p.name}</span>
-                      <span className="block text-xs text-muted-foreground">{p.instagram ? `@${p.instagram}` : "no Instagram"}{p.id === c.page_id ? ((p.instagram ?? null) !== (c.ig_username ?? null) ? " · current, click to update the Instagram link" : " · current") : ""}</span>
+                      <span className="block text-xs text-muted-foreground">{p.instagram ? `@${p.instagram}` : t("meta.noInstagramShort")}{p.id === c.page_id ? ((p.instagram ?? null) !== (c.ig_username ?? null) ? t("meta.currentUpdate") : t("meta.current")) : ""}</span>
                     </button>
                   </li>
                 ))}
@@ -238,19 +239,19 @@ export function MetaConnectionPanel(props: Props) {
         <Dialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Disconnect Meta?</DialogTitle>
+              <DialogTitle>{t("meta.disconnectTitle")}</DialogTitle>
               <DialogDescription>
-                The access tokens are deleted from this service immediately and synchronization stops. To revoke the app entirely, also remove it in Facebook → Settings → Apps and websites.
+                {t("meta.disconnectDescription")}
               </DialogDescription>
             </DialogHeader>
             <label className="flex items-center gap-2 text-[13px]">
               <input type="checkbox" checked={deletePosts} onChange={(e) => setDeletePosts(e.target.checked)} className="accent-[var(--destructive)]" />
-              Also delete the {counts.facebook + counts.instagram} posts synced from Meta
+              {t("meta.deletePosts", { count: counts.facebook + counts.instagram })}
             </label>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setDisconnectOpen(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setDisconnectOpen(false)}>{tc("actions.cancel")}</Button>
               <Button variant="destructive" disabled={pending} onClick={() => run(() => disconnectMetaAction(projectId, deletePosts), () => setDisconnectOpen(false))}>
-                Disconnect
+                {tc("actions.disconnect")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -279,21 +280,23 @@ const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
   </div>
 );
 
-const SURFACES: Record<string, string> = {
-  facebook: "Facebook posts", facebook_video: "Facebook videos", instagram_FEED: "Instagram feed posts", instagram_REELS: "Instagram reels",
-};
+const SURFACES = ["facebook", "facebook_video", "instagram_FEED", "instagram_REELS"] as const;
 
-function SupportedMetrics({ supported }: { supported: MetaConnection["supported_metrics"] }) {
+const RUN_STATUSES = ["running", "succeeded", "partial", "failed"] as const;
+/** Translated run status; unknown stored values are shown as they are. */
+const runStatus = (t: TFor<"history">, s: string) => ((RUN_STATUSES as readonly string[]).includes(s) ? t(`meta.runStatus.${s as (typeof RUN_STATUSES)[number]}`) : s);
+
+function SupportedMetrics({ t, supported }: { t: TFor<"history">; supported: MetaConnection["supported_metrics"] }) {
   const entries = Object.entries(supported ?? {}).filter(([, v]) => v && (v.ok.length || v.rejected.length));
   if (!entries.length) return null;
   return (
     <details className="text-xs">
-      <summary className="cursor-pointer text-muted-foreground">Metrics Meta returns for this account</summary>
+      <summary className="cursor-pointer text-muted-foreground">{t("meta.supportedMetrics")}</summary>
       <ul className="mt-2 space-y-1">
         {entries.map(([surface, v]) => (
           <li key={surface}>
-            <span className="font-medium">{SURFACES[surface] ?? surface}:</span> {v!.ok.join(", ") || "none"}
-            {v!.rejected.length ? <span className="text-muted-foreground"> · not available: {v!.rejected.join(", ")}</span> : null}
+            <span className="font-medium">{(SURFACES as readonly string[]).includes(surface) ? t(`meta.surfaces.${surface as (typeof SURFACES)[number]}`) : surface}{t("meta.colon")}</span> {v!.ok.join(", ") || t("meta.noneMetrics")}
+            {v!.rejected.length ? <span className="text-muted-foreground">{t("meta.notAvailable", { metrics: v!.rejected.join(", ") })}</span> : null}
           </li>
         ))}
       </ul>
@@ -303,25 +306,25 @@ function SupportedMetrics({ supported }: { supported: MetaConnection["supported_
 
 const RUN_VARIANT: Record<MetaSyncRun["status"], "success" | "warning" | "destructive" | "secondary"> = { succeeded: "success", partial: "warning", failed: "destructive", running: "secondary" };
 
-function SyncLog({ runs }: { runs: MetaSyncRun[] }) {
-  if (!runs.length) return <p className="text-xs text-muted-foreground">No synchronization yet.</p>;
+function SyncLog({ t, fmt, runs }: { t: TFor<"history">; fmt: Formatter; runs: MetaSyncRun[] }) {
+  if (!runs.length) return <p className="text-xs text-muted-foreground">{t("meta.noSync")}</p>;
   return (
     <details className="text-xs" open={runs[0].status !== "succeeded"}>
-      <summary className="cursor-pointer text-muted-foreground">Synchronization log</summary>
+      <summary className="cursor-pointer text-muted-foreground">{t("meta.syncLog")}</summary>
       <ul className="mt-2 space-y-2">
         {runs.map((r) => (
           <li key={r.id} className="rounded-md border p-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={RUN_VARIANT[r.status]}>{r.status === "running" ? <Loader2 className="animate-spin" /> : null}{r.status}</Badge>
-              <span>{r.kind} · {r.trigger}</span>
-              <span className="text-muted-foreground">{formatDateTime(r.started_at)}{r.finished_at ? ` · ${Math.round((Date.parse(r.finished_at) - Date.parse(r.started_at)) / 1000)}s` : ""}</span>
+              <Badge variant={RUN_VARIANT[r.status]}>{r.status === "running" ? <Loader2 className="animate-spin" /> : null}{runStatus(t, r.status)}</Badge>
+              <span>{t(`meta.kind.${r.kind}`)} · {t(`meta.trigger.${r.trigger}`)}</span>
+              <span className="text-muted-foreground">{fmt.dateTime(r.started_at)}{r.finished_at ? ` · ${t("meta.seconds", { count: Math.round((Date.parse(r.finished_at) - Date.parse(r.started_at)) / 1000) })}` : ""}</span>
             </div>
             <p className="mt-1 text-muted-foreground">
-              {(["facebook", "instagram"] as const).map((p) => r.stats?.[p] ? `${p === "facebook" ? "Facebook" : "Instagram"}: ${r.stats[p]!.fetched} read, ${r.stats[p]!.created} new, ${r.stats[p]!.updated} updated, ${r.stats[p]!.metrics} with insights` : null).filter(Boolean).join(" · ")}
-              {r.stats?.api_calls ? ` · ${r.stats.api_calls} API calls` : ""}
-              {r.stats?.truncated ? " · limit reached, continues next run" : ""}
+              {(["facebook", "instagram"] as const).map((p) => r.stats?.[p] ? t("meta.runStats", { platform: p === "facebook" ? "Facebook" : "Instagram", fetched: r.stats[p]!.fetched, created: r.stats[p]!.created, updated: r.stats[p]!.updated, metrics: r.stats[p]!.metrics }) : null).filter(Boolean).join(" · ")}
+              {r.stats?.api_calls ? t("meta.apiCalls", { count: r.stats.api_calls }) : ""}
+              {r.stats?.truncated ? t("meta.truncated") : ""}
             </p>
-            {r.status === "running" && (r.stats as { step?: string })?.step ? <p className="mt-1">Now: {(r.stats as { step?: string }).step}…</p> : null}
+            {r.status === "running" && (r.stats as { step?: string })?.step ? <p className="mt-1">{t("meta.now", { step: (r.stats as { step?: string }).step })}</p> : null}
             {r.errors?.map((e, k) => <p key={k} className="text-destructive">{e.platform}: {e.message}</p>)}
           </li>
         ))}

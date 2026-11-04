@@ -17,22 +17,21 @@ import { listOpportunities } from "@/server/services/opportunities";
 import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
 import { getStrategyBundle } from "@/server/services/strategy";
+import { getT } from "@/i18n/server";
 
-export const metadata = { title: "Competitors" };
+export async function generateMetadata() {
+  const t = await getT("competitors");
+  return { title: t("title") };
+}
 
-const TABS = [
-  { id: "competitors", label: "Competitors" },
-  { id: "library", label: "Content library" },
-  { id: "compare", label: "Compare" },
-  { id: "gaps", label: "Gaps & ideas" },
-] as const;
+const TABS = [{ id: "competitors" }, { id: "library" }, { id: "compare" }, { id: "gaps" }] as const;
 const one = (v: string | string[] | undefined) => (typeof v === "string" ? v : "");
 const daysAgo = (days: number) => Date.now() - days * 86400_000;
 
 export default async function Page({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { projectId } = await params;
   const sp = await searchParams;
-  const [user, { project, role }] = await Promise.all([requireUser(), getProjectContext(projectId)]);
+  const [user, { project, role }, t] = await Promise.all([requireUser(), getProjectContext(projectId), getT("competitors")]);
   const tab = TABS.some((t) => t.id === sp.tab) ? (sp.tab as (typeof TABS)[number]["id"]) : "competitors";
   const editable = canEdit(role);
   const competitors = await listCompetitors(projectId);
@@ -42,7 +41,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const creds = await projectCredentials(projectId);
   const providers: ProviderStatus = Object.fromEntries((["instagram", "facebook", "youtube", "x", "tiktok", "linkedin", "threads", "pinterest"] as Platform[]).map((p) => {
     const a = availabilityFor(p, creds);
-    return [p, { ok: a.ok, reason: a.ok ? undefined : a.reason, provider: a.provider }];
+    return [p, { ok: a.ok, reason: a.ok ? undefined : a.reasonKey ? t(`providers.reason.${a.reasonKey}`) : a.reason, provider: a.provider }];
   }));
   if (tab === "competitors") await maybeAutoCollect(projectId, competitors, editable, user.id);
 
@@ -102,8 +101,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Competitors" description="What your competitors publish and how well it works, next to your own results. Use it to spot topics they cover that you don't. Data comes from official sources only." />
-      <TabNav label="Competitors sections" items={TABS.map((t) => ({ key: t.id, label: t.label, href: `/p/${projectId}/competitors?tab=${t.id}`, active: tab === t.id }))} />
+      <PageHeader title={t("title")} description={t("description")} />
+      <TabNav label={t("tabs.label")} items={TABS.map((x) => ({ key: x.id, label: t(`tabs.${x.id}`), href: `/p/${projectId}/competitors?tab=${x.id}`, active: tab === x.id }))} />
       {body}
     </div>
   );

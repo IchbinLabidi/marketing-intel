@@ -50,8 +50,8 @@ export const instagramProvider: DataProvider = {
   platform: "instagram",
   source: "meta_api",
   availability(creds) {
-    if (!creds.meta) return { ok: false, status: "needs_config", reason: "Connect Meta (Facebook Page + Instagram professional account) in Content history." };
-    if (!creds.meta.igUserId) return { ok: false, status: "needs_config", reason: "The connected Facebook Page has no linked Instagram professional account." };
+    if (!creds.meta) return { ok: false, status: "needs_config", reason: "Connect Meta (Facebook Page + Instagram professional account) in Content history.", reasonKey: "metaConnect" };
+    if (!creds.meta.igUserId) return { ok: false, status: "needs_config", reason: "The connected Facebook Page has no linked Instagram professional account.", reasonKey: "metaNoInstagram" };
     return { ok: true };
   },
   async collect(channel, { since, max }, creds) {
@@ -131,10 +131,10 @@ export const facebookProvider: DataProvider = {
   platform: "facebook",
   source: "meta_api",
   availability(creds) {
-    if (!creds.meta) return { ok: false, status: "needs_config", reason: "Connect Meta in Content history." };
+    if (!creds.meta) return { ok: false, status: "needs_config", reason: "Connect Meta in Content history.", reasonKey: "metaConnectShort" };
     // Without the App Review feature every request is refused, so it is only attempted once the approval is declared
     if (process.env.META_PAGE_PUBLIC_CONTENT_ACCESS !== "true") {
-      return { ok: false, status: "needs_config", reason: "Meta only shares other Pages' posts with apps approved for “Page Public Content Access” (Meta app → App Review → Permissions and Features). Once approved, set META_PAGE_PUBLIC_CONTENT_ACCESS=true in .env.local." };
+      return { ok: false, status: "needs_config", reason: "Meta only shares other Pages' posts with apps approved for “Page Public Content Access” (Meta app → App Review → Permissions and Features). Once approved, set META_PAGE_PUBLIC_CONTENT_ACCESS=true in .env.local.", reasonKey: "metaPublicContent" };
     }
     return { ok: true };
   },

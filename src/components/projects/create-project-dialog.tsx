@@ -7,30 +7,33 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { SubmitButton, useResultToast, useFormAction } from "@/components/app/form";
 import { createProjectAction } from "@/server/actions/projects";
 import { ProjectFormFields } from "./project-form-fields";
+import { useT } from "@/i18n/client";
 
 export function CreateProjectDialog({ defaultOpen = false, disabled }: { defaultOpen?: boolean; disabled?: boolean }) {
+  const t = useT("projects");
+  const tc = useT("common");
   const [open, setOpen] = React.useState(defaultOpen);
   const { state, pending, formProps } = useFormAction(createProjectAction);
   useResultToast(state);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" disabled={disabled} title={disabled ? "Your role is read-only" : undefined}>
-          <Plus /> New project
+        <Button size="sm" disabled={disabled} title={disabled ? t("create.readOnly") : undefined}>
+          <Plus /> {t("create.newProject")}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New project</DialogTitle>
-          <DialogDescription>A project is one brand or client with its own strategy, history, competitors and calendar.</DialogDescription>
+          <DialogTitle>{t("create.newProject")}</DialogTitle>
+          <DialogDescription>{t("create.description")}</DialogDescription>
         </DialogHeader>
         <form {...formProps} className="grid gap-5">
           <ProjectFormFields state={state} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Cancel
+              {tc("actions.cancel")}
             </Button>
-            <SubmitButton pending={pending} pendingLabel="Creating…">Create project</SubmitButton>
+            <SubmitButton pending={pending} pendingLabel={tc("actions.creating")}>{t("create.submit")}</SubmitButton>
           </DialogFooter>
         </form>
       </DialogContent>

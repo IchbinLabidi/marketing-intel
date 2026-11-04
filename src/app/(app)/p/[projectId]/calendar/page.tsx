@@ -21,8 +21,12 @@ import { PRIORITIES } from "@/lib/permissions";
 import { loadHistoryPerformance } from "@/server/services/history-analysis";
 import { getProjectContext } from "@/server/services/projects";
 import { getStrategyBundle } from "@/server/services/strategy";
+import { getT } from "@/i18n/server";
 
-export const metadata = { title: "Editorial Calendar" };
+export async function generateMetadata() {
+  const t = await getT("calendar");
+  return { title: t("meta.title") };
+}
 
 const list = (v: string | string[] | undefined) => (v === undefined ? [] : Array.isArray(v) ? v : [v]);
 const one = (v: string | string[] | undefined) => (typeof v === "string" ? v : "");
@@ -30,6 +34,7 @@ const one = (v: string | string[] | undefined) => (typeof v === "string" ? v : "
 export default async function Page({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { projectId } = await params;
   const sp = await searchParams;
+  const t = await getT("calendar");
   const { project, role } = await getProjectContext(projectId);
   const tz = isValidTimeZone(project.timezone) ? project.timezone : "Africa/Tunis";
   const today = todayInZone(tz);
@@ -95,20 +100,21 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const gaps = detectGaps(
     posts.filter((p) => p.scheduled_date).map((p) => ({ id: p.id, title: p.title, date: p.scheduled_date!, time: p.scheduled_time?.slice(0, 5) ?? null, platform: p.platform, pillar_id: p.pillar_id, format: p.format, funnel_stage: p.funnel_stage, scheduled_at: p.scheduled_at })),
     { from, to, today },
-    { pillarName: (id) => bundle.pillars.find((x) => x.id === id)?.name ?? "No pillar", topIdea: backlogIdeas[0] ? { title: backlogIdeas[0].title, score: backlogIdeas[0].idea_score ?? null, slot: backlogIdeas[0].suggested_slot ?? null } : null, highUnscheduled: backlogIdeas.filter((i) => (i.idea_score ?? 0) >= 85).length },
+    { pillarName: (id) => bundle.pillars.find((x) => x.id === id)?.name ?? t("filters.noPillar"), topIdea: backlogIdeas[0] ? { title: backlogIdeas[0].title, score: backlogIdeas[0].idea_score ?? null, slot: backlogIdeas[0].suggested_slot ?? null } : null, highUnscheduled: backlogIdeas.filter((i) => (i.idea_score ?? 0) >= 85).length },
+    await getT("backlog"),
   );
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Editorial Calendar"
-        description="What gets published, when and where. Use it to check that every week is covered and nothing is late. Content is approved in Production before it is scheduled here."
+        title={t("page.title")}
+        description={t("page.description")}
         actions={
           <>
             {selectedPlan && editable ? <DeleteCalendarButton projectId={projectId} calendarId={selectedPlan.id} name={selectedPlan.name} /> : null}
-            <Button asChild size="sm"><Link href={`/p/${projectId}/calendar/plan`}><Sparkles /> Plan a month</Link></Button>
-            {selectedPlan && (selectedPlan as { status?: string }).status !== "saved" ? <Button asChild size="sm" variant="outline"><Link href={`/p/${projectId}/calendar/plan/${selectedPlan.id}`}>Plan details</Link></Button> : null}
-            <Button asChild size="sm" variant="outline"><Link href={`/p/${projectId}/history?tab=recommendations`}>Plan from historical insights</Link></Button>
+            <Button asChild size="sm"><Link href={`/p/${projectId}/calendar/plan`}><Sparkles /> {t("page.planMonth")}</Link></Button>
+            {selectedPlan && (selectedPlan as { status?: string }).status !== "saved" ? <Button asChild size="sm" variant="outline"><Link href={`/p/${projectId}/calendar/plan/${selectedPlan.id}`}>{t("page.planDetails")}</Link></Button> : null}
+            <Button asChild size="sm" variant="outline"><Link href={`/p/${projectId}/history?tab=recommendations`}>{t("page.planFromHistory")}</Link></Button>
           </>
         }
       />
@@ -151,10 +157,11 @@ async function Insights({ projectId, tz, history, timing }: { projectId: string;
   return <InsightsPanel projectId={projectId} timing={t} performance={performance} tz={tz} />;
 }
 
-function InsightsLoading() {
+async function InsightsLoading() {
+  const t = await getT("calendar");
   return (
     <aside className="space-y-2 rounded-xl border bg-card p-4 shadow-xs" aria-busy="true">
-      <p className="flex items-center gap-2 text-[13px] font-semibold"><Lightbulb className="size-4" /> Publishing insights</p>
+      <p className="flex items-center gap-2 text-[13px] font-semibold"><Lightbulb className="size-4" /> {t("insights.title")}</p>
       <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
       <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
       <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />

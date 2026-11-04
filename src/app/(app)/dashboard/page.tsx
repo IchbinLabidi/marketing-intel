@@ -14,11 +14,16 @@ import { SwitchWorkspaceButton } from "@/components/app/switch-workspace-button"
 import { listChannels, listProjects } from "@/server/services/projects";
 import { getStrategyBundle, strategyCompleteness } from "@/server/services/strategy";
 import { isAIConfigured } from "@/server/ai/client";
+import { getT } from "@/i18n/server";
 
-export const metadata = { title: "Dashboard" };
+export async function generateMetadata() {
+  const t = await getT("dashboard");
+  return { title: t("meta.title") };
+}
 
 export default async function DashboardPage() {
   const user = await requireUser();
+  const [t, ts] = await Promise.all([getT("dashboard"), getT("strategy")]);
   const workspace = (await getActiveWorkspace())!;
   const projects = await listProjects(workspace.id);
   const recent = projects.slice(0, 6);
@@ -42,15 +47,14 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       <PageHeader
         eyebrow={workspace.name}
-        title={firstName ? `Hello, ${firstName}` : "Dashboard"}
-        description={`${projects.length} active project${projects.length === 1 ? "" : "s"}. Open a project's Analytics to see what needs your attention.`}
+        title={firstName ? t("header.greeting", { name: firstName }) : t("header.title")}
+        description={t("header.description", { count: projects.length })}
         actions={<CreateProjectDialog disabled={!canEdit(workspace.role)} />}
       />
 
       {!isAIConfigured() ? (
-        <Alert variant="warning" title="AI features are not configured">
-          Add <code className="font-mono text-xs">GEMINI_API_KEY</code> (or <code className="font-mono text-xs">ANTHROPIC_API_KEY</code>) to the
-          server environment to enable strategy suggestions, analysis and calendar generation. Everything else works without it.
+        <Alert variant="warning" title={t("aiAlert.title")}>
+          {t.rich("aiAlert.body", { code: (c) => <code className="font-mono text-xs">{c}</code> })}
         </Alert>
       ) : null}
 
@@ -58,30 +62,30 @@ export default async function DashboardPage() {
         <Alert
           key={w.id}
           variant="info"
-          title={`Your team's projects are in ${w.name}`}
-          action={<SwitchWorkspaceButton workspaceId={w.id} label={`Open ${w.name}`} />}
+          title={t("otherWorkspace.title", { workspace: w.name })}
+          action={<SwitchWorkspaceButton workspaceId={w.id} label={t("otherWorkspace.open", { workspace: w.name })} />}
         >
-          You&apos;re a member of {w.name} ({w.projects} project{w.projects === 1 ? "" : "s"}). The workspace you&apos;re in now has no projects.
+          {t("otherWorkspace.body", { workspace: w.name, count: w.projects })}
         </Alert>
       ))}
 
       {projects.length === 0 ? (
         <EmptyState
           icon={FolderKanban}
-          title="Set up your first project"
-          description="A project holds one brand's identity, strategy, past calendars, competitors and upcoming content."
+          title={t("empty.title")}
+          description={t("empty.description")}
           action={<CreateProjectDialog disabled={!canEdit(workspace.role)} />}
         />
       ) : (
         <section className="space-y-4">
           <SectionHeader
-            title="Projects"
-            description="Strategy completeness and the next step for each project."
+            title={t("projects.title")}
+            description={t("projects.description")}
             actions={
               projects.length > recent.length ? (
                 <Button asChild variant="ghost" size="sm">
                   <Link href="/projects">
-                    View all {projects.length} <ArrowRight />
+                    {t("projects.viewAll", { count: projects.length })} <ArrowRight />
                   </Link>
                 </Button>
               ) : null
@@ -90,10 +94,10 @@ export default async function DashboardPage() {
           <div className="grid gap-4 md:grid-cols-2">
             {details.map(({ project, completeness, channels, pillars }) => {
               const nextStep = !channels
-                ? { label: "Add your social channels", href: `/p/${project.id}#channels` }
+                ? { label: t("nextStep.channels"), href: `/p/${project.id}#channels` }
                 : completeness.percent < 100
-                  ? { label: "Complete the marketing strategy", href: `/p/${project.id}/strategy` }
-                  : { label: "Import past editorial calendars", href: `/p/${project.id}/history` };
+                  ? { label: t("nextStep.strategy"), href: `/p/${project.id}/strategy` }
+                  : { label: t("nextStep.history"), href: `/p/${project.id}/history` };
               const missing = completeness.checks.filter((c) => !c.done);
               return (
                 <article key={project.id} className="group flex flex-col rounded-xl border bg-card shadow-xs transition-shadow hover:shadow-sm">
@@ -105,7 +109,7 @@ export default async function DashboardPage() {
                         </Link>
                       </h3>
                       <p className="mt-0.5 text-[13px] text-muted-foreground">
-                        {channels} channel{channels === 1 ? "" : "s"} · {pillars} content pillar{pillars === 1 ? "" : "s"}
+                        {t("card.channels", { count: channels })} · {t("card.pillars", { count: pillars })}
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-0.5">
@@ -113,7 +117,7 @@ export default async function DashboardPage() {
                       <Link
                         href={`/p/${project.id}`}
                         className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                        aria-label={`Open ${project.name}`}
+                        aria-label={t("card.open", { name: project.name })}
                       >
                         <ArrowUpRight className="size-4" />
                       </Link>
@@ -122,19 +126,19 @@ export default async function DashboardPage() {
 
                   <div className="space-y-3 px-5 py-4">
                     <div className="flex items-baseline justify-between text-xs">
-                      <span className="font-medium text-muted-foreground">Strategy</span>
+                      <span className="font-medium text-muted-foreground">{t("card.strategy")}</span>
                       <span className="font-semibold tabular-nums text-foreground">{completeness.percent}%</span>
                     </div>
-                    <Progress value={completeness.percent} label={`${project.name} strategy completeness`} />
+                    <Progress value={completeness.percent} label={t("card.completeness", { name: project.name })} />
                     <ul className="grid grid-cols-1 gap-x-4 gap-y-1.5 pt-1 text-xs sm:grid-cols-2">
                       {completeness.checks.slice(0, 8).map((c) => (
                         <li key={c.key} className="flex min-w-0 items-center gap-1.5">
                           {c.done ? (
-                            <CheckCircle2 className="size-3.5 shrink-0 text-success" aria-label="Done" />
+                            <CheckCircle2 className="size-3.5 shrink-0 text-success" aria-label={t("card.done")} />
                           ) : (
-                            <CircleDashed className="size-3.5 shrink-0 text-subtle-foreground" aria-label="To do" />
+                            <CircleDashed className="size-3.5 shrink-0 text-subtle-foreground" aria-label={t("card.toDo")} />
                           )}
-                          <span className={c.done ? "truncate text-foreground" : "truncate text-muted-foreground"}>{c.key}</span>
+                          <span className={c.done ? "truncate text-foreground" : "truncate text-muted-foreground"}>{ts(`completeness.${c.key}`)}</span>
                         </li>
                       ))}
                     </ul>
@@ -145,11 +149,11 @@ export default async function DashboardPage() {
                     className="mt-auto flex items-center justify-between gap-2 rounded-b-xl border-t bg-muted/40 px-5 py-3 text-[13px] transition-colors hover:bg-accent"
                   >
                     <span className="min-w-0 truncate">
-                      <span className="text-muted-foreground">Next · </span>
+                      <span className="text-muted-foreground">{t("card.next")} · </span>
                       <span className="font-medium">{nextStep.label}</span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                      {missing.length ? `${missing.length} to do` : null}
+                      {missing.length ? t("card.missing", { count: missing.length }) : null}
                       <ArrowRight className="size-4 text-foreground transition-transform group-hover:translate-x-0.5" />
                     </span>
                   </Link>

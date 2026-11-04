@@ -6,6 +6,7 @@ import { Field, SubmitButton, fieldError, useResultToast, useFormAction } from "
 import type { ActionResult } from "@/lib/validation/common";
 import type { StrategySection } from "@/server/ai/strategy";
 import { AISuggest, PreviewField, type SuggestionNotes } from "./ai-suggest";
+import { useT } from "@/i18n/client";
 
 export type TextField = { name: string; label: string; hint?: string; placeholder?: string; rows?: number };
 
@@ -18,7 +19,7 @@ export function TextSectionForm({
   action: serverAction,
   readOnly,
   aiEnabled,
-  submitLabel = "Save",
+  submitLabel,
   columns = 1,
 }: {
   projectId: string;
@@ -31,6 +32,8 @@ export function TextSectionForm({
   submitLabel?: string;
   columns?: 1 | 2;
 }) {
+  const t = useT("strategy");
+  const tc = useT("common");
   const [values, setValues] = React.useState<Record<string, string>>(() =>
     Object.fromEntries(fields.map((f) => [f.name, initial[f.name] ?? ""])),
   );
@@ -41,13 +44,13 @@ export function TextSectionForm({
   return (
     <form {...formProps} className="grid gap-5">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">{dirty ? "Unsaved changes" : " "}</p>
+        <p className="text-xs text-muted-foreground">{dirty ? t("unsaved") : " "}</p>
         {!readOnly ? (
           <AISuggest<Record<string, string> & { notes: SuggestionNotes }>
             projectId={projectId}
             section={section}
             aiEnabled={aiEnabled}
-            label={Object.values(values).some(Boolean) ? "Improve with AI" : "Draft with AI"}
+            label={Object.values(values).some(Boolean) ? t("aiSuggest.improve") : t("aiSuggest.draft")}
             renderPreview={(d) => (
               <div className="grid gap-3">
                 {fields.map((f) => (
@@ -81,7 +84,7 @@ export function TextSectionForm({
       </fieldset>
       {!readOnly ? (
         <div className="flex justify-end">
-          <SubmitButton pending={pending} pendingLabel="Saving…">{submitLabel}</SubmitButton>
+          <SubmitButton pending={pending} pendingLabel={tc("actions.saving")}>{submitLabel ?? tc("actions.save")}</SubmitButton>
         </div>
       ) : null}
     </form>

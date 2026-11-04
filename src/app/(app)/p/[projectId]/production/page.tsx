@@ -8,7 +8,11 @@ import { requireUser } from "@/server/services/session";
 import { listProduction, listTemplates } from "@/server/services/production";
 import { isAIConfigured } from "@/server/ai/client";
 import { assignablePeople, getPermissions } from "@/server/services/team";
-export const metadata = { title: "Content Production" };
+import { getT } from "@/i18n/server";
+export async function generateMetadata() {
+  const t = await getT("production");
+  return { title: t("meta.title") };
+}
 export default async function Page({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ item?: string; view?: string }> }) {
   const { projectId } = await params;
   const { project, role } = await getProjectContext(projectId);

@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/app/form";
 import { deleteProjectAction } from "@/server/actions/projects";
+import { useT } from "@/i18n/client";
 
 /**
  * Password-confirmed hard delete. Only render it for owners and admins; the server checks the role
@@ -24,6 +25,8 @@ export function DeleteProjectDialog({
   onOpenChange: (open: boolean) => void;
   after?: "dashboard" | "projects";
 }) {
+  const t = useT("projects");
+  const tc = useT("common");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -54,13 +57,10 @@ export function DeleteProjectDialog({
       <DialogContent className="sm:max-w-md">
         <form onSubmit={submit} className="grid gap-5">
           <DialogHeader>
-            <DialogTitle>Delete “{project.name}”?</DialogTitle>
-            <DialogDescription>
-              This permanently deletes the project with its strategy, imports, competitors, calendars, content and uploaded files. This
-              cannot be undone.
-            </DialogDescription>
+            <DialogTitle>{t("delete.title", { name: project.name })}</DialogTitle>
+            <DialogDescription>{t("delete.description")}</DialogDescription>
           </DialogHeader>
-          <Field label="Your account password" htmlFor={inputId} error={error ?? undefined}>
+          <Field label={t("delete.password")} htmlFor={inputId} error={error ?? undefined}>
             <Input
               id={inputId}
               type="password"
@@ -76,10 +76,10 @@ export function DeleteProjectDialog({
           </Field>
           <DialogFooter>
             <Button type="button" variant="outline" disabled={pending} onClick={() => changeOpen(false)}>
-              Cancel
+              {tc("actions.cancel")}
             </Button>
             <Button type="submit" variant="destructive" disabled={!password} loading={pending}>
-              Delete permanently
+              {t("delete.submit")}
             </Button>
           </DialogFooter>
         </form>
@@ -90,6 +90,7 @@ export function DeleteProjectDialog({
 
 /** Small trash button for project cards (dashboard). */
 export function DeleteProjectButton({ project, after = "dashboard" }: { project: { id: string; name: string }; after?: "dashboard" | "projects" }) {
+  const t = useT("projects");
   const [open, setOpen] = React.useState(false);
   return (
     <>
@@ -97,8 +98,8 @@ export function DeleteProjectButton({ project, after = "dashboard" }: { project:
         type="button"
         onClick={() => setOpen(true)}
         className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-        aria-label={`Delete ${project.name}`}
-        title="Delete project"
+        aria-label={t("delete.buttonLabel", { name: project.name })}
+        title={t("delete.buttonTitle")}
       >
         <Trash2 className="size-4" />
       </button>

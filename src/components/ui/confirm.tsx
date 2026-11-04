@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Button } from "./button";
+import { useT } from "@/i18n/client";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./dialog";
 
 type ConfirmOptions = {
@@ -38,6 +39,7 @@ function settle(ok: boolean) {
 
 /** Mounted once in the root layout. */
 export function ConfirmHost() {
+  const t = useT("common");
   const pending = React.useSyncExternalStore(
     (l) => {
       listeners.add(l);
@@ -57,10 +59,10 @@ export function ConfirmHost() {
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" onClick={() => settle(false)}>
-                {pending.cancelLabel ?? "Cancel"}
+                {pending.cancelLabel ?? t("actions.cancel")}
               </Button>
               <Button variant={pending.destructive ? "destructive" : "default"} onClick={() => settle(true)} autoFocus>
-                {pending.confirmLabel ?? "Confirm"}
+                {pending.confirmLabel ?? t("actions.confirm")}
               </Button>
             </DialogFooter>
           </>

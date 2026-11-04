@@ -3,6 +3,9 @@ import { contentType, deadlineConflicts, isOverdue, participants, type Person } 
 import { shiftView, viewRange } from "@/lib/calendar/time";
 import type { Task } from "@/server/services/team";
 import type { ContentItem } from "@/types/domain";
+import { testT } from "@/i18n/testing";
+
+const t = testT("calendar");
 
 const item = (over: Partial<ContentItem>): ContentItem => ({ id: "c1", status: "in_production", title: "T", format: null, platform: "instagram", ...over }) as ContentItem;
 const task = (over: Partial<Task>): Task => ({ id: "t", project_id: "p", content_item_id: "c1", user_id: "u2", task_type: "design", status: "assigned", priority: "medium", due_date: null, note: "", created_by: null, created_at: "", updated_at: "", ...over });
@@ -16,15 +19,15 @@ describe("calendar planning", () => {
   });
 
   it("maps free-text formats to short content types", () => {
-    expect(contentType("Instagram Reel")).toBe("Reel");
-    expect(contentType("Story sequence")).toBe("Story");
-    expect(contentType("Facebook video")).toBe("Video");
-    expect(contentType(null)).toBe("Post");
+    expect(contentType("Instagram Reel", t)).toBe("Reel");
+    expect(contentType("Story sequence", t)).toBe("Story");
+    expect(contentType("Facebook video", t)).toBe("Video");
+    expect(contentType(null, t)).toBe("Post");
   });
 
   it("lists the lead first, then collaborators, without duplicates", () => {
     const people = new Map<string, Person>([["u1", { user_id: "u1", name: "Ana", roleName: null, canEdit: true }], ["u2", { user_id: "u2", name: "Bo", roleName: null, canEdit: true }]]);
-    const ps = participants(item({ assignee_id: "u1" }), [task({ user_id: "u2" }), task({ id: "t2", user_id: "u1", task_type: "copywriting" })], people);
+    const ps = participants(item({ assignee_id: "u1" }), [task({ user_id: "u2" }), task({ id: "t2", user_id: "u1", task_type: "copywriting" })], people, t);
     expect(ps.map((p) => p.name)).toEqual(["Ana", "Bo"]);
   });
 

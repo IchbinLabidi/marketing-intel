@@ -1,28 +1,34 @@
 import { CheckCircle2, CircleDashed } from "lucide-react";
 import { isSupabaseConfigured } from "@/lib/env";
 import { siteConfig } from "@/config/site";
+import { getT } from "@/i18n/server";
 
-export const metadata = { title: "Setup required" };
+export async function generateMetadata() {
+  const t = await getT("setup");
+  return { title: t("metaTitle") };
+}
 
 export default async function SetupPage({ searchParams }: PageProps<"/setup">) {
   const { reason } = await searchParams;
+  const t = await getT("setup");
+  const code = (c: React.ReactNode) => <code className="font-mono text-xs">{c}</code>;
   const checks = [
     { label: "NEXT_PUBLIC_SUPABASE_URL", ok: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) },
     {
-      label: "NEXT_PUBLIC_SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)",
+      label: t("anonKey", { anon: "NEXT_PUBLIC_SUPABASE_ANON_KEY", publishable: "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" }),
       ok: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
     },
-    { label: "GEMINI_API_KEY or ANTHROPIC_API_KEY (needed for AI features)", ok: Boolean(process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY) },
+    { label: t("aiKey", { gemini: "GEMINI_API_KEY", anthropic: "ANTHROPIC_API_KEY" }), ok: Boolean(process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY) },
   ];
   return (
     <div className="mx-auto max-w-xl px-6 py-16">
-      <h1 className="text-xl font-semibold tracking-tight">{siteConfig.name} needs configuration</h1>
+      <h1 className="text-xl font-semibold tracking-tight">{t("title", { app: siteConfig.name })}</h1>
       <p className="mt-2 text-[13px] text-muted-foreground">
         {reason === "no-workspace"
-          ? "Your account has no workspace. This usually means the database migration was not applied before you signed up."
+          ? t("noWorkspace")
           : isSupabaseConfigured()
-            ? "Supabase is configured."
-            : "The app can't reach a database yet. Add these variables to .env.local (local) or your hosting provider, then restart."}
+            ? t("configured")
+            : t("notConfigured")}
       </p>
       <ul className="mt-6 space-y-2 rounded-xl border bg-card p-4">
         {checks.map((c) => (
@@ -33,10 +39,10 @@ export default async function SetupPage({ searchParams }: PageProps<"/setup">) {
         ))}
       </ul>
       <ol className="mt-6 list-decimal space-y-2 pl-5 text-[13px] text-muted-foreground">
-        <li>Create a project at supabase.com, then copy the URL and anon/publishable key from Project Settings → API.</li>
-        <li>Run <code className="font-mono text-xs">supabase/migrations/0001_init.sql</code> in the Supabase SQL editor.</li>
-        <li>Create a Gemini API key at aistudio.google.com (default AI engine) and, optionally, an Anthropic key at console.anthropic.com for premium tasks.</li>
-        <li>See README.md for the full setup guide.</li>
+        <li>{t("steps.supabase")}</li>
+        <li>{t.rich("steps.migration", { code })}</li>
+        <li>{t("steps.ai")}</li>
+        <li>{t("steps.readme")}</li>
       </ol>
     </div>
   );

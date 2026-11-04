@@ -76,6 +76,15 @@ export function detectCtas(text: string | null | undefined) {
   return CTA_PATTERNS.filter(([, re]) => re.test(t)).map(([label]) => label);
 }
 
+// Display keys of the CTA families and hook patterns (the English labels stay the analysis values).
+export const CTA_KEYS: Record<string, "linkBio" | "signUp" | "comment" | "message" | "share" | "save" | "none"> = {
+  "Link / bio": "linkBio", "Sign up / book": "signUp", Comment: "comment", "Message / DM": "message", "Share / tag": "share", Save: "save", "No CTA detected": "none",
+};
+export const HOOK_KEYS: Record<string, "question" | "number" | "emoji" | "howWhy" | "direct"> = {
+  Question: "question", "Number / list": "number", "Starts with an emoji": "emoji", "How / why": "howWhy", "Direct address (tu / vous / you)": "direct",
+};
+export const DELETED_PILLAR = "Deleted pillar";
+
 export const HOOK_PATTERNS: [string, (h: string) => boolean][] = [
   ["Question", (h) => /\?/.test(h)],
   ["Number / list", (h) => /^\D{0,12}\d+/.test(h)],
@@ -167,7 +176,7 @@ export function computePerformance(items: PerfItem[], pillarName: (id: string) =
         bottom: sorted.slice(-5).reverse().map((i) => ({ id: i.id, title: titleOf(i), date: date(i), format: normalizeFormat(i.format), score: r2(i.score) })),
         trend,
         byFormat: groupStats(pool, (i) => normalizeFormat(i.format), (k) => k, baseline, reachOk),
-        byPillar: groupStats(pool, (i) => i.pillar_id ?? null, (k) => pillarName(k) ?? "Deleted pillar", baseline, reachOk),
+        byPillar: groupStats(pool, (i) => i.pillar_id ?? null, (k) => pillarName(k) ?? DELETED_PILLAR, baseline, reachOk),
         topics: [...topicCounts.entries()]
           .filter(([, ids]) => ids.size >= 3 && ids.size < pool.length * 0.6)
           .map(([token, ids]) => {

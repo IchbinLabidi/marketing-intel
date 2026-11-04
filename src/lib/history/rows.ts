@@ -1,5 +1,6 @@
 import { METRICS, type Metric, type Platform } from "@/lib/domain/constants";
 import type { RowIssue } from "@/types/domain";
+import type { TFor } from "@/i18n/messages";
 import type { ColumnMapping } from "./fields";
 import { normalizeText } from "./text";
 import { parseCount, parseDate, parsePlatforms } from "./parse";
@@ -58,12 +59,14 @@ export function matchRef(text: string | null, refs: { id: string; name: string }
  * Applies a column mapping to staged rows and validates them.
  * Nothing is discarded silently: empty rows and user-excluded rows are counted, every unreadable value
  * becomes an error (blocks import) or a warning (imported, flagged). Missing data stays null.
+ * `t` words the issue messages in the user's language.
  */
 export function buildRows(
   raw: RawRow[],
   mapping: ColumnMapping,
   refs: StrategyRefs,
   { excluded = [], today = new Date() }: { excluded?: number[]; today?: Date } = {},
+  t: TFor<"history">,
 ): BuildResult {
   const errors: RowIssue[] = [];
   const warnings: RowIssue[] = [];
@@ -100,8 +103,8 @@ export function buildRows(
       const v = cell(r, key);
       if (!v) return null;
       const d = parseDate(v);
-      if (!d) err(key, `“${v}” is not a date we can read (use e.g. 2024-09-15 or 15/09/2024)`);
-      else if (d < `${MIN_YEAR}-01-01` || d > maxDate) err(key, `${d} is outside the plausible range`);
+      if (!d) err(key, t("rows.badDate", { value: v }));
+      else if (d < `${MIN_YEAR}-01-01` || d > maxDate) err(key, t("rows.dateOutOfRange", { date: d }));
       return d;
     };
     const publication_date = dateField("publication_date");
@@ -112,9 +115,9 @@ export function buildRows(
     let platform: Platform | null = platforms[0] ?? null;
     if (platformRaw && !platforms.length) {
       platform = "other";
-      warn("platform", `“${platformRaw}” is not a known platform; saved as Other`);
+      warn("platform", t("rows.unknownPlatform", { value: platformRaw }));
     } else if (platforms.length > 1) {
-      warn("platform", `Several platforms (${platforms.join(", ")}); the first one is used, all are kept in the record`);
+      warn("platform", t("rows.severalPlatforms", { platforms: platforms.join(", ") }));
     }
 
     const metrics: Partial<Record<Metric, number | null>> = {};
@@ -122,7 +125,7 @@ export function buildRows(
       const v = cell(r, m);
       if (!v) continue;
       const parsed = parseCount(v);
-      if (parsed.error) err(m, `“${v}” ${parsed.error}`);
+      if (parsed.error) err(m, t(`rows.count.${parsed.error}`, { value: v }));
       metrics[m] = parsed.value;
     }
 
@@ -131,19 +134,19 @@ export function buildRows(
     const caption = cell(r, "caption");
     const description = cell(r, "description");
     if (!publication_date && !actual_publication_date && !rowErrors.some((e) => e.field.endsWith("date"))) {
-      warn("publication_date", "No date: the row is imported but left out of timeline and seasonality analysis");
+      warn("publication_date", t("rows.noDate"));
     }
-    if (!title && !topic && !caption && !description) err("title", "Row has no title, topic, caption or description");
+    if (!title && !topic && !caption && !description) err("title", t("rows.noContent"));
 
     const content_pillar = cell(r, "content_pillar");
     const pillar_id = matchRef(content_pillar, refs.pillars);
-    if (content_pillar && !pillar_id) warn("content_pillar", `“${content_pillar}” doesn't match a strategy pillar; kept as text`);
+    if (content_pillar && !pillar_id) warn("content_pillar", t("rows.unmatchedPillar", { value: content_pillar }));
     const campaign = cell(r, "campaign");
     const campaign_id = matchRef(campaign, refs.campaigns);
 
     // Duplicate rows in the same file (same date, platform and title) are flagged, not merged.
     const key = [publication_date, platform, normalizeText(title ?? topic ?? caption)].join("|");
-    if (seen.has(key)) warn("title", `Looks like a duplicate of row ${seen.get(key)}`);
+    if (seen.has(key)) warn("title", t("rows.duplicate", { row: String(seen.get(key)) }));
     else seen.set(key, rowNo);
 
     // Unmapped columns are preserved so no source information is lost.

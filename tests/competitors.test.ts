@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { hashtagsOf, mentionsOf, normalizeWebsite, parseProfileUrl } from "@/lib/competitors/urls";
 import { engagementOfPost, summarize, topicGaps, type AnalysisPost } from "@/lib/competitors/analysis";
+import { testT } from "@/i18n/testing";
+
+const t = testT("competitors");
 
 const ok = (raw: string) => {
-  const r = parseProfileUrl(raw);
+  const r = parseProfileUrl(raw, t);
   if (!r.ok) throw new Error(r.error);
   return r.profile;
 };
@@ -22,13 +25,13 @@ describe("profile URLs", () => {
     expect(ok("https://www.threads.net/@brand")).toMatchObject({ platform: "threads", handle: "brand" });
   });
   it("rejects posts, reserved paths and unknown sites", () => {
-    expect(parseProfileUrl("https://www.instagram.com/p/Cx123/").ok).toBe(false);
-    expect(parseProfileUrl("https://www.instagram.com/reel/Cx123/").ok).toBe(false);
-    expect(parseProfileUrl("https://www.facebook.com/watch/?v=1").ok).toBe(false);
-    expect(parseProfileUrl("https://www.tiktok.com/discover").ok).toBe(false);
-    expect(parseProfileUrl("https://x.com/i/status/1").ok).toBe(false);
-    expect(parseProfileUrl("https://example.com/brand").ok).toBe(false);
-    expect(parseProfileUrl("not a url at all").ok).toBe(false);
+    expect(parseProfileUrl("https://www.instagram.com/p/Cx123/", t).ok).toBe(false);
+    expect(parseProfileUrl("https://www.instagram.com/reel/Cx123/", t).ok).toBe(false);
+    expect(parseProfileUrl("https://www.facebook.com/watch/?v=1", t).ok).toBe(false);
+    expect(parseProfileUrl("https://www.tiktok.com/discover", t).ok).toBe(false);
+    expect(parseProfileUrl("https://x.com/i/status/1", t).ok).toBe(false);
+    expect(parseProfileUrl("https://example.com/brand", t).ok).toBe(false);
+    expect(parseProfileUrl("not a url at all", t).ok).toBe(false);
   });
   it("normalises websites and extracts hashtags and mentions", () => {
     expect(normalizeWebsite("Brand.tn/")).toBe("https://brand.tn");

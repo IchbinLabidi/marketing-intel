@@ -12,6 +12,7 @@ import { clearSocialTokens, readSocialTokens } from "@/server/services/social";
 import { SocialApiError } from "@/server/social/http";
 import { describeSocialError } from "@/server/social/sync";
 import { hasPermission } from "@/server/services/team";
+import { getFormatter, getT } from "@/i18n/server";
 
 async function guard(projectId: string) {
   await requireUser();
@@ -26,13 +27,14 @@ export type DrivePickerState = {
 };
 
 export async function drivePickerAction(projectId: string): Promise<ActionResult<DrivePickerState>> {
-  if (!(await guard(projectId))) return { ok: false, error: "Your role can't attach media in the calendar." };
+  const t = await getT("calendar");
+  if (!(await guard(projectId))) return { ok: false, error: t("driveActions.noAttach") };
   const c = driveConfig();
   if (c.missing.length) return { ok: true, data: { configured: false, missing: c.missing, email: null, picker: null } };
   const conn = await getDriveConnection(projectId);
   if (!conn) return { ok: true, data: { configured: true, missing: [], email: null, picker: null } };
   try {
-    const accessToken = await driveAccessToken(await createClient(), conn);
+    const accessToken = await driveAccessToken(await createClient(), conn, t);
     return { ok: true, data: { configured: true, missing: [], email: conn.account_name, picker: { accessToken, apiKey: c.apiKey, appId: c.appId, clientId: c.clientId } } };
   } catch (e) {
     return { ok: false, error: describeSocialError(e) };
@@ -45,19 +47,20 @@ export async function drivePickerAction(projectId: string): Promise<ActionResult
  * or a video small enough to publish.
  */
 export async function attachDriveFileAction(projectId: string, itemId: string, fileId: string): Promise<ActionResult<{ id: string }>> {
-  if (!(await guard(projectId))) return { ok: false, error: "Your role can't attach media in the calendar." };
+  const [t, fmt] = await Promise.all([getT("calendar"), getFormatter()]);
+  if (!(await guard(projectId))) return { ok: false, error: t("driveActions.noAttach") };
   const conn = await getDriveConnection(projectId);
-  if (!conn) return { ok: false, error: "Connect Google Drive first." };
+  if (!conn) return { ok: false, error: t("driveActions.connectFirst") };
   try {
     const db = await createClient();
-    const meta = await driveFileMeta(await driveAccessToken(db, conn), fileId);
-    if (meta.trashed) return { ok: false, error: "This file is in the Drive trash." };
-    if (meta.capabilities?.canDownload === false) return { ok: false, error: "Your Google account can't download this file (the owner restricted downloads)." };
-    if (!mediaKindOf(meta.mimeType)) return { ok: false, error: "Choose an image or a video." };
+    const meta = await driveFileMeta(await driveAccessToken(db, conn, t), fileId, t);
+    if (meta.trashed) return { ok: false, error: t("driveActions.trashed") };
+    if (meta.capabilities?.canDownload === false) return { ok: false, error: t("driveActions.cantDownload") };
+    if (!mediaKindOf(meta.mimeType)) return { ok: false, error: t("driveActions.chooseMedia") };
     const size = Number(meta.size ?? 0);
-    if (size > MAX_FILE_BYTES) return { ok: false, error: `This file is ${(size / 1024 / 1024).toFixed(1)} MB; publishing supports up to 50 MB.` };
+    if (size > MAX_FILE_BYTES) return { ok: false, error: t("driveActions.tooLarge", { size: fmt.number(size / 1024 / 1024, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }) };
     const { data: item } = await db.from("content_items").select("language").eq("project_id", projectId).eq("id", itemId).maybeSingle();
-    if (!item) return { ok: false, error: "Post not found." };
+    if (!item) return { ok: false, error: t("actions.notFound") };
     const { data: row, error } = await db.from("content_assets").insert({
       project_id: projectId, content_item_id: itemId, kind: "media", language: item.language || "fr",
       body: {
@@ -69,22 +72,23 @@ export async function attachDriveFileAction(projectId: string, itemId: string, f
     }).select("id").single();
     if (error) throw error;
     revalidatePath(`/p/${projectId}`, "layout");
-    return { ok: true, data: { id: row.id }, message: `${meta.name} attached from Google Drive` };
+    return { ok: true, data: { id: row.id }, message: t("driveActions.attached", { name: meta.name }) };
   } catch (e) {
-    if (e instanceof SocialApiError && e.kind === "not_found") return { ok: false, error: "This file can't be found with the project's Drive access." };
+    if (e instanceof SocialApiError && e.kind === "not_found") return { ok: false, error: t("driveActions.notFound") };
     return { ok: false, error: describeSocialError(e) };
   }
 }
 
 export async function disconnectDriveAction(projectId: string): Promise<ActionResult> {
-  if (!(await guard(projectId))) return { ok: false, error: "Your role can't change integrations." };
+  const t = await getT("calendar");
+  if (!(await guard(projectId))) return { ok: false, error: t("driveActions.noIntegrations") };
   const conn = await getDriveConnection(projectId);
-  if (!conn) return { ok: true, message: "Already disconnected" };
+  if (!conn) return { ok: true, message: t("driveActions.alreadyDisconnected") };
   const db = await createClient();
-  const t = await readSocialTokens(db, conn.id).catch(() => ({ access: null, refresh: null }));
-  if (t.refresh || t.access) await revokeDriveToken((t.refresh ?? t.access)!);
+  const tokens = await readSocialTokens(db, conn.id).catch(() => ({ access: null, refresh: null }));
+  if (tokens.refresh || tokens.access) await revokeDriveToken((tokens.refresh ?? tokens.access)!);
   await clearSocialTokens(db, conn.id).catch(() => undefined);
   await db.from("social_connections").update({ status: "disconnected" }).eq("id", conn.id);
   revalidatePath(`/p/${projectId}`, "layout");
-  return { ok: true, message: "Google Drive disconnected. Files already attached stay referenced but can't be published until you reconnect." };
+  return { ok: true, message: t("driveActions.disconnected") };
 }

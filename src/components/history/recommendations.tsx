@@ -9,17 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/app/empty-state";
-import { FUNNEL_LABELS, INSIGHT_LABELS, PLATFORM_LABELS, type FunnelStage, type InsightType, type Platform } from "@/lib/domain/constants";
+import type { FunnelStage, InsightType } from "@/lib/domain/constants";
 import { generateRecommendationsAction, setRecommendationStateAction } from "@/server/actions/history-intelligence";
 import { stripRefs } from "@/lib/history/text";
+import { platformLabel } from "@/lib/history/parse";
 import type { Opportunity } from "@/types/domain";
-import { formatDateTime } from "@/lib/format";
+import { useFormatter, useT } from "@/i18n/client";
 
 const INSIGHT_VARIANT: Record<InsightType, "success" | "default" | "warning"> = { data_supported: "success", hypothesis: "default", experiment: "warning" };
-const CATEGORY_LABELS: Record<string, string> = {
-  topic: "Topic to explore", refresh: "Angle to refresh", format_test: "Format to test", pillar: "Underused pillar",
-  seasonal: "Seasonal opportunity", campaign: "Campaign idea", repurpose: "Content to repurpose",
-};
+const CATEGORIES = ["topic", "refresh", "format_test", "pillar", "seasonal", "campaign", "repurpose"] as const;
 
 export function Recommendations({
   projectId,
@@ -46,6 +44,9 @@ export function Recommendations({
   aiEnabled: boolean;
   readOnly: boolean;
 }) {
+  const t = useT("history");
+  const td = useT("domain");
+  const fmt = useFormatter();
   const [instruction, setInstruction] = React.useState("");
   const [generating, setGenerating] = React.useState(false);
   const [pending, startTransition] = useTransition();
@@ -72,10 +73,9 @@ export function Recommendations({
       {!readOnly ? (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Sparkles className="size-4 text-primary" /> Generate recommendations</CardTitle>
+            <CardTitle className="flex items-center gap-2"><Sparkles className="size-4 text-primary" /> {t("recommendations.generate")}</CardTitle>
             <CardDescription>
-              Claude reads your strategy (brand, objectives, personas, journey, funnel, pillars, voice, campaigns) together with the statistics above and the imported items.
-              Each run replaces the previous unsaved recommendations; saved ones are kept.
+              {t("recommendations.description")}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -83,22 +83,22 @@ export function Recommendations({
               value={instruction}
               onChange={(e) => setInstruction(e.target.value)}
               rows={2}
-              placeholder="Optional focus, e.g. “prepare the Bac season”, “more TikTok for lycée students”"
+              placeholder={t("recommendations.placeholder")}
               disabled={generating}
             />
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">{reportDate ? `Last analysis: ${formatDateTime(reportDate)}` : "No analysis yet."}</p>
+              <p className="text-xs text-muted-foreground">{reportDate ? t("recommendations.lastAnalysis", { date: fmt.dateTime(reportDate) }) : t("recommendations.noAnalysis")}</p>
               <Button
                 onClick={generate}
                 disabled={generating || !aiEnabled || !hasHistory}
-                title={!aiEnabled ? "Add GEMINI_API_KEY or ANTHROPIC_API_KEY to enable AI features" : !hasHistory ? "Import a calendar first" : undefined}
+                title={!aiEnabled ? t("common.aiDisabled") : !hasHistory ? t("recommendations.importFirst") : undefined}
               >
                 {generating ? <Loader2 className="animate-spin" /> : <Sparkles />}
-                {generating ? "Analysing… this can take up to a minute" : reportDate ? "Re-run analysis" : "Generate recommendations"}
+                {generating ? t("recommendations.analysing") : reportDate ? t("recommendations.rerun") : t("recommendations.generate")}
               </Button>
             </div>
             {!metricsImported ? (
-              <p className="text-xs text-muted-foreground">No performance metrics were imported, so recommendations cannot and will not claim what performed well.</p>
+              <p className="text-xs text-muted-foreground">{t("recommendations.noMetrics")}</p>
             ) : null}
           </CardContent>
         </Card>
@@ -109,7 +109,7 @@ export function Recommendations({
           <div className="flex flex-wrap gap-1.5">
             {(["all", "data_supported", "hypothesis", "experiment"] as const).map((k) => (
               <Button key={k} size="sm" variant={filter === k ? "secondary" : "ghost"} onClick={() => setFilter(k)}>
-                {k === "all" ? `All (${opportunities.length})` : `${INSIGHT_LABELS[k]} (${opportunities.filter((o) => o.insight_type === k).length})`}
+                {k === "all" ? t("recommendations.all", { count: opportunities.length }) : t("recommendations.filter", { label: td(`insight.${k}`), count: opportunities.filter((o) => o.insight_type === k).length })}
               </Button>
             ))}
           </div>
@@ -117,29 +117,29 @@ export function Recommendations({
             {shown.map((o) => (
               <li key={o.id} className="rounded-xl border bg-card p-4 shadow-xs">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant={INSIGHT_VARIANT[o.insight_type]}>{INSIGHT_LABELS[o.insight_type]}</Badge>
-                  {o.creative_angle ? <Badge variant="outline">{CATEGORY_LABELS[o.creative_angle] ?? o.creative_angle}</Badge> : null}
-                  {o.confidence ? <Badge variant="secondary">{o.confidence} confidence</Badge> : null}
-                  {o.state === "in_progress" ? <Badge variant="success"><BookmarkCheck /> Saved</Badge> : null}
-                  {o.state === "scheduled" ? <Badge variant="success"><CalendarCheck /> In a calendar</Badge> : null}
+                  <Badge variant={INSIGHT_VARIANT[o.insight_type]}>{td(`insight.${o.insight_type}`)}</Badge>
+                  {o.creative_angle ? <Badge variant="outline">{(CATEGORIES as readonly string[]).includes(o.creative_angle) ? t(`recommendations.categories.${o.creative_angle as (typeof CATEGORIES)[number]}`) : o.creative_angle}</Badge> : null}
+                  {o.confidence ? <Badge variant="secondary">{t(`recommendations.confidence.${o.confidence}`)}</Badge> : null}
+                  {o.state === "in_progress" ? <Badge variant="success"><BookmarkCheck /> {t("recommendations.saved")}</Badge> : null}
+                  {o.state === "scheduled" ? <Badge variant="success"><CalendarCheck /> {t("recommendations.inCalendar")}</Badge> : null}
                 </div>
                 <p className="mt-2 font-medium">{stripRefs(o.title ?? o.idea)}</p>
                 <p className="mt-1 whitespace-pre-wrap text-[13px] text-muted-foreground">{stripRefs(o.rationale)}</p>
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                  <Meta label="Pillar" value={o.pillar_id ? pillarNames[o.pillar_id] : null} />
-                  <Meta label="Format" value={[o.format, o.platform ? PLATFORM_LABELS[o.platform as Platform] : null].filter(Boolean).join(" · ")} />
-                  <Meta label="Funnel stage" value={o.funnel_stage ? FUNNEL_LABELS[o.funnel_stage as FunnelStage] : null} />
-                  <Meta label="Persona" value={o.persona_id ? personaNames[o.persona_id] : o.target_audience} />
-                  <Meta label="Timing" value={o.suggested_timing} wide />
+                  <Meta label={t("recommendations.meta.pillar")} value={o.pillar_id ? pillarNames[o.pillar_id] : null} />
+                  <Meta label={t("recommendations.meta.format")} value={[o.format, o.platform ? platformLabel(td, o.platform) : null].filter(Boolean).join(" · ")} />
+                  <Meta label={t("recommendations.meta.funnel")} value={o.funnel_stage ? td(`funnel.${o.funnel_stage as FunnelStage}`) : null} />
+                  <Meta label={t("recommendations.meta.persona")} value={o.persona_id ? personaNames[o.persona_id] : o.target_audience} />
+                  <Meta label={t("recommendations.meta.timing")} value={o.suggested_timing} wide />
                 </dl>
                 {o.evidence?.length ? (
                   <details className="mt-3 text-xs">
-                    <summary className="cursor-pointer font-medium">Evidence ({o.evidence.length})</summary>
+                    <summary className="cursor-pointer font-medium">{t("recommendations.evidence", { count: o.evidence.length })}</summary>
                     <ul className="mt-1 space-y-1 text-muted-foreground">
                       {o.evidence.map((e, k) => (
                         <li key={k}>
-                          <span className="font-medium text-foreground">{e.type === "historical" ? "Past item" : e.type === "strategy" ? "Strategy" : "Statistic"}: </span>
-                          {e.ref_id && itemTitles[e.ref_id] ? `${itemTitles[e.ref_id].date ?? "no date"} · ${itemTitles[e.ref_id].title} — ` : e.ref_id ? "(item deleted) — " : ""}
+                          <span className="font-medium text-foreground">{e.type === "historical" ? t("recommendations.evidenceType.historical") : e.type === "strategy" ? t("recommendations.evidenceType.strategy") : t("recommendations.evidenceType.statistic")}{t("recommendations.colon")} </span>
+                          {e.ref_id && itemTitles[e.ref_id] ? `${itemTitles[e.ref_id].date ?? t("common.noDate")} · ${itemTitles[e.ref_id].title} — ` : e.ref_id ? t("recommendations.itemDeleted") : ""}
                           {stripRefs(e.note)}
                         </li>
                       ))}
@@ -149,11 +149,11 @@ export function Recommendations({
                 {!readOnly && o.state !== "scheduled" ? (
                   <div className="mt-3 flex justify-end gap-1">
                     {o.state === "in_progress" ? (
-                      <Button size="sm" variant="ghost" disabled={pending} onClick={() => setState(o.id, "new")}><Bookmark /> Unsave</Button>
+                      <Button size="sm" variant="ghost" disabled={pending} onClick={() => setState(o.id, "new")}><Bookmark /> {t("recommendations.unsave")}</Button>
                     ) : (
-                      <Button size="sm" variant="ghost" disabled={pending} onClick={() => setState(o.id, "in_progress")}><Bookmark /> Save</Button>
+                      <Button size="sm" variant="ghost" disabled={pending} onClick={() => setState(o.id, "in_progress")}><Bookmark /> {t("recommendations.save")}</Button>
                     )}
-                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => setState(o.id, "dismissed")}><X /> Dismiss</Button>
+                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => setState(o.id, "dismissed")}><X /> {t("recommendations.dismiss")}</Button>
                   </div>
                 ) : null}
               </li>
@@ -161,14 +161,14 @@ export function Recommendations({
           </ul>
         </>
       ) : (
-        <EmptyState icon={Sparkles} title="No recommendations yet" description={hasHistory ? "Generate recommendations to turn the analysis into concrete ideas, each with its evidence." : "Import a historical calendar first."} />
+        <EmptyState icon={Sparkles} title={t("recommendations.emptyTitle")} description={hasHistory ? t("recommendations.emptyDescription") : t("recommendations.emptyNoHistory")} />
       )}
 
       {topicGaps.length ? (
         <Card>
           <CardHeader>
-            <CardTitle>Strategy topics not covered by the history</CardTitle>
-            <CardDescription>AI reading of the strategy against past content (hypotheses to validate).</CardDescription>
+            <CardTitle>{t("recommendations.topicGaps")}</CardTitle>
+            <CardDescription>{t("recommendations.topicGapsHint")}</CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="grid gap-2 md:grid-cols-2">
@@ -187,9 +187,10 @@ export function Recommendations({
 }
 
 function Meta({ label, value, wide }: { label: string; value: string | null | undefined; wide?: boolean }) {
+  const t = useT("history");
   return (
     <div className={wide ? "col-span-2" : undefined}>
-      <dt className="inline text-muted-foreground">{label}: </dt>
+      <dt className="inline text-muted-foreground">{label}{t("recommendations.colon")} </dt>
       <dd className="inline">{value || "—"}</dd>
     </div>
   );

@@ -11,8 +11,8 @@ export const EDITABLE_STATUSES = ["idea", "planned", "brief_ready", "in_producti
 
 export const postSchema = z
   .object({
-    title: z.string().trim().min(1, "Give the post a title").max(300),
-    platform: z.enum(PLATFORMS, { message: "Choose a platform" }),
+    title: z.string().trim().min(1, "v:postTitle").max(300),
+    platform: z.enum(PLATFORMS, { message: "v:choosePlatform" }),
     format: optionalText(120),
     caption: optionalText(5000),
     hook: optionalText(1000),
@@ -42,13 +42,13 @@ export const postSchema = z
       .max(1000)
       .nullish()
       .transform((v) => v || null)
-      .refine((v) => !v || /^https:\/\/\S+$/i.test(v), "Use an https:// link to the image or video"),
-    date: z.string().nullish().transform((v) => v || null).refine((v) => !v || isIsoDate(v), "Invalid date"),
-    time: z.string().nullish().transform((v) => v || null).refine((v) => !v || isTime(v), "Use HH:MM"),
+      .refine((v) => !v || /^https:\/\/\S+$/i.test(v), "v:httpsMedia"),
+    date: z.string().nullish().transform((v) => v || null).refine((v) => !v || isIsoDate(v), "v:invalidDate"),
+    time: z.string().nullish().transform((v) => v || null).refine((v) => !v || isTime(v), "v:timeFormat"),
     status: z.enum(EDITABLE_STATUSES),
   })
-  .refine((p) => p.status !== "scheduled" || (p.date && p.time), { message: "A scheduled post needs a date and a time", path: ["time"] })
-  .refine((p) => !p.time || p.date, { message: "Pick a date for this time", path: ["date"] });
+  .refine((p) => p.status !== "scheduled" || (p.date && p.time), { message: "v:scheduledNeedsDateTime", path: ["time"] })
+  .refine((p) => !p.time || p.date, { message: "v:dateForTime", path: ["date"] });
 export type PostInput = z.infer<typeof postSchema>;
 
 export const generatePostSchema = z.object({

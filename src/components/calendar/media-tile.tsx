@@ -8,11 +8,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { mediaKindOf } from "@/lib/publishing/rules";
 import { cn } from "@/lib/utils";
 import { deleteMediaAction } from "@/server/actions/media";
+import { useT } from "@/i18n/client";
 
 export type TileAsset = { id: string; name: string; mime: string | null; source: "stored" | "link" | "google_drive"; previewUrl: string | null; fullUrl: string | null };
 
 /** A media preview that shows its loading and error states instead of a blank box. */
 export function MediaPreview({ asset, full, className }: { asset: TileAsset; full?: boolean; className?: string }) {
+  const t = useT("calendar");
   const [state, setState] = React.useState<"loading" | "ready" | "error">("loading");
   const src = full ? asset.fullUrl ?? asset.previewUrl : asset.previewUrl;
   const kind = mediaKindOf(asset.mime);
@@ -21,8 +23,8 @@ export function MediaPreview({ asset, full, className }: { asset: TileAsset; ful
   if (kind === "video" && !full) {
     return (
       <div className={cn("relative flex items-center justify-center bg-muted", className)}>
-        {state === "loading" ? <Loader2 className="absolute size-5 animate-spin text-muted-foreground" aria-label="Loading preview" /> : null}
-        {state === "error" ? <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-center text-[11px] text-muted-foreground"><Film className="size-6" /> Video</div> : null}
+        {state === "loading" ? <Loader2 className="absolute size-5 animate-spin text-muted-foreground" aria-label={t("media.loadingPreview")} /> : null}
+        {state === "error" ? <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-center text-[11px] text-muted-foreground"><Film className="size-6" /> {t("media.video")}</div> : null}
         {asset.source === "google_drive" ? (
           // eslint-disable-next-line @next/next/no-img-element -- private, authenticated media route (not optimizable)
           <img src={src} alt={asset.name} loading="lazy" onLoad={() => setState("ready")} onError={() => setState("error")} className={cn("size-full object-cover", state !== "ready" && "opacity-0")} />
@@ -35,10 +37,10 @@ export function MediaPreview({ asset, full, className }: { asset: TileAsset; ful
   }
   return (
     <div className={cn("relative flex items-center justify-center", className)}>
-      {state === "loading" ? <Loader2 className="absolute size-5 animate-spin text-muted-foreground" aria-label="Loading preview" /> : null}
+      {state === "loading" ? <Loader2 className="absolute size-5 animate-spin text-muted-foreground" aria-label={t("media.loadingPreview")} /> : null}
       {state === "error" ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-center text-[11px] text-muted-foreground">
-          <ImageOff className="size-4" /> Preview unavailable{asset.source === "google_drive" ? ": the Drive file may have been deleted, or Drive needs reconnecting" : ""}
+          <ImageOff className="size-4" /> {asset.source === "google_drive" ? t("media.previewUnavailableDrive") : t("media.previewUnavailable")}
         </div>
       ) : null}
       {kind === "image" ? (
@@ -55,6 +57,8 @@ export function MediaPreview({ asset, full, className }: { asset: TileAsset; ful
 
 /** Full-size view of one media item (original quality and aspect ratio), with arrows when several are shown. */
 export function MediaLightbox({ assets, index, onIndex, onClose }: { assets: TileAsset[]; index: number; onIndex: (i: number) => void; onClose: () => void }) {
+  const t = useT("calendar");
+  const tc = useT("common");
   const a = assets[index];
   React.useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -70,13 +74,13 @@ export function MediaLightbox({ assets, index, onIndex, onClose }: { assets: Til
       <DialogContent className="max-h-[94dvh] w-[calc(100vw-2rem)] sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle className="truncate">{a.name}</DialogTitle>
-          <DialogDescription>{assets.length > 1 ? `${index + 1} of ${assets.length} · use the arrow keys to move` : "Original quality"}</DialogDescription>
+          <DialogDescription>{assets.length > 1 ? t("media.position", { index: index + 1, total: assets.length }) : t("media.original")}</DialogDescription>
         </DialogHeader>
         <MediaPreview key={a.id} asset={a} full className="h-[70dvh] w-full rounded-lg bg-muted/40" />
         {assets.length > 1 ? (
           <DialogFooter className="sm:justify-between">
-            <Button variant="outline" disabled={index === 0} onClick={() => onIndex(index - 1)}>Previous</Button>
-            <Button variant="outline" disabled={index === assets.length - 1} onClick={() => onIndex(index + 1)}>Next</Button>
+            <Button variant="outline" disabled={index === 0} onClick={() => onIndex(index - 1)}>{tc("actions.previous")}</Button>
+            <Button variant="outline" disabled={index === assets.length - 1} onClick={() => onIndex(index + 1)}>{tc("actions.next")}</Button>
           </DialogFooter>
         ) : null}
       </DialogContent>
@@ -86,32 +90,34 @@ export function MediaLightbox({ assets, index, onIndex, onClose }: { assets: Til
 
 /** Confirms, then permanently deletes one attachment (file in storage and its record). */
 export function DeleteMediaDialog({ projectId, itemId, asset, onClose, onDeleted }: { projectId: string; itemId: string; asset: TileAsset; onClose: () => void; onDeleted: (id: string) => void }) {
+  const t = useT("calendar");
+  const tc = useT("common");
   const [busy, setBusy] = React.useState(false);
   const drive = asset.source === "google_drive";
   return (
     <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete “{asset.name}”?</DialogTitle>
+          <DialogTitle>{t("media.deleteTitle", { name: asset.name })}</DialogTitle>
           <DialogDescription>
             {drive
-              ? "It's removed from this post. Orix Signals never stored a copy, and the original stays in your Google Drive."
+              ? t("media.deleteDrive")
               : asset.source === "stored"
-                ? "The file is deleted permanently from Orix Signals's storage, freeing its space. This can't be undone."
-                : "The link is removed from this post."}
+                ? t("media.deleteStored")
+                : t("media.deleteLink")}
           </DialogDescription>
         </DialogHeader>
         <MediaPreview asset={asset} className="h-40 w-full overflow-hidden rounded-lg bg-muted" />
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={busy}>{tc("actions.cancel")}</Button>
           <Button variant="destructive" disabled={busy} onClick={async () => {
             setBusy(true);
             const r = await deleteMediaAction(projectId, itemId, asset.id);
             setBusy(false);
             if (!r.ok) { toast.error(r.error); return; }
-            toast.success(r.message ?? "Deleted");
+            toast.success(r.message ?? t("media.deleted"));
             onDeleted(asset.id);
-          }}>{busy ? <Loader2 className="animate-spin" /> : <Trash2 />} {drive ? "Remove from post" : "Delete permanently"}</Button>
+          }}>{busy ? <Loader2 className="animate-spin" /> : <Trash2 />} {drive ? t("media.removeFromPost") : t("media.deletePermanently")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

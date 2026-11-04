@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Briefcase, SlidersHorizontal } from "lucide-react";
 import { MODE_COOKIE } from "@/lib/analytics/mode";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/client";
 
 function remember(mode: string) {
   document.cookie = `${MODE_COOKIE}=${mode}; path=/; max-age=31536000; samesite=lax`;
@@ -12,6 +13,7 @@ function remember(mode: string) {
 
 /** CEO / Expert switch. Only changes the presentation: filters stay in the URL and the data and permissions are the same. */
 export function ModeSwitch({ mode }: { mode: "ceo" | "expert" }) {
+  const t = useT("analytics");
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -32,9 +34,9 @@ export function ModeSwitch({ mode }: { mode: "ceo" | "expert" }) {
     </button>
   );
   return (
-    <div role="radiogroup" aria-label="View" aria-busy={pending} className="inline-flex items-center gap-0.5 rounded-md bg-secondary p-0.5 print:hidden max-sm:basis-full">
-      {item("ceo", "CEO view", Briefcase)}
-      {item("expert", "Expert view", SlidersHorizontal)}
+    <div role="radiogroup" aria-label={t("modeSwitch.label")} aria-busy={pending} className="inline-flex items-center gap-0.5 rounded-md bg-secondary p-0.5 print:hidden max-sm:basis-full">
+      {item("ceo", t("modeSwitch.ceo"), Briefcase)}
+      {item("expert", t("modeSwitch.expert"), SlidersHorizontal)}
     </div>
   );
 }

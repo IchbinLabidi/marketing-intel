@@ -12,7 +12,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/app/form";
-import type { TargetField } from "@/lib/history/fields";
+import { fieldHint, fieldLabel as fieldLabelOf, type TargetField } from "@/lib/history/fields";
+import { useT } from "@/i18n/client";
+import type { TFor } from "@/i18n/messages";
 import type { ImportJob, RowIssue } from "@/types/domain";
 import {
   confirmImportAction,
@@ -37,23 +39,26 @@ export type WizardProps = {
   fileUrl: string | null;
 };
 
-const STATUS: Record<string, { label: string; variant: "secondary" | "success" | "warning" | "destructive" | "default" }> = {
-  uploaded: { label: "Uploaded", variant: "secondary" },
-  extracted: { label: "Extracted", variant: "secondary" },
-  mapped: { label: "Needs fixes", variant: "warning" },
-  validated: { label: "Ready to import", variant: "default" },
-  imported: { label: "Imported", variant: "success" },
-  failed: { label: "Failed", variant: "destructive" },
+const STATUS: Record<string, { label: "uploaded" | "extracted" | "mapped" | "validated" | "imported" | "failed"; variant: "secondary" | "success" | "warning" | "destructive" | "default" }> = {
+  uploaded: { label: "uploaded", variant: "secondary" },
+  extracted: { label: "extracted", variant: "secondary" },
+  mapped: { label: "mapped", variant: "warning" },
+  validated: { label: "validated", variant: "default" },
+  imported: { label: "imported", variant: "success" },
+  failed: { label: "failed", variant: "destructive" },
 };
 
 export function ImportStatusBadge({ status }: { status: string }) {
+  const t = useT("history");
   const s = STATUS[status] ?? STATUS.uploaded;
-  return <Badge variant={s.variant}>{s.label}</Badge>;
+  return <Badge variant={s.variant}>{t(`importStatus.${s.label}`)}</Badge>;
 }
 
 export function ImportWizard(props: WizardProps) {
   const { projectId, job, fields, samples, readOnly } = props;
   const router = useRouter();
+  const t = useT("history");
+  const td = useT("domain");
   const [pending, startTransition] = useTransition();
   const [mapping, setMapping] = React.useState<Record<string, string>>(job.column_mapping ?? {});
   const [dialog, setDialog] = React.useState<"replace" | "delete" | null>(null);
@@ -78,7 +83,7 @@ export function ImportWizard(props: WizardProps) {
           <CardContent className="flex gap-3">
             <CircleAlert className="mt-0.5 size-5 shrink-0 text-destructive" />
             <div className="space-y-1">
-              <p className="font-medium">This file could not be imported</p>
+              <p className="font-medium">{t("wizard.failed")}</p>
               <p className="text-[13px] text-muted-foreground">{job.error}</p>
             </div>
           </CardContent>
@@ -99,7 +104,7 @@ export function ImportWizard(props: WizardProps) {
       {job.status !== "imported" && job.imported_count > 0 ? (
         <div className="flex gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-[13px]">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
-          <p>This import currently has {job.imported_count} records from a previous version. Confirming will replace them with the rows below.</p>
+          <p>{t("wizard.previousVersion", { count: job.imported_count })}</p>
         </div>
       ) : null}
 
@@ -112,14 +117,14 @@ export function ImportWizard(props: WizardProps) {
       {/* 1. Mapping ------------------------------------------------------------------- */}
       <Card>
         <CardHeader>
-          <CardTitle>1 · Map columns</CardTitle>
+          <CardTitle>{t("wizard.mapTitle")}</CardTitle>
           <CardDescription>
-            Columns were matched automatically by name. Check each match against the sample values. Unmapped columns are kept with each record, not lost.
+            {t("wizard.mapDescription")}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {job.sheet_names.length > 1 ? (
-            <Field label="Worksheet" htmlFor="sheet" className="max-w-xs">
+            <Field label={t("wizard.worksheet")} htmlFor="sheet" className="max-w-xs">
               <NativeSelect id="sheet" value={job.sheet_name ?? ""} disabled={readOnly || pending} onChange={(e) => run(() => selectSheetAction(projectId, job.id, e.target.value))}>
                 {job.sheet_names.map((s) => <option key={s} value={s}>{s}</option>)}
               </NativeSelect>
@@ -131,8 +136,8 @@ export function ImportWizard(props: WizardProps) {
               return (
                 <div key={f.key} className="grid gap-1">
                   <label htmlFor={`map-${f.key}`} className="flex items-center gap-1.5 text-[13px] font-medium">
-                    {f.label}
-                    {f.kind === "metric" ? <span className="text-[11px] font-normal text-muted-foreground">metric</span> : null}
+                    {fieldLabelOf(t, td, f.key)}
+                    {f.kind === "metric" ? <span className="text-[11px] font-normal text-muted-foreground">{t("wizard.metric")}</span> : null}
                   </label>
                   <NativeSelect
                     id={`map-${f.key}`}
@@ -140,27 +145,27 @@ export function ImportWizard(props: WizardProps) {
                     disabled={readOnly}
                     onChange={(e) => setMapping((m) => ({ ...m, [f.key]: e.target.value }))}
                   >
-                    <option value="">— Not in this file —</option>
+                    <option value="">{t("wizard.notInFile")}</option>
                     {job.raw_columns.map((c) => (
                       <option key={c} value={c} disabled={used.has(c) && used.get(c) !== f.key}>
-                        {c}{used.has(c) && used.get(c) !== f.key ? " (used)" : ""}
+                        {c}{used.has(c) && used.get(c) !== f.key ? t("wizard.used") : ""}
                       </option>
                     ))}
                   </NativeSelect>
                   <p className="truncate text-xs text-muted-foreground">
-                    {col ? (samples[col]?.length ? `e.g. ${samples[col].join(" · ")}` : "Column is empty in the first rows") : f.hint ?? ""}
+                    {col ? (samples[col]?.length ? t("wizard.sample", { values: samples[col].join(" · ") }) : t("wizard.emptyColumn")) : (f.hint ? fieldHint(t, f.key) ?? f.hint : "")}
                   </p>
                 </div>
               );
             })}
           </div>
-          {essentialsMissing ? <p className="text-xs text-warning">No date column mapped: records can be imported but won’t appear in timelines, frequency or seasonality.</p> : null}
-          {contentMissing ? <p className="text-xs text-destructive">Map at least one of Title, Topic, Caption or Description.</p> : null}
+          {essentialsMissing ? <p className="text-xs text-warning">{t("wizard.noDateColumn")}</p> : null}
+          {contentMissing ? <p className="text-xs text-destructive">{t("wizard.noContentColumn")}</p> : null}
           {!readOnly ? (
             <div className="flex justify-end gap-2">
-              {dirty ? <Button variant="ghost" size="sm" onClick={() => setMapping(job.column_mapping ?? {})}>Reset</Button> : null}
+              {dirty ? <Button variant="ghost" size="sm" onClick={() => setMapping(job.column_mapping ?? {})}>{t("wizard.reset")}</Button> : null}
               <Button size="sm" disabled={!dirty || pending} onClick={() => run(() => saveMappingAction(projectId, job.id, Object.fromEntries(Object.entries(mapping).filter(([, c]) => c))))}>
-                {pending ? <Loader2 className="animate-spin" /> : null} Apply mapping and re-check
+                {pending ? <Loader2 className="animate-spin" /> : null} {t("wizard.applyMapping")}
               </Button>
             </div>
           ) : null}
@@ -170,24 +175,25 @@ export function ImportWizard(props: WizardProps) {
       {/* 2. Validation ------------------------------------------------------------------ */}
       <Card>
         <CardHeader>
-          <CardTitle>2 · Check the data</CardTitle>
-          <CardDescription>Nothing is discarded silently. Fix a value, or explicitly exclude a row you don’t want to import.</CardDescription>
+          <CardTitle>{t("wizard.checkTitle")}</CardTitle>
+          <CardDescription>{t("wizard.checkDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Count label="Rows in file" value={props.counts.total} />
-            <Count label="Ready to import" value={props.counts.ready} tone="success" />
-            <Count label="Rows with errors" value={Object.keys(groupedErrors).length} tone={Object.keys(groupedErrors).length ? "destructive" : undefined} />
-            <Count label="Excluded / empty" value={`${props.counts.excluded} / ${props.counts.empty}`} />
+            <Count label={t("wizard.counts.total")} value={props.counts.total} />
+            <Count label={t("wizard.counts.ready")} value={props.counts.ready} tone="success" />
+            <Count label={t("wizard.counts.errors")} value={Object.keys(groupedErrors).length} tone={Object.keys(groupedErrors).length ? "destructive" : undefined} />
+            <Count label={t("wizard.counts.excluded")} value={`${props.counts.excluded} / ${props.counts.empty}`} />
           </div>
 
           {Object.keys(groupedErrors).length ? (
             <div className="space-y-2">
-              <p className="text-[13px] font-medium">Errors to fix ({job.validation_errors.length})</p>
+              <p className="text-[13px] font-medium">{t("wizard.errorsToFix", { count: job.validation_errors.length })}</p>
               <ul className="grid max-h-[28rem] gap-2 overflow-y-auto pr-1">
                 {Object.entries(groupedErrors).slice(0, 100).map(([row, issues]) => (
                   <ErrorRow
                     key={row}
+                    t={t}
                     row={Number(row)}
                     issues={issues}
                     raw={props.rawByRow[Number(row)] ?? {}}
@@ -199,19 +205,19 @@ export function ImportWizard(props: WizardProps) {
                   />
                 ))}
               </ul>
-              {Object.keys(groupedErrors).length > 100 ? <p className="text-xs text-muted-foreground">Showing the first 100 rows with errors. Fixing the mapping often resolves many at once.</p> : null}
+              {Object.keys(groupedErrors).length > 100 ? <p className="text-xs text-muted-foreground">{t("wizard.first100")}</p> : null}
             </div>
           ) : (
-            <p className="flex items-center gap-2 text-[13px] text-success"><Check className="size-4" /> No blocking errors.</p>
+            <p className="flex items-center gap-2 text-[13px] text-success"><Check className="size-4" /> {t("wizard.noErrors")}</p>
           )}
 
           {job.excluded_rows.length ? (
             <div className="text-[13px]">
-              <p className="font-medium">Excluded rows</p>
+              <p className="font-medium">{t("wizard.excludedRows")}</p>
               <div className="mt-1 flex flex-wrap gap-1">
                 {job.excluded_rows.map((r) => (
-                  <button key={r} disabled={readOnly || pending} onClick={() => run(() => setRowExcludedAction(projectId, job.id, r, false))} className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs hover:bg-accent" title="Restore this row">
-                    Row {r} <RotateCcw className="size-3" />
+                  <button key={r} disabled={readOnly || pending} onClick={() => run(() => setRowExcludedAction(projectId, job.id, r, false))} className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs hover:bg-accent" title={t("wizard.restoreRow")}>
+                    {t("wizard.row", { row: String(r) })} <RotateCcw className="size-3" />
                   </button>
                 ))}
               </div>
@@ -220,9 +226,9 @@ export function ImportWizard(props: WizardProps) {
 
           {rowWarnings.length ? (
             <details className="rounded-lg border p-3 text-[13px]">
-              <summary className="cursor-pointer font-medium">Warnings ({rowWarnings.length}) · imported as-is, flagged for review</summary>
+              <summary className="cursor-pointer font-medium">{t("wizard.warnings", { count: rowWarnings.length })}</summary>
               <ul className="mt-2 max-h-60 space-y-1 overflow-y-auto text-xs text-muted-foreground">
-                {rowWarnings.slice(0, 300).map((w, i) => <li key={i}>Row {w.row} · {fieldLabel(fields, w.field)}: {w.message}</li>)}
+                {rowWarnings.slice(0, 300).map((w, i) => <li key={i}>{t("wizard.warningLine", { row: String(w.row), field: fieldLabel(fields, w.field, t, td), message: w.message })}</li>)}
               </ul>
             </details>
           ) : null}
@@ -232,16 +238,16 @@ export function ImportWizard(props: WizardProps) {
       {/* 3. Preview --------------------------------------------------------------------- */}
       <Card>
         <CardHeader>
-          <CardTitle>3 · Preview</CardTitle>
-          <CardDescription>How the first rows will be saved. Status is stored exactly as written: a planned item is never counted as published.</CardDescription>
+          <CardTitle>{t("wizard.previewTitle")}</CardTitle>
+          <CardDescription>{t("wizard.previewDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-[13px]">
               <thead className="text-left text-xs text-muted-foreground">
                 <tr className="border-b">
-                  <th className="py-2 pr-3 font-medium">Row</th><th className="pr-3 font-medium">Date</th><th className="pr-3 font-medium">Platform</th>
-                  <th className="pr-3 font-medium">Title / topic</th><th className="pr-3 font-medium">Format</th><th className="pr-3 font-medium">Pillar</th><th className="font-medium">Status (as imported)</th>
+                  <th className="py-2 pr-3 font-medium">{t("wizard.columns.row")}</th><th className="pr-3 font-medium">{t("wizard.columns.date")}</th><th className="pr-3 font-medium">{t("wizard.columns.platform")}</th>
+                  <th className="pr-3 font-medium">{t("wizard.columns.title")}</th><th className="pr-3 font-medium">{t("wizard.columns.format")}</th><th className="pr-3 font-medium">{t("wizard.columns.pillar")}</th><th className="font-medium">{t("wizard.columns.status")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -252,13 +258,13 @@ export function ImportWizard(props: WizardProps) {
                     <td className="pr-3">{r.platform ?? <Muted />}</td>
                     <td className="max-w-xs truncate pr-3">{r.title ?? <Muted />}</td>
                     <td className="pr-3">{r.format ?? <Muted />}</td>
-                    <td className="pr-3">{r.content_pillar ? <span>{r.content_pillar}{r.pillar_linked ? <Badge variant="success" className="ml-1">linked</Badge> : null}</span> : <Muted />}</td>
-                    <td>{r.publication_status ?? <Muted label="not recorded" />}</td>
+                    <td className="pr-3">{r.content_pillar ? <span>{r.content_pillar}{r.pillar_linked ? <Badge variant="success" className="ml-1">{t("wizard.linked")}</Badge> : null}</span> : <Muted />}</td>
+                    <td>{r.publication_status ?? <Muted label={t("wizard.notRecorded")} />}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {!props.previewRows.length ? <p className="py-4 text-center text-[13px] text-muted-foreground">No valid rows yet.</p> : null}
+            {!props.previewRows.length ? <p className="py-4 text-center text-[13px] text-muted-foreground">{t("wizard.noValidRows")}</p> : null}
           </div>
         </CardContent>
       </Card>
@@ -286,27 +292,28 @@ function ConfirmCard({ projectId, job, ready, blocked, dirty, pending, run }: {
   run: (fn: () => Promise<{ ok: boolean; error?: string; message?: string }>, after?: () => void) => void;
 }) {
   const router = useRouter();
+  const t = useT("history");
   const [label, setLabel] = React.useState(job.label ?? "");
   const [year, setYear] = React.useState(job.reference_year ? String(job.reference_year) : "");
   return (
     <Card>
       <CardHeader>
-        <CardTitle>4 · Confirm import</CardTitle>
-        <CardDescription>{job.status === "imported" ? "Already imported. Re-confirming replaces the records of this import." : "Records are saved to this project's history. You can edit or delete them later."}</CardDescription>
+        <CardTitle>{t("wizard.confirmTitle")}</CardTitle>
+        <CardDescription>{job.status === "imported" ? t("wizard.confirmReimport") : t("wizard.confirmDescription")}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-end">
-        <Field label="Calendar name" htmlFor="confirm_label" className="flex-1">
+        <Field label={t("wizard.calendarName")} htmlFor="confirm_label" className="flex-1">
           <Input id="confirm_label" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={160} />
         </Field>
-        <Field label="Reference year (optional)" htmlFor="confirm_year" className="sm:w-44">
+        <Field label={t("wizard.referenceYear")} htmlFor="confirm_year" className="sm:w-44">
           <Input id="confirm_year" inputMode="numeric" value={year} onChange={(e) => setYear(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="2024" />
         </Field>
         <Button
           disabled={blocked || pending || ready === 0}
-          title={dirty ? "Apply the mapping first" : blocked ? "Fix or exclude the rows with errors first" : undefined}
+          title={dirty ? t("wizard.applyFirst") : blocked ? t("wizard.fixFirst") : undefined}
           onClick={() => run(() => confirmImportAction(projectId, job.id, label, year ? Number(year) : null), () => router.push(`/p/${projectId}/history?tab=records&import=${job.id}`))}
         >
-          {pending ? <Loader2 className="animate-spin" /> : <Check />} Import {ready} record{ready === 1 ? "" : "s"}
+          {pending ? <Loader2 className="animate-spin" /> : <Check />} {t("wizard.importRecords", { count: ready })}
         </Button>
       </CardContent>
     </Card>
@@ -318,18 +325,20 @@ function JobActions({ projectId, job, fileUrl, pending, dialog, setDialog, run }
   run: (fn: () => Promise<{ ok: boolean; error?: string; message?: string }>, after?: () => void) => void;
 }) {
   const router = useRouter();
+  const t = useT("history");
+  const tc = useT("common");
   const [file, setFile] = React.useState<File | null>(null);
   return (
     <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
-      {fileUrl ? <Button asChild variant="ghost" size="sm"><a href={fileUrl} target="_blank" rel="noreferrer">Download original</a></Button> : null}
-      <Button variant="outline" size="sm" onClick={() => setDialog("replace")}><FileUp /> Replace file</Button>
-      <Button variant="outline" size="sm" className="text-destructive" onClick={() => setDialog("delete")}><Trash2 /> Delete import</Button>
+      {fileUrl ? <Button asChild variant="ghost" size="sm"><a href={fileUrl} target="_blank" rel="noreferrer">{t("wizard.downloadOriginal")}</a></Button> : null}
+      <Button variant="outline" size="sm" onClick={() => setDialog("replace")}><FileUp /> {t("wizard.replaceFile")}</Button>
+      <Button variant="outline" size="sm" className="text-destructive" onClick={() => setDialog("delete")}><Trash2 /> {t("wizard.deleteImport")}</Button>
 
       <Dialog open={dialog === "replace"} onOpenChange={(o) => !pending && setDialog(o ? "replace" : null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Replace the file</DialogTitle>
-            <DialogDescription>Your column mapping is kept where the columns still exist. Current records stay until you confirm the new version.</DialogDescription>
+            <DialogTitle>{t("wizard.replaceTitle")}</DialogTitle>
+            <DialogDescription>{t("wizard.replaceDescription")}</DialogDescription>
           </DialogHeader>
           <DropZone file={file} onFile={setFile} disabled={pending} />
           <DialogFooter>
@@ -341,7 +350,7 @@ function JobActions({ projectId, job, fileUrl, pending, dialog, setDialog, run }
                 run(() => replaceImportFileAction(projectId, job.id, null, fd), () => { setDialog(null); setFile(null); });
               }}
             >
-              {pending ? <Loader2 className="animate-spin" /> : null} Upload new version
+              {pending ? <Loader2 className="animate-spin" /> : null} {t("wizard.uploadNewVersion")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -350,15 +359,15 @@ function JobActions({ projectId, job, fileUrl, pending, dialog, setDialog, run }
       <Dialog open={dialog === "delete"} onOpenChange={(o) => !pending && setDialog(o ? "delete" : null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete “{job.label || job.file_name}”?</DialogTitle>
+            <DialogTitle>{t("wizard.deleteTitle", { name: job.label || job.file_name })}</DialogTitle>
             <DialogDescription>
-              This deletes the uploaded file and its {job.imported_count} imported record{job.imported_count === 1 ? "" : "s"}. Saved recommendations and calendars are kept. This cannot be undone.
+              {t("wizard.deleteDescription", { count: job.imported_count })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialog(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDialog(null)}>{tc("actions.cancel")}</Button>
             <Button variant="destructive" disabled={pending} onClick={() => run(() => deleteImportAction(projectId, job.id), () => router.push(`/p/${projectId}/history?tab=imports`))}>
-              Delete permanently
+              {t("wizard.deletePermanently")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -367,15 +376,15 @@ function JobActions({ projectId, job, fileUrl, pending, dialog, setDialog, run }
   );
 }
 
-function ErrorRow({ row, issues, raw, mapping, readOnly, pending, onCorrect, onExclude }: {
-  row: number; issues: RowIssue[]; raw: Record<string, string>; mapping: Record<string, string>; readOnly: boolean; pending: boolean;
+function ErrorRow({ t, row, issues, raw, mapping, readOnly, pending, onCorrect, onExclude }: {
+  t: TFor<"history">; row: number; issues: RowIssue[]; raw: Record<string, string>; mapping: Record<string, string>; readOnly: boolean; pending: boolean;
   onCorrect: (column: string, value: string) => void; onExclude: () => void;
 }) {
   return (
     <li className="rounded-lg border p-3">
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[13px] font-medium">Row {row}</p>
-        {!readOnly ? <Button variant="ghost" size="sm" disabled={pending} onClick={onExclude}><Ban /> Exclude row</Button> : null}
+        <p className="text-[13px] font-medium">{t("wizard.row", { row: String(row) })}</p>
+        {!readOnly ? <Button variant="ghost" size="sm" disabled={pending} onClick={onExclude}><Ban /> {t("wizard.excludeRow")}</Button> : null}
       </div>
       <ul className="mt-1 grid gap-2">
         {issues.map((issue, i) => {
@@ -383,7 +392,7 @@ function ErrorRow({ row, issues, raw, mapping, readOnly, pending, onCorrect, onE
           return (
             <li key={i} className="grid gap-1 text-xs">
               <p className="text-destructive">{issue.message}</p>
-              {column && !readOnly ? <CorrectInput column={column} initial={raw[column] ?? ""} pending={pending} onSave={(v) => onCorrect(column, v)} /> : null}
+              {column && !readOnly ? <CorrectInput t={t} column={column} initial={raw[column] ?? ""} pending={pending} onSave={(v) => onCorrect(column, v)} /> : null}
             </li>
           );
         })}
@@ -392,13 +401,13 @@ function ErrorRow({ row, issues, raw, mapping, readOnly, pending, onCorrect, onE
   );
 }
 
-function CorrectInput({ column, initial, pending, onSave }: { column: string; initial: string; pending: boolean; onSave: (v: string) => void }) {
+function CorrectInput({ t, column, initial, pending, onSave }: { t: TFor<"history">; column: string; initial: string; pending: boolean; onSave: (v: string) => void }) {
   const [value, setValue] = React.useState(initial);
   return (
     <form className="flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); onSave(value); }}>
       <span className="shrink-0 text-muted-foreground">{column}:</span>
-      <Input value={value} onChange={(e) => setValue(e.target.value)} className="h-7 text-xs" aria-label={`Correct ${column}`} />
-      <Button type="submit" size="sm" variant="outline" className="h-7" disabled={pending || value === initial}>Save</Button>
+      <Input value={value} onChange={(e) => setValue(e.target.value)} className="h-7 text-xs" aria-label={t("wizard.correct", { column })} />
+      <Button type="submit" size="sm" variant="outline" className="h-7" disabled={pending || value === initial}>{t("wizard.save")}</Button>
     </form>
   );
 }
@@ -420,4 +429,4 @@ function groupByRow(issues: RowIssue[]) {
   return out;
 }
 
-const fieldLabel = (fields: TargetField[], key: string) => fields.find((f) => f.key === key)?.label ?? key;
+const fieldLabel = (fields: TargetField[], key: string, t: TFor<"history">, td: TFor<"domain">) => (fields.some((f) => f.key === key) ? fieldLabelOf(t, td, key) : key);

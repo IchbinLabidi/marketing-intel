@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { canEdit } from "@/lib/domain/constants";
-import { formToObject, zodErrorToResult, type ActionResult } from "@/lib/validation/common";
+import { formToObject, type ActionResult } from "@/lib/validation/common";
+import { zodErrorToResult } from "@/lib/validation/errors";
 import {
   brandVoiceSchema,
   foundationsSchema,
@@ -21,6 +22,8 @@ import {
   upsertStrategyEntity,
 } from "@/server/services/strategy";
 import { describeAIError } from "@/server/ai/client";
+import { getT } from "@/i18n/server";
+import type { TFor } from "@/i18n/messages";
 import { buildProjectContext } from "@/server/ai/context";
 import { runStructured } from "@/server/ai/run";
 import {
@@ -30,8 +33,9 @@ import {
   type StrategySection,
 } from "@/server/ai/strategy";
 
-const NO_EDIT: ActionResult = { ok: false, error: "Your role in this workspace is read-only." };
-const fail = (e: unknown, fallback: string): ActionResult => ({ ok: false, error: e instanceof Error ? e.message : fallback });
+type ActionKey = Parameters<TFor<"strategy">>[0];
+const noEdit = async (): Promise<ActionResult> => ({ ok: false, error: (await getT("strategy"))("actions.readOnly") });
+const fail = async (e: unknown, fallback: ActionKey): Promise<ActionResult> => ({ ok: false, error: e instanceof Error ? e.message : (await getT("strategy"))(fallback) });
 
 async function guard(projectId: string) {
   const user = await requireUser();
@@ -39,60 +43,60 @@ async function guard(projectId: string) {
   return { user, ...ctx, allowed: canEdit(ctx.role) };
 }
 
-const done = (projectId: string, message: string): ActionResult => {
+const done = async (projectId: string, message: ActionKey, values?: { count: number }): Promise<ActionResult> => {
   revalidatePath(`/p/${projectId}`, "layout");
-  return { ok: true, message };
+  return { ok: true, message: (await getT("strategy"))(message, values) };
 };
 
 export async function saveFoundationsAction(projectId: string, _: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const { user, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const parsed = foundationsSchema.safeParse(formToObject(formData));
   if (!parsed.success) return zodErrorToResult(parsed.error);
   try {
     await saveStrategyFields(projectId, user.id, parsed.data);
-    return done(projectId, "Foundations saved");
+    return done(projectId, "actions.foundationsSaved");
   } catch (e) {
-    return fail(e, "Could not save");
+    return fail(e, "actions.saveFailed");
   }
 }
 
 export async function saveBrandVoiceAction(projectId: string, _: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const { user, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const parsed = brandVoiceSchema.safeParse(formToObject(formData));
   if (!parsed.success) return zodErrorToResult(parsed.error);
   try {
     await saveStrategyFields(projectId, user.id, { brand_voice: parsed.data as Record<string, string> });
-    return done(projectId, "Brand voice saved");
+    return done(projectId, "actions.brandVoiceSaved");
   } catch (e) {
-    return fail(e, "Could not save");
+    return fail(e, "actions.saveFailed");
   }
 }
 
 export async function saveFunnelAction(projectId: string, _: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const { user, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const parsed = funnelSchema.safeParse(formToObject(formData));
   if (!parsed.success) return zodErrorToResult(parsed.error);
   try {
     await saveStrategyFields(projectId, user.id, { funnel: parsed.data as Record<string, string> });
-    return done(projectId, "Funnel saved");
+    return done(projectId, "actions.funnelSaved");
   } catch (e) {
-    return fail(e, "Could not save");
+    return fail(e, "actions.saveFailed");
   }
 }
 
 export async function saveJourneyAction(projectId: string, stages: unknown): Promise<ActionResult> {
   const { user, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const parsed = journeySchema.safeParse(stages);
   if (!parsed.success) return zodErrorToResult(parsed.error);
   try {
     await saveStrategyFields(projectId, user.id, { customer_journey: parsed.data });
-    return done(projectId, "Customer journey saved");
+    return done(projectId, "actions.journeySaved");
   } catch (e) {
-    return fail(e, "Could not save");
+    return fail(e, "actions.saveFailed");
   }
 }
 
@@ -106,33 +110,33 @@ export async function upsertEntityAction(
   formData: FormData,
 ): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const kind = entitySchema.parse(entity);
   const parsed = STRATEGY_ENTITIES[kind].safeParse(formToObject(formData));
   if (!parsed.success) return zodErrorToResult(parsed.error);
   try {
     await upsertStrategyEntity(kind, projectId, id, parsed.data);
-    return done(projectId, id ? "Saved" : "Added");
+    return done(projectId, id ? "actions.saved" : "actions.added");
   } catch (e) {
-    return fail(e, "Could not save");
+    return fail(e, "actions.saveFailed");
   }
 }
 
 export async function deleteEntityAction(entity: StrategyEntity, projectId: string, id: string): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   try {
     await deleteStrategyEntity(entitySchema.parse(entity), projectId, id);
-    return done(projectId, "Deleted");
+    return done(projectId, "actions.deleted");
   } catch (e) {
-    return fail(e, "Could not delete");
+    return fail(e, "actions.deleteFailed");
   }
 }
 
 /** Adds AI-suggested items (after the user selected them) to a list section. */
 export async function addEntitiesAction(entity: StrategyEntity, projectId: string, items: unknown[]): Promise<ActionResult> {
   const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  if (!allowed) return noEdit();
   const kind = entitySchema.parse(entity);
   try {
     for (const item of items) {
@@ -140,9 +144,9 @@ export async function addEntitiesAction(entity: StrategyEntity, projectId: strin
       if (!parsed.success) return zodErrorToResult(parsed.error);
       await upsertStrategyEntity(kind, projectId, null, parsed.data);
     }
-    return done(projectId, `${items.length} item${items.length === 1 ? "" : "s"} added`);
+    return done(projectId, "actions.itemsAdded", { count: items.length });
   } catch (e) {
-    return fail(e, "Could not add items");
+    return fail(e, "actions.addItemsFailed");
   }
 }
 
@@ -169,8 +173,8 @@ export async function suggestStrategyAction(
   instruction?: string,
 ): Promise<ActionResult<unknown>> {
   const { user, project, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
-  if (!(section in STRATEGY_SECTIONS)) return { ok: false, error: "Unknown section" };
+  if (!allowed) return noEdit();
+  if (!(section in STRATEGY_SECTIONS)) return { ok: false, error: (await getT("strategy"))("actions.unknownSection") };
   try {
     const [brand, channels, bundle] = await Promise.all([
       getBrandProfile(projectId),

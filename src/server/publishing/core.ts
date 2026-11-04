@@ -15,11 +15,13 @@ import { tiktokMediaUrl } from "@/server/publishing/tiktok-media";
 import { publishYouTubeVideo, YOUTUBE_UPLOAD_SCOPE, youtubeTitle } from "@/server/publishing/youtube";
 import { getAccess, readSocialTokens, storeSocialTokens, type SocialConnection } from "@/server/services/social";
 import type { ContentItem, MetaConnection } from "@/types/domain";
+import type { TFor } from "@/i18n/messages";
 
 // The publishing engine, shared by the Publish dialog (signed-in user, RLS) and the scheduled-publishing job
 // (service role, admin = true, nobody signed in). Not a server action: never import it from client code.
 
-export type Env = { db: SupabaseClient; admin: boolean };
+/** `t` writes the messages stored on a failed publication: the signed-in user's language, English for the scheduled job. */
+export type Env = { db: SupabaseClient; admin: boolean; t: TFor<"publishing"> };
 
 export type Publication = {
   id: string; content_item_id: string; provider: string; account_ref: string; account_name: string | null; status: string;
@@ -36,21 +38,23 @@ const SIGNED_LINK_SECONDS = 60 * 60; // Instagram downloads the media within min
 export const guessMime = (url: string) => (/\.(mp4|mov)(\?|$)/i.test(url) ? "video/mp4" : /\.png(\?|$)/i.test(url) ? "image/png" : "image/jpeg");
 
 /** Stores a temporary private copy for Instagram to download, and returns a signed link to it (valid one hour). */
-async function temporaryLink(db: SupabaseClient, projectId: string, itemId: string, bytes: Blob, filename: string, mime: string) {
+async function temporaryLink(env: Env, projectId: string, itemId: string, bytes: Blob, filename: string, mime: string) {
+  const { db, t } = env;
   const tempPath = `${projectId}/${itemId}/publish-tmp-${crypto.randomUUID()}-${filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80)}`;
   const up = await db.storage.from(BUCKET).upload(tempPath, bytes, { contentType: mime, upsert: false });
-  if (up.error) throw new Error("Could not prepare the file for Instagram.");
+  if (up.error) throw new Error(t("core.prepareInstagram"));
   const { data } = await db.storage.from(BUCKET).createSignedUrl(tempPath, SIGNED_LINK_SECONDS);
-  if (!data?.signedUrl) { await db.storage.from(BUCKET).remove([tempPath]); throw new Error("Could not prepare the file for Instagram."); }
+  if (!data?.signedUrl) { await db.storage.from(BUCKET).remove([tempPath]); throw new Error(t("core.prepareInstagram")); }
   return { url: data.signedUrl, tempPath };
 }
 
 /** A temporary private JPEG copy that TikTok downloads through a signed link on the app's verified prefix. */
-async function tiktokPhotoLink(db: SupabaseClient, projectId: string, itemId: string, photo: Blob, filename: string) {
+async function tiktokPhotoLink(env: Env, projectId: string, itemId: string, photo: Blob, filename: string) {
+  const { db, t } = env;
   const jpeg = await toInstagramJpeg(photo);
   const tempPath = `${projectId}/${itemId}/publish-tmp-${crypto.randomUUID()}-${filename.replace(/\.[a-z0-9]+$/i, "").replace(/[^a-zA-Z0-9._-]/g, "_").slice(-60)}.jpg`;
   const up = await db.storage.from(BUCKET).upload(tempPath, jpeg, { contentType: "image/jpeg", upsert: false });
-  if (up.error) throw new Error("Could not prepare the photos for TikTok.");
+  if (up.error) throw new Error(t("core.prepareTikTokPhotos"));
   return { url: tiktokMediaUrl(tempPath), tempPath };
 }
 
@@ -64,11 +68,11 @@ async function forInstagram(bytes: Blob, filename: string, mime: string, kind: "
 async function driveToken(env: Env, projectId: string): Promise<string> {
   const { data: conn } = await env.db.from("social_connections").select("id, token_expires_at")
     .eq("project_id", projectId).eq("provider", "google_drive").neq("status", "disconnected").order("updated_at", { ascending: false }).limit(1).maybeSingle();
-  if (!conn) throw new Error("Google Drive isn't connected for this project. Reconnect it to publish this file.");
+  if (!conn) throw new Error(env.t("core.driveNotConnected"));
   const tokens = await readSocialTokens(env.db, conn.id, env.admin);
   const fresh = conn.token_expires_at && Date.parse(conn.token_expires_at) > Date.now() + 5 * 60_000;
   if (tokens.access && fresh) return tokens.access;
-  if (!tokens.refresh) throw new SocialApiError("Google Drive access expired. Reconnect Google Drive.", 401, "Google Drive", "auth");
+  if (!tokens.refresh) throw new SocialApiError(env.t("core.driveExpired"), 401, "Google Drive", "auth");
   const t = await refreshDriveToken(tokens.refresh);
   await storeSocialTokens(env.db, conn.id, { access: t.access, refresh: t.refresh, refreshExpiresAt: null }, env.admin);
   await env.db.from("social_connections").update({ token_expires_at: t.expiresAt, status: "connected", last_error: null }).eq("id", conn.id);
@@ -81,45 +85,45 @@ async function driveToken(env: Env, projectId: string): Promise<string> {
  * Instagram, which needs a URL, a temporary private copy is stored and removed once Instagram has it.
  */
 async function mediaFor(env: Env, projectId: string, itemId: string, asset: Asset | null, target: PublishTarget, allowTemporaryLink: boolean): Promise<Prepared> {
-  const db = env.db;
+  const { db, t } = env;
   if (!asset) return { media: { kind: "none" }, tempPath: null };
   const mime = asset.body.mime ?? (asset.body.url ? guessMime(asset.body.url) : "");
   const kind = mediaKindOf(mime);
-  if (!kind) throw new Error("This attachment isn't an image or a video.");
+  if (!kind) throw new Error(t("core.notMedia"));
   if (asset.body.source_type === "google_drive") {
-    if (!asset.body.source_file_id) throw new Error("Google Drive isn't connected for this project. Reconnect it to publish this file.");
+    if (!asset.body.source_file_id) throw new Error(t("core.driveNotConnected"));
     const bytes = await downloadDriveFile(await driveToken(env, projectId), asset.body.source_file_id, MAX_FILE_BYTES);
     const filename = asset.body.name ?? "media";
     if (target !== "instagram") return { media: { kind, bytes, filename, mime }, tempPath: null };
-    if (!allowTemporaryLink) throw new Error("Instagram downloads media from a link. Allow the temporary private link (valid 1 hour) to publish this file.");
+    if (!allowTemporaryLink) throw new Error(t("core.igTempLinkPublish"));
     const ig = await forInstagram(bytes, filename, mime, kind);
-    const link = await temporaryLink(db, projectId, itemId, ig.bytes, ig.filename, ig.mime);
+    const link = await temporaryLink(env, projectId, itemId, ig.bytes, ig.filename, ig.mime);
     return { media: { kind, url: link.url, mime: ig.mime }, tempPath: link.tempPath };
   }
   if (asset.body.url) {
     // already a public https link chosen by the team: sent as is, so Instagram needs it to be a JPEG already
-    if (target === "instagram" && kind === "image" && !isJpeg(mime)) throw new Error("Instagram only accepts JPEG photos by link. Attach the file itself (Drive or computer) so Orix Signals can convert it.");
+    if (target === "instagram" && kind === "image" && !isJpeg(mime)) throw new Error(t("core.igJpegLink"));
     return { media: { kind, url: asset.body.url, mime }, tempPath: null };
   }
-  if (!asset.body.path) throw new Error("The attachment has no stored file.");
+  if (!asset.body.path) throw new Error(t("core.noStoredFile"));
   if (target !== "instagram") {
     // Facebook and TikTok receive the bytes directly: no link to the private file is ever created
     const { data, error } = await db.storage.from(BUCKET).download(asset.body.path);
-    if (error || !data) throw new Error("The stored file could not be read. Re-attach it.");
+    if (error || !data) throw new Error(t("core.unreadable"));
     return { media: { kind, bytes: data, filename: asset.body.name ?? "media", mime }, tempPath: null };
   }
   // Instagram only accepts a URL it downloads itself: a signed link valid for one hour, only with explicit consent
-  if (!allowTemporaryLink) throw new Error("Instagram downloads media from a link. Allow the temporary private link (valid 1 hour) to publish this file.");
+  if (!allowTemporaryLink) throw new Error(t("core.igTempLinkPublish"));
   if (kind === "image" && !isJpeg(mime)) {
     // not a JPEG: a converted temporary copy is sent instead of the original
     const { data: original, error } = await db.storage.from(BUCKET).download(asset.body.path);
-    if (error || !original) throw new Error("The stored file could not be read. Re-attach it.");
+    if (error || !original) throw new Error(t("core.unreadable"));
     const ig = await forInstagram(original, asset.body.name ?? "photo", mime, kind);
-    const link = await temporaryLink(db, projectId, itemId, ig.bytes, ig.filename, ig.mime);
+    const link = await temporaryLink(env, projectId, itemId, ig.bytes, ig.filename, ig.mime);
     return { media: { kind, url: link.url, mime: ig.mime }, tempPath: link.tempPath };
   }
   const { data, error } = await db.storage.from(BUCKET).createSignedUrl(asset.body.path, SIGNED_LINK_SECONDS);
-  if (error || !data?.signedUrl) throw new Error("Could not prepare the file for Instagram.");
+  if (error || !data?.signedUrl) throw new Error(t("core.prepareInstagram"));
   return { media: { kind, url: data.signedUrl, mime }, tempPath: null };
 }
 
@@ -162,7 +166,7 @@ export type Senders = {
   youtube: { conn: SocialConnection; token: string } | null;
 };
 export async function prepareSenders(env: Env, projectId: string, targets: PublishTarget[]): Promise<{ ok: true; senders: Senders } | { ok: false; error: string }> {
-  const db = env.db;
+  const { db, t } = env;
   // Meta (Facebook / Instagram) is only required when one of its networks is chosen
   const needsMeta = targets.includes("facebook") || targets.includes("instagram");
   let meta: MetaConnection | null = null;
@@ -170,27 +174,27 @@ export async function prepareSenders(env: Env, projectId: string, targets: Publi
   if (needsMeta) {
     const { data } = await db.from("meta_connections").select("*").eq("project_id", projectId).maybeSingle();
     meta = data as MetaConnection | null;
-    if (!meta || meta.status !== "active" || !meta.page_id) return { ok: false, error: "Connect Meta (Facebook Page) on the Integrations page first." };
+    if (!meta || meta.status !== "active" || !meta.page_id) return { ok: false, error: t("core.connectMeta") };
     const missing = PUBLISH_SCOPES.filter((s) => (s === "instagram_content_publish" ? targets.includes("instagram") : targets.includes("facebook")) && !meta!.granted_scopes.includes(s));
-    if (missing.length) return { ok: false, error: `Meta hasn't granted publishing yet (${missing.join(", ")}). Reconnect Meta on the Integrations page and accept the publishing permissions.` };
-    if (targets.includes("instagram") && !meta.ig_user_id) return { ok: false, error: "No Instagram professional account is linked to the connected Page." };
+    if (missing.length) return { ok: false, error: t("core.metaScopes", { scopes: missing.join(", ") }) };
+    if (targets.includes("instagram") && !meta.ig_user_id) return { ok: false, error: t("core.noInstagramAccount") };
     pageToken = await metaPageToken(env, meta.id);
-    if (!pageToken) return { ok: false, error: "The Page access token is missing. Reconnect Meta." };
+    if (!pageToken) return { ok: false, error: t("core.pageTokenMissing") };
   }
   // TikTok: the project's connected account, with the posting permission
   let tiktok: Senders["tiktok"] = null;
   if (targets.includes("tiktok")) {
     const tt = await tiktokConnection(db, projectId);
-    if (!tt) return { ok: false, error: "Connect TikTok on the Integrations page first." };
-    if (!tt.granted_scopes.includes("video.publish")) return { ok: false, error: "TikTok hasn't granted posting yet. Reconnect TikTok on the Integrations page and accept posting videos." };
+    if (!tt) return { ok: false, error: t("core.connectTikTok") };
+    if (!tt.granted_scopes.includes("video.publish")) return { ok: false, error: t("core.tiktokScope") };
     try { tiktok = { conn: tt, token: (await getAccess(db, tt, env.admin)).token! }; } catch (e) { return { ok: false, error: describeSocialError(e) }; }
   }
   // YouTube: the project's channel authorized with upload permission
   let youtube: Senders["youtube"] = null;
   if (targets.includes("youtube")) {
     const yt = await youtubeConnection(db, projectId);
-    if (!yt) return { ok: false, error: "Connect YouTube with Google (not public data only) on the Integrations page first." };
-    if (!yt.granted_scopes.includes(YOUTUBE_UPLOAD_SCOPE)) return { ok: false, error: "YouTube hasn't granted uploading yet. Click Connect YouTube on the Integrations page again and accept uploading videos." };
+    if (!yt) return { ok: false, error: t("core.connectYouTube") };
+    if (!yt.granted_scopes.includes(YOUTUBE_UPLOAD_SCOPE)) return { ok: false, error: t("core.youtubeScope") };
     try { youtube = { conn: yt, token: (await getAccess(db, yt, env.admin)).token! }; } catch (e) { return { ok: false, error: describeSocialError(e) }; }
   }
   return { ok: true, senders: { meta, pageToken, tiktok, youtube } };
@@ -204,12 +208,13 @@ export function accountOf(s: Senders, target: PublishTarget) {
 }
 
 /** The post's chosen media, in the order the person selected it (the first one leads the carousel). */
-export async function loadAssets(db: SupabaseClient, projectId: string, itemId: string, ids: string[]): Promise<{ ok: true; assets: Asset[] } | { ok: false; error: string }> {
-  if (ids.length > MAX_GROUP) return { ok: false, error: `Choose at most ${MAX_GROUP} photos for one post.` };
+export async function loadAssets(env: Env, projectId: string, itemId: string, ids: string[]): Promise<{ ok: true; assets: Asset[] } | { ok: false; error: string }> {
+  const { db, t } = env;
+  if (ids.length > MAX_GROUP) return { ok: false, error: t("core.maxPhotos", { max: MAX_GROUP }) };
   if (!ids.length) return { ok: true, assets: [] };
   const { data } = await db.from("content_assets").select("id, body").eq("project_id", projectId).eq("content_item_id", itemId).eq("kind", "media").in("id", ids);
   const found = (data ?? []) as Asset[];
-  if (found.length !== ids.length) return { ok: false, error: "The selected media isn't attached to this post." };
+  if (found.length !== ids.length) return { ok: false, error: t("core.mediaNotAttached") };
   return { ok: true, assets: ids.map((id) => found.find((a) => a.id === id)!) };
 }
 
@@ -240,7 +245,7 @@ export async function sendClaimed(env: Env, s: Senders, args: {
   projectId: string; item: ContentItem; target: PublishTarget; assets: Asset[]; claimed: { id: string; attempts: number };
   scheduleAt: Date | null; allowTemporaryLink: boolean; youtubeVariant?: "shorts" | "video";
 }): Promise<Publication> {
-  const { db } = env;
+  const { db, t } = env;
   const { projectId, item, target, assets, claimed } = args;
   const { text: caption, title: copyTitle } = copyFor(item, target, args.youtubeVariant);
   let tempPath: string | null = null;
@@ -254,32 +259,32 @@ export async function sendClaimed(env: Env, s: Senders, args: {
     const media = prepared[0].media;
     let r: PublishResult;
     if (target === "youtube") {
-      if (media.kind !== "video" || !("bytes" in media)) throw new Error("YouTube needs a video file (from Drive or your computer).");
-      r = await publishYouTubeVideo({ token: s.youtube!.token, title: youtubeTitle(copyTitle ?? item.title, caption), description: caption, video: media.bytes });
+      if (media.kind !== "video" || !("bytes" in media)) throw new Error(t("core.youtubeNeedsVideo"));
+      r = await publishYouTubeVideo({ t, token: s.youtube!.token, title: youtubeTitle(copyTitle ?? item.title, caption), description: caption, video: media.bytes });
     } else if (target === "tiktok" && media.kind === "image") {
       // photo post: TikTok pulls JPEG copies from signed links on the verified prefix (kept until TikTok is done)
       const urls: string[] = [];
       for (const p of prepared) {
-        if (p.media.kind !== "image" || !("bytes" in p.media)) throw new Error("TikTok photo posts need the photo files themselves (from Drive or your computer).");
-        const link = await tiktokPhotoLink(db, projectId, item.id, p.media.bytes, p.media.filename);
+        if (p.media.kind !== "image" || !("bytes" in p.media)) throw new Error(t("core.tiktokPhotosNeedFiles"));
+        const link = await tiktokPhotoLink(env, projectId, item.id, p.media.bytes, p.media.filename);
         tempPath = [tempPath, link.tempPath].filter(Boolean).join("\n");
         urls.push(link.url);
       }
-      r = await publishTikTokPhotos({ token: s.tiktok!.token, title: item.title, description: caption, photoUrls: urls, username: s.tiktok!.conn.account_handle, waitMs: 60_000 });
+      r = await publishTikTokPhotos({ t, token: s.tiktok!.token, title: item.title, description: caption, photoUrls: urls, username: s.tiktok!.conn.account_handle, waitMs: 60_000 });
     } else if (target === "tiktok") {
-      if (media.kind !== "video" || !("bytes" in media)) throw new Error("TikTok needs a video file (from Drive or your computer).");
-      r = await publishTikTokVideo({ token: s.tiktok!.token, caption, video: media.bytes, username: s.tiktok!.conn.account_handle, waitMs: 60_000 });
+      if (media.kind !== "video" || !("bytes" in media)) throw new Error(t("core.tiktokNeedsVideo"));
+      r = await publishTikTokVideo({ t, token: s.tiktok!.token, caption, video: media.bytes, username: s.tiktok!.conn.account_handle, waitMs: 60_000 });
     } else if (target === "facebook") {
       r = prepared.length > 1
-        ? await publishFacebookPhotos({ pageId: s.meta!.page_id!, pageToken: s.pageToken!, message: caption, photos: prepared.map((p) => p.media), scheduleAt: args.scheduleAt })
-        : await publishFacebook({ pageId: s.meta!.page_id!, pageToken: s.pageToken!, message: caption, media, scheduleAt: args.scheduleAt });
+        ? await publishFacebookPhotos({ t, pageId: s.meta!.page_id!, pageToken: s.pageToken!, message: caption, photos: prepared.map((p) => p.media), scheduleAt: args.scheduleAt })
+        : await publishFacebook({ t, pageId: s.meta!.page_id!, pageToken: s.pageToken!, message: caption, media, scheduleAt: args.scheduleAt });
     } else {
       const items = prepared.map((p) => p.media);
-      if (items.some((m) => m.kind === "none" || !("url" in m))) throw new Error("Instagram needs an image or a video.");
+      if (items.some((m) => m.kind === "none" || !("url" in m))) throw new Error(t("core.instagramNeedsMedia"));
       const urls = items as Extract<MediaInput, { url: string }>[];
       r = urls.length > 1
-        ? await publishInstagramCarousel({ igUserId: s.meta!.ig_user_id!, pageToken: s.pageToken!, caption, items: urls, waitMs: 90_000 })
-        : await publishInstagram({ igUserId: s.meta!.ig_user_id!, pageToken: s.pageToken!, caption, media: urls[0], waitMs: 90_000 });
+        ? await publishInstagramCarousel({ t, igUserId: s.meta!.ig_user_id!, pageToken: s.pageToken!, caption, items: urls, waitMs: 90_000 })
+        : await publishInstagram({ t, igUserId: s.meta!.ig_user_id!, pageToken: s.pageToken!, caption, media: urls[0], waitMs: 90_000 });
     }
     const status = r.processing ? "processing" : r.scheduledFor ? "scheduled" : "published";
     const { data: row } = await db.from("content_publications").update({
@@ -292,9 +297,9 @@ export async function sendClaimed(env: Env, s: Senders, args: {
   } catch (e) {
     // our own checks (missing file, consent) are validation errors; Meta errors are classified by their code
     await cleanup(db, tempPath);
-    const c = e instanceof MetaApiError ? classifyMetaError(e)
+    const c = e instanceof MetaApiError ? classifyMetaError(e, t)
       : e instanceof SocialApiError ? { kind: (e.isAuth || e.isPermission ? "auth" : e.kind === "server" || e.kind === "network" || e.kind === "rate_limit" ? "transient" : "permanent") as "auth" | "transient" | "permanent", message: describeSocialError(e) }
-      : { kind: "validation" as const, message: e instanceof Error ? e.message : "Unknown error" };
+      : { kind: "validation" as const, message: e instanceof Error ? e.message : t("core.unknownError") };
     const { data: row } = await db.from("content_publications").update({
       status: "failed", error: c.message.slice(0, 1000), error_kind: c.kind, attempts: claimed.attempts + 1,
       next_attempt_at: c.kind === "transient" ? new Date(Date.now() + 2 ** Math.min(claimed.attempts, 6) * 60_000).toISOString() : null,

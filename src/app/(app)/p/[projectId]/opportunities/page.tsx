@@ -12,8 +12,13 @@ import { loadHistoryPerformance } from "@/server/services/history-analysis";
 import { linkedPosts, listFeedback, listOpportunities } from "@/server/services/opportunities";
 import { getProjectContext } from "@/server/services/projects";
 import { getStrategyBundle } from "@/server/services/strategy";
+import { buildSignals } from "@/lib/opportunities/signals";
+import { getT } from "@/i18n/server";
 
-export const metadata = { title: "Content Opportunities" };
+export async function generateMetadata() {
+  const t = await getT("opportunities");
+  return { title: t("title") };
+}
 
 async function counts(projectId: string) {
   const supabase = await createClient();
@@ -25,13 +30,15 @@ async function counts(projectId: string) {
 }
 
 async function Signals({ projectId, canGenerate }: { projectId: string; canGenerate: boolean }) {
-  const { signals, posts, bundle } = await loadSignals(projectId);
+  const [{ signalInput, posts, bundle }, t, td] = await Promise.all([loadSignals(projectId), getT("opportunities"), getT("domain")]);
+  // same signals (same keys) as the engine, written in the viewer's language
+  const signals = buildSignals(signalInput, t, td);
   return <SignalsPanel projectId={projectId} signals={signals} posts={posts} pillars={bundle.pillars.map((p) => ({ id: p.id, name: p.name }))} canGenerate={canGenerate} />;
 }
 
 export default async function Page({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
-  const { project, role } = await getProjectContext(projectId);
+  const [{ project, role }, t] = await Promise.all([getProjectContext(projectId), getT("opportunities")]);
   const tz = project.timezone || "Africa/Tunis";
   // best times for the calendar editor's suggestions stream in; the list never waits for them
   const timing = loadHistoryPerformance(projectId).then((h) => bestPublicationTimes(h.items, tz));
@@ -46,10 +53,10 @@ export default async function Page({ params }: { params: Promise<{ projectId: st
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Content Opportunities"
-        description="Content ideas ranked by how much they should help, each with the evidence behind it (your strategy, your past results, competitors). Use it to decide what to create next; accepted ideas go to the calendar."
+        title={t("title")}
+        description={t("description")}
       />
-      <Suspense fallback={<div className="h-[74px] animate-pulse rounded-xl border bg-card" aria-busy="true" aria-label="Loading signals" />}>
+      <Suspense fallback={<div className="h-[74px] animate-pulse rounded-xl border bg-card" aria-busy="true" aria-label={t("signals.panel.loading")} />}>
         <Signals projectId={projectId} canGenerate={canEdit(role) && isAIConfigured()} />
       </Suspense>
       <OpportunitiesApp

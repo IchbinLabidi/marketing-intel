@@ -10,12 +10,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/app/form";
 import { confirm } from "@/components/ui/confirm";
 import {
-  allowedTaskTransitions, PRIORITIES, PRIORITY_LABELS, TASK_STATUS_LABELS, TASK_TYPES, TASK_TYPE_LABELS,
+  allowedTaskTransitions, PRIORITIES, TASK_TYPES,
   type Priority, type TaskStatus, type TaskType,
 } from "@/lib/permissions";
 import { assignTaskAction, removeTaskAction, updateTaskStatusAction } from "@/server/actions/team";
 import type { Task } from "@/server/services/team";
 import { DueLabel, PersonChip, PriorityBadge, TaskStatusBadge } from "./task-badges";
+import { useT } from "@/i18n/client";
+import type { TFor } from "@/i18n/messages";
+
+// domain.taskType has an "other" key, so its type reads as plural forms; the full path still resolves to the label.
+type TaskTypeKey = Parameters<TFor<"domain">>[0];
 
 export type Assignable = { user_id: string; name: string; roleName: string | null; canEdit: boolean };
 
@@ -26,6 +31,8 @@ export function TaskPanel({
   projectId: string; itemId: string; tasks: Task[]; people: Assignable[]; perms: string[]; userId: string; today: string;
   onChange?: () => void;
 }) {
+  const t = useT("team");
+  const td = useT("domain");
   const permSet = React.useMemo(() => new Set(perms), [perms]);
   const canAssign = permSet.has("content.assign");
   // Local edits win until the parent reloads the list (a new `initial` array).
@@ -58,15 +65,15 @@ export function TaskPanel({
     const r = await updateTaskStatusAction(task.id, status, comment);
     setBusy(null);
     if (!r.ok) return toast.error(r.error);
-    if (r.data) setTasks(tasks.map((t) => (t.id === task.id ? r.data! : t)));
+    if (r.data) setTasks(tasks.map((x) => (x.id === task.id ? r.data! : x)));
     setChangesFor(null);
     setChangesNote("");
-    toast.success(`${TASK_TYPE_LABELS[task.task_type]}: ${TASK_STATUS_LABELS[status].toLowerCase()}`);
+    toast.success(t("taskPanel.moved", { type: td(`taskType.${task.task_type}` as TaskTypeKey), status: td(`taskStatus.${status}`).toLowerCase() }));
     onChange?.();
   };
 
   const remove = async (task: Task) => {
-    if (!(await confirm({ title: "Remove this task?", description: `${person(task.user_id)?.name ?? "This person"} loses access through this task.`, confirmLabel: "Remove task", destructive: true }))) return;
+    if (!(await confirm({ title: t("taskPanel.confirmRemoveTitle"), description: t("taskPanel.confirmRemoveBody", { name: person(task.user_id)?.name ?? t("taskPanel.thisPerson") }), confirmLabel: t("taskPanel.removeTask"), destructive: true }))) return;
     setBusy(task.id);
     const r = await removeTaskAction(projectId, itemId, task.id);
     setBusy(null);
@@ -78,35 +85,35 @@ export function TaskPanel({
   return (
     <div className="space-y-5">
       <div>
-        <h3 className="text-sm font-semibold">Collaborators and tasks</h3>
+        <h3 className="text-sm font-semibold">{t("taskPanel.title")}</h3>
         <p className="text-xs text-muted-foreground">
-          Each person gets a task with its own status. Assigned people can open and edit this content; reviewers approve each task.
+          {t("taskPanel.description")}
         </p>
       </div>
 
       {tasks.length ? (
         <ul className="divide-y rounded-xl border bg-card">
-          {tasks.map((t) => {
-            const p = person(t.user_id);
-            const mine = t.user_id === userId;
-            const next = allowedTaskTransitions({ status: t.status, task_type: t.task_type, mine }, permSet);
-            const closed = t.status === "approved" || t.status === "completed";
+          {tasks.map((task) => {
+            const p = person(task.user_id);
+            const mine = task.user_id === userId;
+            const next = allowedTaskTransitions({ status: task.status, task_type: task.task_type, mine }, permSet);
+            const closed = task.status === "approved" || task.status === "completed";
             return (
-              <li key={t.id} className="space-y-2.5 p-3.5">
+              <li key={task.id} className="space-y-2.5 p-3.5">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                   <div className="min-w-0 flex-1">
-                    <PersonChip name={p?.name ?? "Former member"} role={`${TASK_TYPE_LABELS[t.task_type]}${p?.roleName ? ` · ${p.roleName}` : ""}`} />
+                    <PersonChip name={p?.name ?? t("page.formerMember")} role={`${td(`taskType.${task.task_type}` as TaskTypeKey)}${p?.roleName ? ` · ${p.roleName}` : ""}`} />
                   </div>
-                  <TaskStatusBadge status={t.status} />
-                  <PriorityBadge priority={t.priority} />
-                  <DueLabel due={t.due_date} today={today} closed={closed} />
+                  <TaskStatusBadge status={task.status} />
+                  <PriorityBadge priority={task.priority} />
+                  <DueLabel due={task.due_date} today={today} closed={closed} />
                   {canAssign ? (
-                    <Button variant="ghost" size="icon-xs" aria-label="Remove task" disabled={busy === t.id} onClick={() => remove(t)}>
+                    <Button variant="ghost" size="icon-xs" aria-label={t("taskPanel.removeTask")} disabled={busy === task.id} onClick={() => remove(task)}>
                       <Trash2 />
                     </Button>
                   ) : null}
                 </div>
-                {t.note ? <p className="whitespace-pre-wrap rounded-md bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground" dir="auto">{t.note}</p> : null}
+                {task.note ? <p className="whitespace-pre-wrap rounded-md bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground" dir="auto">{task.note}</p> : null}
                 {next.length ? (
                   <div className="flex flex-wrap gap-1.5">
                     {next.filter((s) => s !== "changes_requested" && (canAssign || ["in_progress", "in_review", "completed"].includes(s))).map((s) => (
@@ -114,24 +121,24 @@ export function TaskPanel({
                         key={s}
                         size="xs"
                         variant={s === "approved" || (s === "in_review" && mine) ? "default" : "outline"}
-                        loading={busy === t.id}
-                        onClick={() => move(t, s)}
+                        loading={busy === task.id}
+                        onClick={() => move(task, s)}
                       >
-                        {s === "in_review" && mine ? "Submit for review" : s === "approved" ? "Approve" : `Mark ${TASK_STATUS_LABELS[s].toLowerCase()}`}
+                        {s === "in_review" && mine ? t("taskPanel.submitForReview") : s === "approved" ? t("taskPanel.approve") : t("taskPanel.markAs", { status: td(`taskStatus.${s}`).toLowerCase() })}
                       </Button>
                     ))}
                     {next.includes("changes_requested") ? (
-                      <Button size="xs" variant="outline" onClick={() => setChangesFor(changesFor === t.id ? null : t.id)}>
-                        Request changes
+                      <Button size="xs" variant="outline" onClick={() => setChangesFor(changesFor === task.id ? null : task.id)}>
+                        {t("taskPanel.requestChanges")}
                       </Button>
                     ) : null}
                   </div>
                 ) : null}
-                {changesFor === t.id ? (
+                {changesFor === task.id ? (
                   <div className="space-y-2">
-                    <Textarea aria-label="Requested changes" rows={2} placeholder="What needs to change?" value={changesNote} onChange={(e) => setChangesNote(e.target.value)} />
-                    <Button size="xs" disabled={!changesNote.trim()} loading={busy === t.id} onClick={() => move(t, "changes_requested", changesNote)}>
-                      Send change request
+                    <Textarea aria-label={t("taskPanel.requestedChanges")} rows={2} placeholder={t("taskPanel.changesPlaceholder")} value={changesNote} onChange={(e) => setChangesNote(e.target.value)} />
+                    <Button size="xs" disabled={!changesNote.trim()} loading={busy === task.id} onClick={() => move(task, "changes_requested", changesNote)}>
+                      {t("taskPanel.sendChangeRequest")}
                     </Button>
                   </div>
                 ) : null}
@@ -142,43 +149,43 @@ export function TaskPanel({
       ) : (
         <div className="flex items-center gap-3 rounded-xl border border-dashed px-4 py-5 text-[13px] text-muted-foreground">
           <Users className="size-4 shrink-0" aria-hidden />
-          No tasks yet.{canAssign ? " Assign the copy, the design or a review below." : " A manager assigns the work."}
+          {canAssign ? t("taskPanel.emptyAssign") : t("taskPanel.emptyManager")}
         </div>
       )}
 
       {canAssign ? (
         <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
-          <p className="text-[13px] font-medium">Assign a task</p>
+          <p className="text-[13px] font-medium">{t("taskPanel.assignTitle")}</p>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Team member" htmlFor="task-user">
+            <Field label={t("taskPanel.member")} htmlFor="task-user">
               <NativeSelect id="task-user" value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })}>
-                <option value="">Choose a person…</option>
+                <option value="">{t("taskPanel.choosePerson")}</option>
                 {people.filter((p) => p.canEdit).map((p) => (
                   <option key={p.user_id} value={p.user_id}>
-                    {p.name || "Unnamed member"}{p.roleName ? ` — ${p.roleName}` : ""}
+                    {p.name || t("members.unnamed")}{p.roleName ? ` — ${p.roleName}` : ""}
                   </option>
                 ))}
               </NativeSelect>
             </Field>
-            <Field label="Task" htmlFor="task-type">
+            <Field label={t("taskPanel.task")} htmlFor="task-type">
               <NativeSelect id="task-type" value={form.taskType} onChange={(e) => setForm({ ...form, taskType: e.target.value as TaskType })}>
-                {TASK_TYPES.map((t) => <option key={t} value={t}>{TASK_TYPE_LABELS[t]}</option>)}
+                {TASK_TYPES.map((x) => <option key={x} value={x}>{td(`taskType.${x}` as TaskTypeKey)}</option>)}
               </NativeSelect>
             </Field>
-            <Field label="Priority" htmlFor="task-priority">
+            <Field label={t("taskPanel.priority")} htmlFor="task-priority">
               <NativeSelect id="task-priority" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value as Priority })}>
-                {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
+                {PRIORITIES.map((p) => <option key={p} value={p}>{td(`priority.${p}`)}</option>)}
               </NativeSelect>
             </Field>
-            <Field label="Due date" htmlFor="task-due" optional>
+            <Field label={t("taskPanel.dueDate")} htmlFor="task-due" optional>
               <Input id="task-due" type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
             </Field>
-            <Field label="Instructions" htmlFor="task-note" optional className="sm:col-span-2">
-              <Textarea id="task-note" rows={2} placeholder="Requirements, references, format, deliverables…" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+            <Field label={t("taskPanel.instructions")} htmlFor="task-note" optional className="sm:col-span-2">
+              <Textarea id="task-note" rows={2} placeholder={t("taskPanel.instructionsPlaceholder")} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
             </Field>
           </div>
           <Button size="sm" disabled={!form.userId} loading={busy === "assign"} onClick={assign}>
-            <Plus /> Assign task
+            <Plus /> {t("taskPanel.assign")}
           </Button>
         </div>
       ) : null}

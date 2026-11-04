@@ -3,6 +3,7 @@ import { contentType, inPeriod, isOverdue, localDate } from "@/lib/analytics/com
 import { toCsv } from "@/lib/analytics/csv";
 import { FUNNEL_LABELS, PLATFORM_LABELS, type FunnelStage, type Platform } from "@/lib/domain/constants";
 import { STAGE_LABELS, type ProductionStage } from "@/lib/production/model";
+import { getT } from "@/i18n/server";
 import { loadAnalytics } from "@/server/services/analytics";
 import { getProjectContext } from "@/server/services/projects";
 import { hasPermission } from "@/server/services/team";
@@ -14,8 +15,9 @@ import { hasPermission } from "@/server/services/team";
 export async function GET(request: NextRequest, ctx: RouteContext<"/p/[projectId]/analytics/export">) {
   const { projectId } = await ctx.params;
   const { project } = await getProjectContext(projectId);
+  const t = await getT("analytics");
   const [canView, canExport] = await Promise.all([hasPermission(project.workspace_id, "calendar.view"), hasPermission(project.workspace_id, "content.export")]);
-  if (!canView || !canExport) return NextResponse.json({ error: "You don't have permission to export this data." }, { status: 403 });
+  if (!canView || !canExport) return NextResponse.json({ error: t("export.forbidden") }, { status: 403 });
 
   const sp = Object.fromEntries(request.nextUrl.searchParams.entries());
   const data = await loadAnalytics(projectId, sp);
@@ -25,10 +27,11 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/p/[projectId
     inPeriod(i.scheduled_date, p) || inPeriod(localDate(i.created_at, tz), p) || inPeriod(localDate(i.approved_at, tz), p) || inPeriod(localDate(i.published_at, tz), p) ||
     !["approved", "scheduled", "published"].includes(i.status));
 
-  const header = [
-    "id", "title", "platform", "content_type", "format", "pillar", "funnel_stage", "campaign", "production_stage", "status", "lead",
-    "created_date", "planned_date", "internal_deadline", "approved_date", "published_date", "overdue", "planned_in_period", "published_in_period",
-  ];
+  // Column headers follow the viewer's language; cell values stay machine-readable.
+  const header = ([
+    "id", "title", "platform", "contentType", "format", "pillar", "funnelStage", "campaign", "productionStage", "status", "lead",
+    "createdDate", "plannedDate", "internalDeadline", "approvedDate", "publishedDate", "overdue", "plannedInPeriod", "publishedInPeriod",
+  ] as const).map((k) => t(`export.columns.${k}`));
   const body = rows.map((i) => [
     i.id, i.title, i.platform ? PLATFORM_LABELS[i.platform as Platform] ?? i.platform : "", contentType(i.format), i.format ?? "",
     i.pillar_id ? data.pillarNames[i.pillar_id] ?? "" : "", i.funnel_stage ? FUNNEL_LABELS[i.funnel_stage as FunnelStage] ?? i.funnel_stage : "",

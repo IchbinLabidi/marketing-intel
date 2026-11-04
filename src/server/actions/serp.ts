@@ -7,7 +7,8 @@ import { classifyIntent, pagesSummary, slugify } from "@/lib/serp/analysis";
 import { domainOf } from "@/lib/serp/normalize";
 import { contentTokens, normalizeText, stripRefs } from "@/lib/history/text";
 import { isDuplicate } from "@/lib/opportunities/scoring";
-import type { ActionResult } from "@/lib/validation/common";
+import { type ActionResult } from "@/lib/validation/common";
+import { zodErrorToResult } from "@/lib/validation/errors";
 import { createClient } from "@/lib/supabase/server";
 import { describeAIError } from "@/server/ai/client";
 import { buildProjectContext } from "@/server/ai/context";
@@ -23,38 +24,44 @@ import { getBrandProfile, getProjectContext, listChannels } from "@/server/servi
 import { getAnalysis, getBrief } from "@/server/services/serp";
 import { requireUser } from "@/server/services/session";
 import { getStrategyBundle } from "@/server/services/strategy";
+import { getT } from "@/i18n/server";
+import type { TFor } from "@/i18n/messages";
 
-const NO_EDIT: ActionResult<never> = { ok: false, error: "Your role in this workspace is read-only." };
+type T = TFor<"seo">;
+const noEdit = (t: T): ActionResult<never> => ({ ok: false, error: t("errors.readOnly") });
 const refresh = (projectId: string) => revalidatePath(`/p/${projectId}`, "layout");
-const fail = (e: unknown, fallback: string): ActionResult<never> => {
+const fail = (e: unknown, fallback: string, t: T): ActionResult<never> => {
   const m = e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : fallback;
-  return { ok: false, error: /schema cache|does not exist/.test(m) ? "Google search needs database migration 0010." : m };
+  return { ok: false, error: /schema cache|does not exist/.test(m) ? t("errors.migration") : m };
 };
 
 async function guard(projectId: string) {
   const user = await requireUser();
-  const { project, role } = await getProjectContext(projectId);
-  return { user, project, allowed: canEdit(role), ownDomain: domainOf(project.website?.startsWith("http") ? project.website : project.website ? `https://${project.website}` : null) };
+  const [{ project, role }, t] = await Promise.all([getProjectContext(projectId), getT("seo")]);
+  return { user, project, t, allowed: canEdit(role), ownDomain: domainOf(project.website?.startsWith("http") ? project.website : project.website ? `https://${project.website}` : null) };
 }
 
+// messages are keys of the "seo" namespace (errors.*), translated when returned
 const analyzeSchema = z.object({
-  keyword: z.string().trim().min(2, "Enter a keyword").max(200),
-  country: z.string().refine((c) => c in COUNTRIES, "Choose a country"),
-  language: z.string().refine((l) => l in SERP_LANGUAGES, "Choose a language"),
-  devices: z.array(z.enum(["desktop", "mobile"])).min(1, "Choose at least one device").max(2),
+  keyword: z.string().trim().min(2, "keyword").max(200),
+  country: z.string().refine((c) => c in COUNTRIES, "country"),
+  language: z.string().refine((l) => l in SERP_LANGUAGES, "language"),
+  devices: z.array(z.enum(["desktop", "mobile"])).min(1, "devices").max(2),
 });
+const SCHEMA_ERRORS = { keyword: "errors.keyword", country: "errors.country", language: "errors.language", devices: "errors.devices" } as const;
+const schemaError = (t: T, message: string | undefined) => (message && message in SCHEMA_ERRORS ? t(SCHEMA_ERRORS[message as keyof typeof SCHEMA_ERRORS]) : t("errors.invalidRequest"));
 
 /**
  * Runs a live Google SERP request through the provider for each device, stores every element as returned, then
  * calculates intent and reads the ranking pages' structure. Each run is a new dated snapshot.
  */
 export async function analyzeKeywordAction(projectId: string, input: z.input<typeof analyzeSchema>): Promise<ActionResult<{ ids: string[] }>> {
-  const { user, allowed, ownDomain } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { user, allowed, ownDomain, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   const parsed = analyzeSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  if (!parsed.success) return { ok: false, error: schemaError(t, parsed.error.issues[0]?.message) };
   const provider = serpProvider();
-  if (!provider.configured()) return { ok: false, error: provider.setupHint };
+  if (!provider.configured()) return { ok: false, error: t("provider.setupHint") };
   const q = parsed.data;
   const db = await createClient();
   const runOne = async (device: "desktop" | "mobile") => {
@@ -89,25 +96,25 @@ export async function analyzeKeywordAction(projectId: string, input: z.input<typ
   try {
     const ids = await Promise.all(q.devices.map(runOne));
     refresh(projectId);
-    return { ok: true, data: { ids }, message: `SERP analysed (${q.devices.join(" + ")})` };
+    return { ok: true, data: { ids }, message: t("messages.analysed", { devices: q.devices.map((d) => t(`device.${d}`)).join(" + ") }) };
   } catch (e) {
     refresh(projectId);
-    return e instanceof SerpProviderError ? { ok: false, error: e.message } : fail(e, "The analysis failed");
+    return e instanceof SerpProviderError ? { ok: false, error: e.key ? t(`provider.errors.${e.key}`, e.values) : e.message } : fail(e, t("errors.analysisFailed"), t);
   }
 }
 
 export async function deleteAnalysisAction(projectId: string, id: string): Promise<ActionResult> {
-  const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   try {
     const db = await createClient();
     const { error, count } = await db.from("serp_analyses").delete({ count: "exact" }).eq("project_id", projectId).eq("id", id);
     if (error) throw error;
-    if (!count) return { ok: false, error: "Analysis not found." };
+    if (!count) return { ok: false, error: t("errors.analysisNotFound") };
     refresh(projectId);
-    return { ok: true, message: "Analysis deleted" };
+    return { ok: true, message: t("messages.analysisDeleted") };
   } catch (e) {
-    return fail(e, "Could not delete");
+    return fail(e, t("errors.delete"), t);
   }
 }
 
@@ -128,11 +135,11 @@ async function loadFull(projectId: string, id: string, ownDomain: string | null)
 
 /** AI interpretation of one SERP (labelled; statements without real refs become recommendations). */
 export async function serpInsightAction(projectId: string, id: string): Promise<ActionResult> {
-  const { user, allowed, ownDomain } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { user, allowed, ownDomain, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   try {
     const full = await loadFull(projectId, id, ownDomain);
-    if (!full) return { ok: false, error: "Analysis not found or not completed." };
+    if (!full) return { ok: false, error: t("errors.notCompleted") };
     const { project, context } = await aiContext(projectId);
     const out = await runStructured({
       feature: "serp.insight", workspaceId: project.workspace_id, projectId, userId: user.id, system: SEO_SYSTEM_PROMPT, schema: serpInsightSchema, effort: "low",
@@ -148,7 +155,7 @@ export async function serpInsightAction(projectId: string, id: string): Promise<
     }).eq("project_id", projectId).eq("id", id);
     if (error) throw error;
     refresh(projectId);
-    return { ok: true, message: "AI analysis ready" };
+    return { ok: true, message: t("messages.aiReady") };
   } catch (e) {
     return { ok: false, error: describeAIError(e) };
   }
@@ -159,11 +166,11 @@ export async function serpInsightAction(projectId: string, id: string): Promise<
  * the SERP elements that support them as evidence. No search volume or difficulty is claimed: none is collected.
  */
 export async function seoOpportunitiesAction(projectId: string, analysisIds: string[], count = 6): Promise<ActionResult<{ created: number; skipped: number }>> {
-  const { user, allowed, ownDomain } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { user, allowed, ownDomain, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   try {
     const fulls = (await Promise.all(analysisIds.slice(0, 4).map((id) => loadFull(projectId, id, ownDomain)))).filter((x): x is NonNullable<typeof x> => Boolean(x));
-    if (!fulls.length) return { ok: false, error: "Select at least one completed analysis." };
+    if (!fulls.length) return { ok: false, error: t("errors.selectCompleted") };
     const { project, bundle, context } = await aiContext(projectId);
     // refs are prefixed per analysis (A1:R3) so evidence maps back to the right snapshot
     const blocks = fulls.map((f, k) => `## A${k + 1}\n${f.market}\n${f.digest.text.split("\n").map((l) => `A${k + 1}:${l}`).join("\n")}`);
@@ -206,7 +213,7 @@ export async function seoOpportunitiesAction(projectId: string, analysisIds: str
     }
     await insertOpportunities(projectId, rows as never);
     refresh(projectId);
-    return { ok: true, data: { created: rows.length, skipped }, message: `${rows.length} SEO opportunities added to Content Opportunities${skipped ? ` (${skipped} duplicates skipped)` : ""}` };
+    return { ok: true, data: { created: rows.length, skipped }, message: skipped ? t("messages.opportunitiesSkipped", { count: rows.length, skipped }) : t("messages.opportunities", { count: rows.length }) };
   } catch (e) {
     return { ok: false, error: describeAIError(e) };
   }
@@ -214,11 +221,11 @@ export async function seoOpportunitiesAction(projectId: string, analysisIds: str
 
 /** SEO content brief for a keyword, researched from the ranking pages (structure only, never their text). */
 export async function generateBriefAction(projectId: string, input: { analysisId: string; opportunityId?: string | null; keyword?: string | null }): Promise<ActionResult<{ id: string }>> {
-  const { user, allowed, ownDomain } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { user, allowed, ownDomain, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   try {
     const full = await loadFull(projectId, input.analysisId, ownDomain);
-    if (!full) return { ok: false, error: "Analysis not found or not completed." };
+    if (!full) return { ok: false, error: t("errors.notCompleted") };
     const { project, context } = await aiContext(projectId);
     const opp = input.opportunityId ? (await listOpportunities(projectId)).find((o) => o.id === input.opportunityId) ?? null : null;
     const keyword = (input.keyword || opp?.seo?.keyword || full.analysis.keyword).slice(0, 200);
@@ -240,18 +247,18 @@ export async function generateBriefAction(projectId: string, input: { analysisId
     }).select("id").single();
     if (error) throw error;
     refresh(projectId);
-    return { ok: true, data: { id: data.id }, message: "SEO brief ready" };
+    return { ok: true, data: { id: data.id }, message: t("messages.briefReady") };
   } catch (e) {
     return { ok: false, error: describeAIError(e) };
   }
 }
 
 export async function generateDraftAction(projectId: string, briefId: string): Promise<ActionResult> {
-  const { user, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { user, allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   try {
     const b = await getBrief(projectId, briefId);
-    if (!b) return { ok: false, error: "Brief not found." };
+    if (!b) return { ok: false, error: t("errors.briefNotFound") };
     const { project, context } = await aiContext(projectId);
     const out = await runStructured({
       feature: "serp.draft", workspaceId: project.workspace_id, projectId, userId: user.id, system: SEO_SYSTEM_PROMPT, schema: draftSchema,
@@ -261,7 +268,7 @@ export async function generateDraftAction(projectId: string, briefId: string): P
     const { error } = await db.from("seo_briefs").update({ draft: [out.markdown, out.notes.length ? `\n---\nTo check: ${out.notes.join(" · ")}` : ""].join("") }).eq("project_id", projectId).eq("id", briefId);
     if (error) throw error;
     refresh(projectId);
-    return { ok: true, message: "Draft ready (AI): review before publishing" };
+    return { ok: true, message: t("messages.draftReady") };
   } catch (e) {
     return { ok: false, error: describeAIError(e) };
   }
@@ -277,14 +284,17 @@ const calendarSchema = z.object({
 
 /** Adds the brief (and its draft) to the existing Editorial Calendar as a planned item; one calendar item per brief. */
 export async function addBriefToCalendarAction(projectId: string, briefId: string, input: z.input<typeof calendarSchema>): Promise<ActionResult<{ contentItemId: string }>> {
-  const { user, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { user, allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   const parsed = calendarSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  if (!parsed.success) {
+    const r = await zodErrorToResult(parsed.error);
+    return { ok: false, error: (!r.ok && Object.values(r.fieldErrors ?? {})[0]) || (!r.ok ? r.error : t("errors.invalidRequest")) };
+  }
   try {
     const b = await getBrief(projectId, briefId);
-    if (!b) return { ok: false, error: "Brief not found." };
-    if (b.content_item_id) return { ok: false, error: "This brief is already in the Editorial Calendar." };
+    if (!b) return { ok: false, error: t("errors.briefNotFound") };
+    if (b.content_item_id) return { ok: false, error: t("errors.alreadyInCalendar") };
     // one content item per opportunity (database rule): link only if the opportunity has none yet
     const linkOpp = b.opportunity_id && !(await linkedPosts(projectId, [b.opportunity_id])).length ? b.opportunity_id : null;
     const funnel = b.brief.search_intent === "transactional" ? "conversion" : b.brief.search_intent === "commercial" ? "acquisition" : "awareness";
@@ -298,22 +308,22 @@ export async function addBriefToCalendarAction(projectId: string, briefId: strin
     const db = await createClient();
     await db.from("seo_briefs").update({ content_item_id: post.id }).eq("project_id", projectId).eq("id", briefId);
     refresh(projectId);
-    return { ok: true, data: { contentItemId: post.id }, message: "Added to the Editorial Calendar" };
+    return { ok: true, data: { contentItemId: post.id }, message: t("messages.addedToCalendar") };
   } catch (e) {
-    return fail(e, "Could not add to the calendar");
+    return fail(e, t("errors.addToCalendar"), t);
   }
 }
 
 export async function deleteBriefAction(projectId: string, id: string): Promise<ActionResult> {
-  const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   try {
     const db = await createClient();
     const { error } = await db.from("seo_briefs").delete().eq("project_id", projectId).eq("id", id);
     if (error) throw error;
     refresh(projectId);
-    return { ok: true, message: "Brief deleted" };
+    return { ok: true, message: t("messages.briefDeleted") };
   } catch (e) {
-    return fail(e, "Could not delete");
+    return fail(e, t("errors.delete"), t);
   }
 }

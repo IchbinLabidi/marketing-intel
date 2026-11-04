@@ -10,7 +10,7 @@ export const optionalText = (max = 5000) =>
     .nullable()
     .transform((v) => (v ? v : null));
 
-export const requiredText = (max = 200) => z.string().trim().min(1, "Required").max(max);
+export const requiredText = (max = 200) => z.string().trim().min(1, "v:required").max(max);
 
 export const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) =>
   z
@@ -26,7 +26,7 @@ export const optionalNumber = (min: number, max: number) =>
       if (v === "" || v === null || v === undefined) return null;
       const n = typeof v === "number" ? v : Number(v);
       if (Number.isNaN(n) || n < min || n > max) {
-        ctx.addIssue({ code: "custom", message: `Must be between ${min} and ${max}` });
+        ctx.addIssue({ code: "custom", message: `v:between?min=${min}&max=${max}` });
         return z.NEVER;
       }
       return n;
@@ -44,7 +44,7 @@ export const optionalUrl = z
   .optional()
   .nullable()
   .transform((v) => (v ? (/^https?:\/\//i.test(v) ? v : `https://${v}`) : null))
-  .pipe(z.url("Invalid URL").nullable());
+  .pipe(z.url("v:invalidUrl").nullable());
 
 /** Converts FormData to a plain object. Keys ending with [] are collected as arrays. */
 export function formToObject(formData: FormData): Record<string, unknown> {
@@ -60,12 +60,3 @@ export function formToObject(formData: FormData): Record<string, unknown> {
 export type ActionResult<T = undefined> =
   | { ok: true; data?: T; message?: string }
   | { ok: false; error: string; fieldErrors?: Record<string, string> };
-
-export function zodErrorToResult(error: z.ZodError): ActionResult<never> {
-  const fieldErrors: Record<string, string> = {};
-  for (const issue of error.issues) {
-    const key = issue.path.join(".");
-    if (key && !fieldErrors[key]) fieldErrors[key] = issue.message;
-  }
-  return { ok: false, error: "Please fix the highlighted fields.", fieldErrors };
-}

@@ -7,9 +7,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { deleteCalendarAction } from "@/server/actions/history-intelligence";
 import { confirm } from "@/components/ui/confirm";
+import { useT } from "@/i18n/client";
 
 export function DeleteCalendarButton({ projectId, calendarId, name }: { projectId: string; calendarId: string; name: string }) {
   const router = useRouter();
+  const t = useT("history");
   const [pending, startTransition] = useTransition();
   return (
     <Button
@@ -19,7 +21,7 @@ export function DeleteCalendarButton({ projectId, calendarId, name }: { projectI
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
-          if (!(await confirm({ title: `Delete “${name}”?`, description: "Its planned items are deleted too. This cannot be undone.", confirmLabel: "Delete calendar", destructive: true }))) return;
+          if (!(await confirm({ title: t("deleteCalendar.confirmTitle", { name }), description: t("deleteCalendar.confirmDescription"), confirmLabel: t("deleteCalendar.button"), destructive: true }))) return;
           const r = await deleteCalendarAction(projectId, calendarId);
           if (!r.ok) return void toast.error(r.error);
           toast.success(r.message);
@@ -27,7 +29,7 @@ export function DeleteCalendarButton({ projectId, calendarId, name }: { projectI
         })
       }
     >
-      <Trash2 /> Delete calendar
+      <Trash2 /> {t("deleteCalendar.button")}
     </Button>
   );
 }

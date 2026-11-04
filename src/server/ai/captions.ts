@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { LANGUAGE_LABELS, type Language } from "@/lib/domain/constants";
 import { AUTO_SETTINGS, COPY_LANGUAGE_LABELS, COPY_PLATFORM_LABELS, COPY_PLATFORMS, LENGTH_LABELS, OBJECTIVE_LABELS, PLATFORM_FIELDS, TONE_LABELS, type CopyPlatform, type CopySettings } from "@/lib/production/platform-copy";
+import type { TFor } from "@/i18n/messages";
 import type { CaptionAIInput, CaptionOperation } from "@/lib/validation/production";
 
 export const captionVariantSchema = z.object({
@@ -71,7 +72,7 @@ export const hasTimings = (script: string) => /\b\d{1,2}:\d{2}\b|\b\d{1,3}\s?(s|
  * Keeps what was asked and drops what can't be trusted: variants for other platforms, chapters without timings,
  * links that appear nowhere in the item or the project data. Fields the operation must not touch keep current values.
  */
-export function sanitizeDraft(draft: CaptionDraft, opts: { operation: CaptionOperation; platforms: CopyPlatform[]; current: Partial<Record<CopyPlatform, Partial<CaptionVariant>>>; known: string; script: string }): CaptionDraft {
+export function sanitizeDraft(draft: CaptionDraft, opts: { operation: CaptionOperation; platforms: CopyPlatform[]; current: Partial<Record<CopyPlatform, Partial<CaptionVariant>>>; known: string; script: string; t: TFor<"production"> }): CaptionDraft {
   const assumptions = [...draft.assumptions];
   const max = opts.operation === "alternatives" ? 3 : 1;
   const counts = new Map<CopyPlatform, number>();
@@ -95,7 +96,7 @@ export function sanitizeDraft(draft: CaptionDraft, opts: { operation: CaptionOpe
       if (kept.length !== out.links.split("\n").length) removedLink = true;
       out.links = kept.join("\n").trim();
     }
-    if ((out.caption.match(URL_RE) ?? []).some(unknownUrl)) assumptions.push(`The ${COPY_PLATFORM_LABELS[v.platform]} text contains a link that isn't in your project data. Check it before publishing.`);
+    if ((out.caption.match(URL_RE) ?? []).some(unknownUrl)) assumptions.push(opts.t("aiChecks.unknownLinkInText", { platform: COPY_PLATFORM_LABELS[v.platform] }));
     const only = OPERATION_FIELDS[opts.operation];
     if (only) {
       const cur = opts.current[v.platform] ?? {};
@@ -103,7 +104,7 @@ export function sanitizeDraft(draft: CaptionDraft, opts: { operation: CaptionOpe
     }
     return out;
   });
-  if (removedLink) assumptions.push("A link the AI suggested isn't in your project data, so it was left out. Add the right link yourself.");
-  if (removedChapters) assumptions.push("Chapters were left out: the script has no exact timings. Add them once the video is edited.");
+  if (removedLink) assumptions.push(opts.t("aiChecks.linkRemoved"));
+  if (removedChapters) assumptions.push(opts.t("aiChecks.chaptersRemoved"));
   return { ...draft, variants, assumptions: [...new Set(assumptions)] };
 }

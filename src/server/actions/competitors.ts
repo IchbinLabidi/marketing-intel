@@ -11,7 +11,8 @@ import { captionHook } from "@/lib/meta/normalize";
 import { classify, computeScore, isDuplicate, normalizeWeights } from "@/lib/opportunities/scoring";
 import type { Signal } from "@/lib/opportunities/signals";
 import { competitorSchema, ideaEditSchema, manualPostSchema, type CompetitorInput } from "@/lib/validation/competitors";
-import { zodErrorToResult, type ActionResult } from "@/lib/validation/common";
+import { type ActionResult } from "@/lib/validation/common";
+import { zodErrorToResult } from "@/lib/validation/errors";
 import { createClient } from "@/lib/supabase/server";
 import { describeAIError } from "@/server/ai/client";
 import {
@@ -27,42 +28,45 @@ import { saveAnalysisReport } from "@/server/services/history";
 import { insertOpportunities, listOpportunities } from "@/server/services/opportunities";
 import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
+import { getT } from "@/i18n/server";
+import type { TFor } from "@/i18n/messages";
 
-const NO_EDIT: ActionResult<never> = { ok: false, error: "Your role in this workspace is read-only." };
+type T = TFor<"competitors">;
+const noEdit = (t: T): ActionResult<never> => ({ ok: false, error: t("errors.readOnly") });
 const refresh = (projectId: string) => revalidatePath(`/p/${projectId}`, "layout");
-const fail = (e: unknown, fallback: string): ActionResult<never> => {
+const fail = (e: unknown, fallback: string, t: T): ActionResult<never> => {
   const m = e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : fallback;
-  return { ok: false, error: /schema cache|does not exist|column .* of relation/.test(m) ? "Competitors needs database migration 0009." : m };
+  return { ok: false, error: /schema cache|does not exist|column .* of relation/.test(m) ? t("errors.migration") : m };
 };
 
 async function guard(projectId: string) {
   const user = await requireUser();
-  const { project, role } = await getProjectContext(projectId);
-  return { user, project, allowed: canEdit(role) };
+  const [{ project, role }, t] = await Promise.all([getProjectContext(projectId), getT("competitors")]);
+  return { user, project, allowed: canEdit(role), t };
 }
 
 // --- Competitors and profiles --------------------------------------------------------------------------------
 
 /** Creates or updates a competitor and adds the given profile links (existing profiles are kept). */
 export async function saveCompetitorAction(projectId: string, id: string | null, input: CompetitorInput): Promise<ActionResult<{ id: string; started: boolean }>> {
-  const { user, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { user, allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   const parsed = competitorSchema.safeParse(input);
   if (!parsed.success) return zodErrorToResult(parsed.error);
   const { profiles, website, ...fields } = parsed.data;
-  const parsedProfiles = profiles.filter(Boolean).map((url) => ({ url, r: parseProfileUrl(url) }));
+  const parsedProfiles = profiles.filter(Boolean).map((url) => ({ url, r: parseProfileUrl(url, t) }));
   const bad = parsedProfiles.find((p) => !p.r.ok);
   if (bad && !bad.r.ok) return { ok: false, error: `${bad.url}: ${bad.r.error}`, fieldErrors: { profiles: bad.r.error } };
   const unique = new Map(parsedProfiles.map((p) => p.r.ok && [`${p.r.profile.platform}:${p.r.profile.handle}`, p.r.profile]).filter(Boolean) as [string, { platform: Platform; handle: string; url: string }][]);
-  if (website && !normalizeWebsite(website)) return { ok: false, error: "The website link is not valid.", fieldErrors: { website: "Invalid link" } };
+  if (website && !normalizeWebsite(website)) return { ok: false, error: t("errors.invalidWebsite"), fieldErrors: { website: t("errors.invalidLink") } };
   try {
     const db = await createClient();
     // a profile already tracked in this project (by any competitor) is refused, so posts are never collected twice
     if (unique.size) {
       const { data: taken } = await db.from("competitor_channels").select("platform, handle, competitor_id, competitors(name)").eq("project_id", projectId);
       for (const p of unique.values()) {
-        const t = (taken ?? []).find((x) => x.platform === p.platform && (x.handle ?? "").toLowerCase() === p.handle);
-        if (t && t.competitor_id !== id) return { ok: false, error: `${p.url} is already tracked for ${(t.competitors as unknown as { name: string } | null)?.name ?? "another competitor"}.` };
+        const taken_ = (taken ?? []).find((x) => x.platform === p.platform && (x.handle ?? "").toLowerCase() === p.handle);
+        if (taken_ && taken_.competitor_id !== id) return { ok: false, error: t("errors.alreadyTrackedFor", { url: p.url, name: (taken_.competitors as unknown as { name: string } | null)?.name ?? t("errors.anotherCompetitor") }) };
       }
     }
     const values = { ...fields, website: normalizeWebsite(website), project_id: projectId };
@@ -73,7 +77,7 @@ export async function saveCompetitorAction(projectId: string, id: string | null,
     } else {
       const { data, error } = await db.from("competitors").insert(values).select("id").single();
       if (error) {
-        if (error.code === "23505") return { ok: false, error: `A competitor named “${fields.name}” already exists.` };
+        if (error.code === "23505") return { ok: false, error: t("errors.duplicateName", { name: fields.name }) };
         throw error;
       }
       competitorId = data.id;
@@ -83,7 +87,7 @@ export async function saveCompetitorAction(projectId: string, id: string | null,
     if (toAdd.length) {
       const { error } = await db.from("competitor_channels").insert(toAdd.map((p) => ({ competitor_id: competitorId, project_id: projectId, platform: p.platform, handle: p.handle, url: p.url })));
       if (error) {
-        if (error.code === "23505") return { ok: false, error: "One of these profiles is already tracked in this project." };
+        if (error.code === "23505") return { ok: false, error: t("errors.profileTracked") };
         throw error;
       }
     }
@@ -94,83 +98,83 @@ export async function saveCompetitorAction(projectId: string, id: string | null,
       if (c) started = (await startCompetitorSync(projectId, c, id ? "manual" : "initial", user.id)).ok;
     }
     refresh(projectId);
-    return { ok: true, data: { id: competitorId!, started }, message: started ? "Saved. Collecting public posts…" : "Competitor saved" };
+    return { ok: true, data: { id: competitorId!, started }, message: started ? t("messages.savedCollecting") : t("messages.saved") };
   } catch (e) {
-    return fail(e, "Could not save the competitor");
+    return fail(e, t("errors.save"), t);
   }
 }
 
 export async function deleteCompetitorAction(projectId: string, id: string): Promise<ActionResult> {
-  const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   try {
     const db = await createClient();
     const { error, count } = await db.from("competitors").delete({ count: "exact" }).eq("project_id", projectId).eq("id", id);
     if (error) throw error;
-    if (!count) return { ok: false, error: "Competitor not found." };
+    if (!count) return { ok: false, error: t("errors.notFound") };
     refresh(projectId);
-    return { ok: true, message: "Competitor and its collected posts deleted" };
+    return { ok: true, message: t("messages.deleted") };
   } catch (e) {
-    return fail(e, "Could not delete");
+    return fail(e, t("errors.delete"), t);
   }
 }
 
 export async function removeProfileAction(projectId: string, channelId: string): Promise<ActionResult> {
-  const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   try {
     const db = await createClient();
     const { error, count } = await db.from("competitor_channels").delete({ count: "exact" }).eq("project_id", projectId).eq("id", channelId);
     if (error) throw error;
-    if (!count) return { ok: false, error: "Profile not found." };
+    if (!count) return { ok: false, error: t("errors.profileNotFound") };
     refresh(projectId);
-    return { ok: true, message: "Profile and its posts removed" };
+    return { ok: true, message: t("messages.profileRemoved") };
   } catch (e) {
-    return fail(e, "Could not remove the profile");
+    return fail(e, t("errors.removeProfile"), t);
   }
 }
 
 export async function toggleProfileAction(projectId: string, channelId: string, enabled: boolean): Promise<ActionResult> {
-  const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   try {
     const db = await createClient();
     const { error } = await db.from("competitor_channels").update({ enabled }).eq("project_id", projectId).eq("id", channelId);
     if (error) throw error;
     refresh(projectId);
-    return { ok: true, message: enabled ? "Profile monitored" : "Profile paused" };
+    return { ok: true, message: enabled ? t("messages.profileMonitored") : t("messages.profilePaused") };
   } catch (e) {
-    return fail(e, "Could not update");
+    return fail(e, t("errors.update"), t);
   }
 }
 
 export async function collectCompetitorAction(projectId: string, id: string): Promise<ActionResult> {
-  const { user, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { user, allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   try {
     const c = await getCompetitor(projectId, id);
-    if (!c) return { ok: false, error: "Competitor not found." };
-    if (!c.competitor_channels.some((ch) => ch.enabled)) return { ok: false, error: "Add at least one social profile first." };
+    if (!c) return { ok: false, error: t("errors.notFound") };
+    if (!c.competitor_channels.some((ch) => ch.enabled)) return { ok: false, error: t("errors.noProfile") };
     const r = await startCompetitorSync(projectId, c, "manual", user.id);
-    if (!r.ok) return { ok: false, error: r.error };
+    if (!r.ok) return { ok: false, error: t("errors.busy") };
     refresh(projectId);
-    return { ok: true, message: "Collection started" };
+    return { ok: true, message: t("messages.collectionStarted") };
   } catch (e) {
-    return fail(e, "Could not start the collection");
+    return fail(e, t("errors.collect"), t);
   }
 }
 
 /** Platforms without a data provider: a person records a post with its original link and the public numbers shown. */
 export async function addManualPostAction(projectId: string, input: unknown): Promise<ActionResult> {
-  const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   const parsed = manualPostSchema.safeParse(input);
   if (!parsed.success) return zodErrorToResult(parsed.error);
   const p = parsed.data;
   try {
     const db = await createClient();
     const { data: ch } = await db.from("competitor_channels").select("id, competitor_id, platform, followers_count").eq("project_id", projectId).eq("id", p.channel_id).maybeSingle();
-    if (!ch) return { ok: false, error: "Profile not found." };
+    if (!ch) return { ok: false, error: t("errors.profileNotFound") };
     const { error } = await db.from("competitor_content_items").upsert({
       project_id: projectId, competitor_id: ch.competitor_id, channel_id: ch.id, source: "manual", external_id: p.url.replace(/[?#].*$/, ""),
       platform: ch.platform, url: p.url, published_at: new Date(p.published_at).toISOString(), caption: p.caption, hook: captionHook(p.caption),
@@ -179,9 +183,9 @@ export async function addManualPostAction(projectId: string, input: unknown): Pr
     }, { onConflict: "competitor_id,source,external_id" });
     if (error) throw error;
     refresh(projectId);
-    return { ok: true, message: "Post added" };
+    return { ok: true, message: t("messages.postAdded") };
   } catch (e) {
-    return fail(e, "Could not add the post");
+    return fail(e, t("errors.addPost"), t);
   }
 }
 
@@ -191,21 +195,26 @@ export async function addManualPostAction(projectId: string, input: unknown): Pr
  * Re-importing the same link updates that post instead of duplicating it.
  */
 export async function addManualPostsAction(projectId: string, channelId: string, rows: unknown[]): Promise<ActionResult<{ saved: number; errors: { line: number; error: string }[] }>> {
-  const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
-  if (!Array.isArray(rows) || !rows.length) return { ok: false, error: "Nothing to import." };
-  if (rows.length > 200) return { ok: false, error: "Import at most 200 posts at a time." };
+  const { allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
+  if (!Array.isArray(rows) || !rows.length) return { ok: false, error: t("errors.nothingToImport") };
+  if (rows.length > 200) return { ok: false, error: t("errors.tooManyPosts", { max: 200 }) };
   try {
     const db = await createClient();
     const { data: ch } = await db.from("competitor_channels").select("id, competitor_id, platform, followers_count").eq("project_id", projectId).eq("id", channelId).maybeSingle();
-    if (!ch) return { ok: false, error: "Profile not found." };
+    if (!ch) return { ok: false, error: t("errors.profileNotFound") };
     const errors: { line: number; error: string }[] = [];
     const now = new Date().toISOString();
     const byId = new Map<string, Record<string, unknown>>();
-    rows.forEach((raw, i) => {
+    for (const [i, raw] of rows.entries()) {
       const line = typeof (raw as { line?: unknown })?.line === "number" ? (raw as { line: number }).line : i + 1;
       const parsed = manualPostSchema.safeParse({ ...(raw as object), channel_id: channelId });
-      if (!parsed.success) return errors.push({ line, error: parsed.error.issues[0]?.message ?? "Invalid row" });
+      if (!parsed.success) {
+        // the schema's messages are validation keys: resolved in the request's language like a form error
+        const r = await zodErrorToResult(parsed.error);
+        errors.push({ line, error: (!r.ok && Object.values(r.fieldErrors ?? {})[0]) || t("errors.invalidRow") });
+        continue;
+      }
       const p = parsed.data;
       const externalId = p.url.replace(/[?#].*$/, "");
       byId.set(externalId, {
@@ -214,34 +223,34 @@ export async function addManualPostsAction(projectId: string, channelId: string,
         title: captionHook(p.caption, 120), format: p.format, hashtags: hashtagsOf(p.caption), mentions: mentionsOf(p.caption),
         likes: p.likes, comments: p.comments, shares: p.shares, views: p.views, followers_at_collection: ch.followers_count, metrics_updated_at: now,
       });
-    });
+    }
     if (byId.size) {
       const { error } = await db.from("competitor_content_items").upsert([...byId.values()], { onConflict: "competitor_id,source,external_id" });
       if (error) throw error;
       refresh(projectId);
     }
-    return { ok: true, data: { saved: byId.size, errors }, message: `${byId.size} post${byId.size === 1 ? "" : "s"} saved${errors.length ? `, ${errors.length} line${errors.length === 1 ? "" : "s"} skipped` : ""}` };
+    return { ok: true, data: { saved: byId.size, errors }, message: errors.length ? t("messages.postsSavedSkipped", { saved: t("messages.posts", { count: byId.size }), skipped: t("messages.lines", { count: errors.length }) }) : t("messages.postsSaved", { saved: t("messages.posts", { count: byId.size }) }) };
   } catch (e) {
-    return fail(e, "Could not import the posts");
+    return fail(e, t("errors.importPosts"), t);
   }
 }
 
 /** Saves the numeric Page id of a competitor's Facebook profile (from a pasted Ad Library link), for the Ad Library button. */
 export async function setFacebookPageIdAction(projectId: string, channelId: string, input: string): Promise<ActionResult> {
-  const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   const pageId = pageIdFromInput(input);
-  if (!pageId) return { ok: false, error: "Paste the Ad Library address of their Page (it contains view_all_page_id=…) or the Page id." };
+  if (!pageId) return { ok: false, error: t("errors.pageId") };
   try {
     const db = await createClient();
     const { data: ch } = await db.from("competitor_channels").select("id, platform").eq("project_id", projectId).eq("id", channelId).maybeSingle();
-    if (!ch || ch.platform !== "facebook") return { ok: false, error: "Facebook profile not found." };
+    if (!ch || ch.platform !== "facebook") return { ok: false, error: t("errors.facebookNotFound") };
     const { error } = await db.from("competitor_channels").update({ external_id: pageId }).eq("id", channelId);
     if (error) throw error;
     refresh(projectId);
-    return { ok: true, message: "Page linked. The Ad Library button now opens their ads directly." };
+    return { ok: true, message: t("messages.pageLinked") };
   } catch (e) {
-    return fail(e, "Could not link the Page");
+    return fail(e, t("errors.linkPage"), t);
   }
 }
 
@@ -255,14 +264,14 @@ const isoDate = (v: unknown) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.t
  * saving the same Library ID again updates that ad (e.g. to record its end date) instead of duplicating it.
  */
 export async function saveCompetitorAdsAction(projectId: string, competitorId: string, rows: AdInput[]): Promise<ActionResult<{ saved: number; errors: { line: number; error: string }[] }>> {
-  const { user, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
-  if (!Array.isArray(rows) || !rows.length) return { ok: false, error: "Nothing to save." };
-  if (rows.length > 200) return { ok: false, error: "Save at most 200 ads at a time." };
+  const { user, allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
+  if (!Array.isArray(rows) || !rows.length) return { ok: false, error: t("errors.nothingToSave") };
+  if (rows.length > 200) return { ok: false, error: t("errors.tooManyAds", { max: 200 }) };
   try {
     const db = await createClient();
     const { data: comp } = await db.from("competitors").select("id").eq("project_id", projectId).eq("id", competitorId).maybeSingle();
-    if (!comp) return { ok: false, error: "Competitor not found." };
+    if (!comp) return { ok: false, error: t("errors.notFound") };
     const today = new Date().toISOString().slice(0, 10);
     const errors: { line: number; error: string }[] = [];
     const byId = new Map<string, Record<string, unknown>>();
@@ -273,9 +282,9 @@ export async function saveCompetitorAdsAction(projectId: string, competitorId: s
       const ended = r.ended_on == null || r.ended_on === "" ? null : isoDate(r.ended_on) ? (r.ended_on as string) : "bad";
       const platforms = Array.isArray(r.platforms) ? r.platforms.filter((p): p is string => typeof p === "string" && (AD_PLATFORMS as readonly string[]).includes(p)) : [];
       const body = typeof r.body === "string" ? r.body.slice(0, 5000) : "";
-      if (!id) return errors.push({ line, error: "Missing Library ID" });
-      if (!started || started > today) return errors.push({ line, error: "Invalid start date" });
-      if (ended === "bad" || (ended && ended < started)) return errors.push({ line, error: "Invalid end date" });
+      if (!id) return errors.push({ line, error: t("errors.missingLibraryId") });
+      if (!started || started > today) return errors.push({ line, error: t("errors.invalidStart") });
+      if (ended === "bad" || (ended && ended < started)) return errors.push({ line, error: t("errors.invalidEnd") });
       byId.set(id, { project_id: projectId, competitor_id: competitorId, library_id: id, url: adUrl(id), started_on: started, ended_on: ended, platforms, body, created_by: user.id });
     });
     if (byId.size) {
@@ -283,38 +292,38 @@ export async function saveCompetitorAdsAction(projectId: string, competitorId: s
       if (error) throw error;
       refresh(projectId);
     }
-    return { ok: true, data: { saved: byId.size, errors }, message: `${byId.size} ad${byId.size === 1 ? "" : "s"} saved${errors.length ? `, ${errors.length} line${errors.length === 1 ? "" : "s"} skipped` : ""}` };
+    return { ok: true, data: { saved: byId.size, errors }, message: errors.length ? t("messages.postsSavedSkipped", { saved: t("messages.ads", { count: byId.size }), skipped: t("messages.lines", { count: errors.length }) }) : t("messages.postsSaved", { saved: t("messages.ads", { count: byId.size }) }) };
   } catch (e) {
-    return fail(e, "Could not save the ads");
+    return fail(e, t("errors.saveAds"), t);
   }
 }
 
 /** Marks an ad as no longer running (today), or as running again. */
 export async function setCompetitorAdEndedAction(projectId: string, adId: string, ended: boolean): Promise<ActionResult> {
-  const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   try {
     const db = await createClient();
     const { error } = await db.from("competitor_ads").update({ ended_on: ended ? new Date().toISOString().slice(0, 10) : null }).eq("project_id", projectId).eq("id", adId);
     if (error) throw error;
     refresh(projectId);
-    return { ok: true, message: ended ? "Ad marked as ended today" : "Ad marked as active" };
+    return { ok: true, message: ended ? t("messages.adEnded") : t("messages.adActive") };
   } catch (e) {
-    return fail(e, "Could not update the ad");
+    return fail(e, t("errors.updateAd"), t);
   }
 }
 
 export async function deleteCompetitorAdAction(projectId: string, adId: string): Promise<ActionResult> {
-  const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   try {
     const db = await createClient();
     const { error } = await db.from("competitor_ads").delete().eq("project_id", projectId).eq("id", adId);
     if (error) throw error;
     refresh(projectId);
-    return { ok: true, message: "Ad removed" };
+    return { ok: true, message: t("messages.adRemoved") };
   } catch (e) {
-    return fail(e, "Could not remove the ad");
+    return fail(e, t("errors.removeAd"), t);
   }
 }
 
@@ -358,13 +367,13 @@ const cleanRefs = (refs: string[], valid: Map<string, unknown>) => [...new Set(r
 // --- AI: one competitor ---------------------------------------------------------------------------------------
 
 export async function analyzeCompetitorAction(projectId: string, id: string): Promise<ActionResult<{ reportId: string }>> {
-  const { user, project, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { user, project, allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   try {
     const c = await getCompetitor(projectId, id);
-    if (!c) return { ok: false, error: "Competitor not found." };
+    if (!c) return { ok: false, error: t("errors.notFound") };
     const posts = await postsForAnalysis(projectId, [id], Math.max(30, c.history_days));
-    if (posts.length < 5) return { ok: false, error: "Collect at least 5 posts before analysing (Collect now, or add posts manually)." };
+    if (posts.length < 5) return { ok: false, error: t("errors.needFivePosts") };
     const { bundle, brand, channels } = await loadHistoryAnalysis(projectId);
     const stats = summarize(posts.map(toAnalysis), { tz: project.timezone || "Africa/Tunis", periodDays: c.history_days, ignore: [c.name, ...c.competitor_channels.flatMap((ch) => [ch.display_name ?? "", ch.handle ?? ""])] });
     const digest = postRefs(posts, new Map([[c.id, c.name]]));
@@ -390,7 +399,7 @@ export async function analyzeCompetitorAction(projectId: string, id: string): Pr
       scope: { competitor_ids: [id], period_days: c.history_days, posts: posts.length }, result, model, created_by: user.id,
     });
     refresh(projectId);
-    return { ok: true, data: { reportId }, message: "Analysis ready" };
+    return { ok: true, data: { reportId }, message: t("messages.analysisReady") };
   } catch (e) {
     return { ok: false, error: describeAIError(e) };
   }
@@ -404,14 +413,14 @@ export type StoredIdea = GapAnalysis["ideas"][number] & {
 };
 
 export async function gapAnalysisAction(projectId: string, input: { competitorIds: string[]; days: number; count?: number }): Promise<ActionResult<{ reportId: string }>> {
-  const { user, project, allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { user, project, allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   const days = [30, 90, 180, 365].includes(input.days) ? input.days : 90;
   try {
     const competitors = (await listCompetitors(projectId)).filter((c) => !input.competitorIds.length || input.competitorIds.includes(c.id));
-    if (!competitors.length) return { ok: false, error: "Add a competitor first." };
+    if (!competitors.length) return { ok: false, error: t("errors.addCompetitorFirst") };
     const posts = await postsForAnalysis(projectId, competitors.map((c) => c.id), days);
-    if (posts.length < 5) return { ok: false, error: "Not enough collected competitor posts in this period (5 needed)." };
+    if (posts.length < 5) return { ok: false, error: t("errors.notEnoughPosts") };
     const { items, bundle, brand, channels } = await loadHistoryAnalysis(projectId);
     const tz = project.timezone || "Africa/Tunis";
     const since = Date.now() - days * 86400_000;
@@ -470,7 +479,7 @@ export async function gapAnalysisAction(projectId: string, input: { competitorId
       result: { gaps, ideas, notes: out.notes, ours: { posts: ours.posts, perWeek: ours.perWeek } }, model, created_by: user.id,
     });
     refresh(projectId);
-    return { ok: true, data: { reportId }, message: `${gaps.length} gaps and ${ideas.length} ideas` };
+    return { ok: true, data: { reportId }, message: t("messages.gapsReady", { gaps: t("messages.gaps", { count: gaps.length }), ideas: t("messages.ideas", { count: ideas.length }) }) };
   } catch (e) {
     return { ok: false, error: describeAIError(e) };
   }
@@ -481,8 +490,8 @@ export async function gapAnalysisAction(projectId: string, input: { competitorId
  * competitor posts as evidence (with their original links). One opportunity per idea; near-duplicates are refused.
  */
 export async function createOpportunityFromIdeaAction(projectId: string, reportId: string, index: number, edits: unknown): Promise<ActionResult<{ id: string }>> {
-  const { allowed } = await guard(projectId);
-  if (!allowed) return NO_EDIT;
+  const { allowed, t } = await guard(projectId);
+  if (!allowed) return noEdit(t);
   const parsed = ideaEditSchema.safeParse(edits);
   if (!parsed.success) return zodErrorToResult(parsed.error);
   try {
@@ -490,12 +499,12 @@ export async function createOpportunityFromIdeaAction(projectId: string, reportI
     const { data: report, error } = await db.from("analysis_reports").select("id, result").eq("project_id", projectId).eq("id", reportId).eq("kind", "comparison").maybeSingle();
     if (error) throw error;
     const idea = (report?.result as { ideas?: StoredIdea[] } | null)?.ideas?.[index];
-    if (!idea) return { ok: false, error: "Idea not found." };
+    if (!idea) return { ok: false, error: t("errors.ideaNotFound") };
     const existing = await listOpportunities(projectId);
     const already = existing.find((o) => o.analysis_report_id === reportId && (o.focus as { idea_index?: number })?.idea_index === index);
-    if (already) return { ok: false, error: `Already created: “${already.title ?? already.idea}”.` };
+    if (already) return { ok: false, error: t("errors.alreadyCreated", { title: already.title ?? already.idea }) };
     const e = parsed.data;
-    if (isDuplicate({ title: e.title, creative_angle: e.creative_angle, platform: e.platform }, existing)) return { ok: false, error: "A very similar opportunity already exists. Change the title or angle." };
+    if (isDuplicate({ title: e.title, creative_angle: e.creative_angle, platform: e.platform }, existing)) return { ok: false, error: t("errors.similarExists") };
     const [opp] = await insertOpportunities(projectId, [{
       title: e.title, idea: e.title, rationale: e.rationale, creative_angle: e.creative_angle, hook: e.hook, cta: e.cta, format: e.format,
       platform: e.platform, pillar_id: e.pillar_id, funnel_stage: e.funnel_stage ?? null, persona_id: idea.persona_id, target_audience: idea.persona,
@@ -513,8 +522,8 @@ export async function createOpportunityFromIdeaAction(projectId: string, reportI
       ],
     }]);
     refresh(projectId);
-    return { ok: true, data: { id: opp.id }, message: "Content opportunity created" };
+    return { ok: true, data: { id: opp.id }, message: t("messages.opportunityCreated") };
   } catch (e) {
-    return fail(e, "Could not create the opportunity");
+    return fail(e, t("errors.createOpportunity"), t);
   }
 }

@@ -4,7 +4,8 @@ import { FUNNEL_STAGES, type Platform } from "@/lib/domain/constants";
 import { bestPublicationTimes } from "@/lib/calendar/insights";
 import { todayInZone } from "@/lib/calendar/time";
 import { computePerformance } from "@/lib/history/performance";
-import { buildSignals } from "@/lib/opportunities/signals";
+import { buildSignals, type SignalInput } from "@/lib/opportunities/signals";
+import { translatorFor } from "@/i18n/server";
 import { listHistoricalItems } from "./history";
 import { publishedResults } from "./editorial";
 import { competitorPostsForSignals } from "./opportunities";
@@ -26,7 +27,7 @@ export const loadSignals = cache(async (projectId: string) => {
   const tz = project.timezone || "Africa/Tunis";
   const pillarName = (id: string) => bundle.pillars.find((p) => p.id === id)?.name;
   const performance = computePerformance(items, pillarName);
-  const signals = buildSignals({
+  const signalInput: SignalInput = {
     items,
     performance,
     timing: bestPublicationTimes(items, tz),
@@ -37,6 +38,8 @@ export const loadSignals = cache(async (projectId: string) => {
     today: todayInZone(tz),
     searchItems,
     learnings,
-  });
-  return { project, bundle, channels, signals, pillarName, competitorData: competitorItems.length >= 5, serpData: searchItems.length > 0, posts: items.length, items, performance };
+  };
+  // English: the statements are given to the AI and stored as evidence (the signals panel rebuilds them in the viewer's language)
+  const signals = buildSignals(signalInput, translatorFor("en", "opportunities"), translatorFor("en", "domain"));
+  return { project, bundle, channels, signals, signalInput, pillarName, competitorData: competitorItems.length >= 5, serpData: searchItems.length > 0, posts: items.length, items, performance };
 });

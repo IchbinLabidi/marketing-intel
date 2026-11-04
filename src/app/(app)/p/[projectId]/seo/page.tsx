@@ -6,22 +6,27 @@ import { EmptyState } from "@/components/app/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { AnalyzeForm } from "@/components/seo/analyze-form";
 import { canEdit } from "@/lib/domain/constants";
-import { domainStats, FEATURE_LABELS, INTENT_LABELS } from "@/lib/serp/analysis";
+import { domainStats, serpLabels } from "@/lib/serp/analysis";
 import { domainOf } from "@/lib/serp/normalize";
 import { cn } from "@/lib/utils";
 import { COUNTRIES, SERP_LANGUAGES, serpProvider } from "@/server/serp/provider";
 import { itemsFor, listAnalyses, listBriefs, type SerpAnalysis } from "@/server/services/serp";
 import { getProjectContext } from "@/server/services/projects";
+import { getFormatter, getT } from "@/i18n/server";
 
-export const metadata = { title: "Google search" };
+export async function generateMetadata() {
+  const t = await getT("seo");
+  return { title: t("title") };
+}
 
-const TABS = [{ id: "keywords", label: "Keywords" }, { id: "domains", label: "Ranking domains" }, { id: "briefs", label: "SEO briefs" }] as const;
-const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—");
+const TABS = [{ id: "keywords" }, { id: "domains" }, { id: "briefs" }] as const;
 
 export default async function Page({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { projectId } = await params;
   const sp = await searchParams;
-  const { project, role } = await getProjectContext(projectId);
+  const [{ project, role }, t, fmt] = await Promise.all([getProjectContext(projectId), getT("seo"), getFormatter()]);
+  const L = serpLabels(t);
+  const fmtDate = (iso: string | null) => (iso ? fmt.date(iso, { day: "numeric", month: "short", year: "numeric" }) : "—");
   const tab = TABS.some((t) => t.id === sp.tab) ? sp.tab! : "keywords";
   const provider = serpProvider();
   const ownDomain = domainOf(project.website ? (project.website.startsWith("http") ? project.website : `https://${project.website}`) : null);
@@ -37,11 +42,11 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   let body: React.ReactNode;
   if (tab === "keywords") {
     body = !groups.size ? (
-      <EmptyState icon={Search} title="No keyword analysed yet" description="Analyze a keyword to see the real Google results in Tunisia (or another market), its search intent, who ranks and with which kind of content." />
+      <EmptyState icon={Search} title={t("keywords.emptyTitle")} description={t("keywords.emptyDescription")} />
     ) : (
       <div className="overflow-x-auto rounded-xl border bg-card shadow-xs">
         <table className="w-full min-w-[820px] text-[13px]">
-          <thead className="text-left text-xs text-muted-foreground"><tr className="border-b"><th className="px-3 py-2 font-medium">Keyword</th><th className="font-medium">Market</th><th className="font-medium">Intent (from the SERP)</th><th className="font-medium">SERP features</th><th className="font-medium">Our site</th><th className="font-medium">Snapshots</th><th className="pr-3 font-medium">Latest</th></tr></thead>
+          <thead className="text-left text-xs text-muted-foreground"><tr className="border-b"><th className="px-3 py-2 font-medium">{t("keywords.keyword")}</th><th className="font-medium">{t("keywords.market")}</th><th className="font-medium">{t("keywords.intent")}</th><th className="font-medium">{t("keywords.features")}</th><th className="font-medium">{t("keywords.ourSite")}</th><th className="font-medium">{t("keywords.snapshots")}</th><th className="pr-3 font-medium">{t("keywords.latest")}</th></tr></thead>
           <tbody>
             {[...groups.values()].map((list) => {
               const latest = list.filter((a) => a.status === "completed");
@@ -50,13 +55,13 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               return (
                 <tr key={head.id} className="border-b align-top last:border-0">
                   <td className="px-3 py-2"><Link href={`/p/${projectId}/seo/${head.id}`} className="font-medium hover:underline" dir="auto">{head.keyword}</Link>
-                    <span className="mt-0.5 flex gap-2 text-[11px]">{(["desktop", "mobile"] as const).map((d) => byDevice(d) ? <Link key={d} href={`/p/${projectId}/seo/${byDevice(d)!.id}`} className="text-primary hover:underline">{d}</Link> : null)}</span>
+                    <span className="mt-0.5 flex gap-2 text-[11px]">{(["desktop", "mobile"] as const).map((d) => byDevice(d) ? <Link key={d} href={`/p/${projectId}/seo/${byDevice(d)!.id}`} className="text-primary hover:underline">{t(`device.${d}`)}</Link> : null)}</span>
                   </td>
-                  <td className="py-2 text-xs">{COUNTRIES[head.country]?.label ?? head.country} · {SERP_LANGUAGES[head.language] ?? head.language}</td>
-                  <td className="py-2">{head.status === "failed" ? <span className="text-xs text-destructive" title={head.error ?? ""}>Failed</span> : head.intent ? <Badge variant="outline">{INTENT_LABELS[head.intent.primary]}{head.intent.secondary ? ` / ${INTENT_LABELS[head.intent.secondary]}` : ""}</Badge> : "—"}</td>
-                  <td className="max-w-[16rem] py-2 text-[11px] text-muted-foreground">{head.features.map((f) => FEATURE_LABELS[f] ?? f).join(" · ") || "—"}</td>
-                  <td className="py-2 text-xs">{!ownDomain ? <span className="text-muted-foreground" title="Add the website in project settings">no website set</span> : (head as { own_position?: number | null }).own_position ? <b className="tabular-nums">#{(head as { own_position?: number | null }).own_position}</b> : head.status === "completed" ? <span className="text-muted-foreground">not in the results</span> : "—"}</td>
-                  <td className="py-2 text-xs tabular-nums">{list.length}</td>
+                  <td className="py-2 text-xs">{L.country(head.country)} · {L.language(head.language)}</td>
+                  <td className="py-2">{head.status === "failed" ? <span className="text-xs text-destructive" title={head.error ?? ""}>{t("keywords.failed")}</span> : head.intent ? <Badge variant="outline">{t(`intent.${head.intent.primary}`)}{head.intent.secondary ? ` / ${t(`intent.${head.intent.secondary}`)}` : ""}</Badge> : "—"}</td>
+                  <td className="max-w-[16rem] py-2 text-[11px] text-muted-foreground">{head.features.map((f) => L.feature(f)).join(" · ") || "—"}</td>
+                  <td className="py-2 text-xs">{!ownDomain ? <span className="text-muted-foreground" title={t("keywords.addWebsite")}>{t("keywords.noWebsite")}</span> : (head as { own_position?: number | null }).own_position ? <b className="tabular-nums">#{(head as { own_position?: number | null }).own_position}</b> : head.status === "completed" ? <span className="text-muted-foreground">{t("keywords.notInResults")}</span> : "—"}</td>
+                  <td className="py-2 text-xs tabular-nums">{fmt.number(list.length)}</td>
                   <td className="py-2 pr-3 text-xs">{fmtDate(head.fetched_at ?? head.created_at)}</td>
                 </tr>
               );
@@ -72,32 +77,32 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     });
     const items = await itemsFor(projectId, latest.map((a) => a.id));
     const stats = domainStats(latest.map((a) => ({ analysisId: a.id, keyword: a.keyword, items: items.filter((i) => i.analysis_id === a.id) })));
-    body = !stats.length ? <EmptyState icon={Search} title="No ranking domain yet" description="Domains appear here once keywords are analysed." /> : (
+    body = !stats.length ? <EmptyState icon={Search} title={t("domains.emptyTitle")} description={t("domains.emptyDescription")} /> : (
       <div className="overflow-x-auto rounded-xl border bg-card shadow-xs">
         <table className="w-full min-w-[640px] text-[13px]">
-          <thead className="text-left text-xs text-muted-foreground"><tr className="border-b"><th className="px-3 py-2 font-medium">Domain</th><th className="font-medium">Keywords where it ranks</th><th className="font-medium" title="Latest snapshot per keyword, language and device">In snapshots</th><th className="font-medium">Avg. position</th><th className="font-medium">Best</th><th className="pr-3 font-medium">Keywords</th></tr></thead>
+          <thead className="text-left text-xs text-muted-foreground"><tr className="border-b"><th className="px-3 py-2 font-medium">{t("domains.domain")}</th><th className="font-medium">{t("domains.keywordsRanking")}</th><th className="font-medium" title={t("domains.inSnapshotsHint")}>{t("domains.inSnapshots")}</th><th className="font-medium">{t("domains.avgPosition")}</th><th className="font-medium">{t("domains.best")}</th><th className="pr-3 font-medium">{t("domains.keywords")}</th></tr></thead>
           <tbody>
             {stats.slice(0, 50).map((d) => (
               <tr key={d.domain} className={cn("border-b last:border-0", ownDomain && (d.domain === ownDomain || d.domain.endsWith(`.${ownDomain}`)) && "bg-primary/5")}>
-                <td className="px-3 py-2 font-medium">{d.domain}{ownDomain && (d.domain === ownDomain || d.domain.endsWith(`.${ownDomain}`)) ? <Badge className="ml-2">Our site</Badge> : null}</td>
-                <td className="py-2 tabular-nums">{d.keywords.length}</td><td className="py-2 tabular-nums">{d.appearances}/{latest.length}</td><td className="py-2 tabular-nums">{d.avgPosition ?? "—"}</td><td className="py-2 tabular-nums">#{d.best ?? "—"}</td>
+                <td className="px-3 py-2 font-medium">{d.domain}{ownDomain && (d.domain === ownDomain || d.domain.endsWith(`.${ownDomain}`)) ? <Badge className="ml-2">{t("keywords.ourSite")}</Badge> : null}</td>
+                <td className="py-2 tabular-nums">{d.keywords.length}</td><td className="py-2 tabular-nums">{d.appearances}/{latest.length}</td><td className="py-2 tabular-nums">{d.avgPosition != null ? fmt.number(d.avgPosition) : "—"}</td><td className="py-2 tabular-nums">#{d.best ?? "—"}</td>
                 <td className="max-w-md py-2 pr-3 text-[11px] text-muted-foreground" dir="auto">{d.keywords.slice(0, 4).join(" · ")}{d.keywords.length > 4 ? ` +${d.keywords.length - 4}` : ""}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p className="border-t px-3 py-2 text-[11px] text-muted-foreground">Organic top-10 results of the latest snapshot per keyword, language and device. Positions are those returned by Google at analysis time; no ongoing tracking is implied.</p>
+        <p className="border-t px-3 py-2 text-[11px] text-muted-foreground">{t("domains.note")}</p>
       </div>
     );
   } else {
     const briefs = await listBriefs(projectId);
-    body = !briefs.length ? <EmptyState icon={FileText} title="No SEO brief yet" description="Open an analysed keyword and click “Generate SEO brief”." /> : (
+    body = !briefs.length ? <EmptyState icon={FileText} title={t("briefs.emptyTitle")} description={t("briefs.emptyDescription")} /> : (
       <ul className="grid gap-3 md:grid-cols-2">
         {briefs.map((b) => (
           <li key={b.id}><Link href={`/p/${projectId}/seo/briefs/${b.id}`} className="block rounded-xl border bg-card p-4 shadow-xs hover:shadow-sm">
-            <p className="text-xs text-muted-foreground">{b.keyword} · {COUNTRIES[b.country]?.label ?? b.country} · {SERP_LANGUAGES[b.language] ?? b.language} · {fmtDate(b.created_at)}</p>
+            <p className="text-xs text-muted-foreground">{b.keyword} · {L.country(b.country)} · {L.language(b.language)} · {fmtDate(b.created_at)}</p>
             <p className="mt-1 font-semibold" dir="auto">{b.brief.seo_title}</p>
-            <p className="text-xs text-muted-foreground">{b.brief.content_type} · {b.brief.search_intent} · {b.draft ? "draft written" : "no draft"}{b.content_item_id ? " · in the calendar" : ""}</p>
+            <p className="text-xs text-muted-foreground">{b.brief.content_type} · {L.intent(b.brief.search_intent).toLowerCase()} · {b.draft ? t("briefs.draftWritten") : t("briefs.noDraft")}{b.content_item_id ? ` · ${t("briefs.inCalendar")}` : ""}</p>
           </Link></li>
         ))}
       </ul>
@@ -106,15 +111,15 @@ export default async function Page({ params, searchParams }: { params: Promise<{
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Google search" description="What people type into Google about your topics, and which sites appear first (the results page, or SERP). Use it to find articles worth writing so customers find you on Google." />
+      <PageHeader title={t("title")} description={t("description")} />
       <AnalyzeForm
         projectId={projectId}
-        countries={Object.entries(COUNTRIES).map(([code, c]) => ({ code, label: `${c.label} (searched from ${c.city})` }))}
-        languages={Object.entries(SERP_LANGUAGES).map(([code, label]) => ({ code, label }))}
-        configured={provider.configured()} setupHint={provider.setupHint} readOnly={!canEdit(role)}
+        countries={Object.keys(COUNTRIES).map((code) => ({ code, label: t("form.countryOption", { country: L.country(code), city: L.city(code) }) }))}
+        languages={Object.keys(SERP_LANGUAGES).map((code) => ({ code, label: L.language(code) }))}
+        configured={provider.configured()} setupHint={t("provider.setupHint")} readOnly={!canEdit(role)}
       />
-      {!ownDomain ? <p className="text-xs text-muted-foreground">Tip: add your website in the project settings to see where your own pages rank and compare them with the results.</p> : null}
-      <TabNav label="Google search sections" items={TABS.map((t) => ({ key: t.id, label: t.label, href: `/p/${projectId}/seo?tab=${t.id}`, active: tab === t.id }))} />
+      {!ownDomain ? <p className="text-xs text-muted-foreground">{t("tip")}</p> : null}
+      <TabNav label={t("tabs.label")} items={TABS.map((x) => ({ key: x.id, label: t(`tabs.${x.id}`), href: `/p/${projectId}/seo?tab=${x.id}`, active: tab === x.id }))} />
       {body}
     </div>
   );

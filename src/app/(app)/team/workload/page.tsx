@@ -6,22 +6,26 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { TaskTable } from "@/components/team/task-table";
 import { PersonChip } from "@/components/team/task-badges";
-import { OPEN_TASK_STATUSES, PRIORITIES, PRIORITY_LABELS, TASK_STATUSES, TASK_STATUS_LABELS } from "@/lib/permissions";
+import { OPEN_TASK_STATUSES, PRIORITIES, TASK_STATUSES } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { nowMs } from "@/lib/format";
+import { getT } from "@/i18n/server";
 import { requireUser } from "@/server/services/session";
 import { getActiveWorkspace } from "@/server/services/workspaces";
 import { assignablePeople, getPermissions, listRoles, listTeam, listWorkspaceTasks } from "@/server/services/team";
 
-export const metadata = { title: "Team workload" };
+export async function generateMetadata() {
+  const t = await getT("team");
+  return { title: t("meta.workload") };
+}
 
 type Filters = { assignee?: string; role?: string; status?: string; priority?: string; due?: string };
 
 export default async function WorkloadPage({ searchParams }: { searchParams: Promise<Filters> }) {
-  const [user, workspace, f] = await Promise.all([requireUser(), getActiveWorkspace(), searchParams]);
+  const [user, workspace, f, t, td, tc] = await Promise.all([requireUser(), getActiveWorkspace(), searchParams, getT("team"), getT("domain"), getT("common")]);
   const ws = workspace!;
   const perms = await getPermissions(ws.id);
-  if (!perms.has("content.assign") && !perms.has("team.manage")) return <PermissionDenied what="the team workload" />;
+  if (!perms.has("content.assign") && !perms.has("team.manage")) return <PermissionDenied what={t("workload.denied")} />;
   const [tasks, people, team, roles] = await Promise.all([listWorkspaceTasks(ws.id), assignablePeople(ws.id), listTeam(ws.id), listRoles(ws.id)]);
   const today = new Date().toISOString().slice(0, 10);
   const weekEnd = new Date(nowMs() + 7 * 86_400_000).toISOString().slice(0, 10);
@@ -51,18 +55,18 @@ export default async function WorkloadPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow={ws.name} title="Team" description="Who is working on what, and where deadlines pile up. Use it to spread work before it slips." />
+      <PageHeader eyebrow={ws.name} title={t("page.title")} description={t("workload.description")} />
       <TabNav
-        label="Team sections"
+        label={t("sections.label")}
         items={[
-          { key: "members", label: "Members", href: "/team?tab=members", active: false },
-          { key: "workload", label: "Workload", href: "/team/workload", active: true },
-          ...(perms.has("team.manage") ? [{ key: "invitations", label: "Invitations", href: "/team?tab=invitations", active: false }] : []),
-          { key: "roles", label: "Roles & permissions", href: "/team?tab=roles", active: false },
+          { key: "members", label: t("sections.members"), href: "/team?tab=members", active: false },
+          { key: "workload", label: t("sections.workload"), href: "/team/workload", active: true },
+          ...(perms.has("team.manage") ? [{ key: "invitations", label: t("sections.invitations"), href: "/team?tab=invitations", active: false }] : []),
+          { key: "roles", label: t("sections.roles"), href: "/team?tab=roles", active: false },
         ]}
       />
 
-      <section aria-label="Workload by person" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <section aria-label={t("workload.byPerson")} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {load.map((p) => (
           <Link
             key={p.user_id}
@@ -77,38 +81,38 @@ export default async function WorkloadPage({ searchParams }: { searchParams: Pro
               </div>
             </div>
             <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
-              <div><dt className="text-muted-foreground">To do</dt><dd className="text-[15px] font-semibold tabular-nums">{p.open}</dd></div>
-              <div><dt className="text-muted-foreground">In review</dt><dd className="text-[15px] font-semibold tabular-nums">{p.review}</dd></div>
-              <div><dt className="text-muted-foreground">Overdue</dt><dd className={cn("text-[15px] font-semibold tabular-nums", p.overdue && "text-destructive")}>{p.overdue}</dd></div>
+              <div><dt className="text-muted-foreground">{t("workload.toDo")}</dt><dd className="text-[15px] font-semibold tabular-nums">{p.open}</dd></div>
+              <div><dt className="text-muted-foreground">{t("workload.inReview")}</dt><dd className="text-[15px] font-semibold tabular-nums">{p.review}</dd></div>
+              <div><dt className="text-muted-foreground">{t("workload.overdue")}</dt><dd className={cn("text-[15px] font-semibold tabular-nums", p.overdue && "text-destructive")}>{p.overdue}</dd></div>
             </dl>
           </Link>
         ))}
       </section>
 
       <form className="grid grid-cols-2 gap-x-2 gap-y-3 rounded-xl border bg-card p-3 shadow-xs md:grid-cols-3 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto] xl:items-end" action="/team/workload">
-        <Filter label="Assignee" name="assignee" value={f.assignee} options={people.map((p) => ({ value: p.user_id, label: p.name || "Unnamed member" }))} />
-        <Filter label="Role" name="role" value={f.role} options={roles.map((r) => ({ value: r.id, label: r.name }))} />
-        <Filter label="Status" name="status" value={f.status} options={[{ value: "open", label: "All open" }, ...TASK_STATUSES.map((s) => ({ value: s, label: TASK_STATUS_LABELS[s] }))]} />
-        <Filter label="Priority" name="priority" value={f.priority} options={PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABELS[p] }))} />
-        <Filter label="Due date" name="due" value={f.due} options={[{ value: "overdue", label: "Overdue" }, { value: "week", label: "Next 7 days" }, { value: "none", label: "No due date" }]} />
+        <Filter label={t("workload.filters.assignee")} allLabel={tc("states.all")} name="assignee" value={f.assignee} options={people.map((p) => ({ value: p.user_id, label: p.name || t("members.unnamed") }))} />
+        <Filter label={t("workload.filters.role")} allLabel={tc("states.all")} name="role" value={f.role} options={roles.map((r) => ({ value: r.id, label: r.name }))} />
+        <Filter label={t("workload.filters.status")} allLabel={tc("states.all")} name="status" value={f.status} options={[{ value: "open", label: t("workload.filters.allOpen") }, ...TASK_STATUSES.map((s) => ({ value: s, label: td(`taskStatus.${s}`) }))]} />
+        <Filter label={t("workload.filters.priority")} allLabel={tc("states.all")} name="priority" value={f.priority} options={PRIORITIES.map((p) => ({ value: p, label: td(`priority.${p}`) }))} />
+        <Filter label={t("workload.filters.due")} allLabel={tc("states.all")} name="due" value={f.due} options={[{ value: "overdue", label: t("workload.filters.overdue") }, { value: "week", label: t("workload.filters.week") }, { value: "none", label: t("workload.filters.none") }]} />
         <div className="col-span-2 flex gap-2 md:col-span-1">
-          <Button type="submit" size="sm" className="flex-1 xl:flex-none">Apply</Button>
-          {active ? <Button asChild size="sm" variant="ghost"><Link href="/team/workload">Reset</Link></Button> : null}
+          <Button type="submit" size="sm" className="flex-1 xl:flex-none">{tc("actions.apply")}</Button>
+          {active ? <Button asChild size="sm" variant="ghost"><Link href="/team/workload">{tc("actions.reset")}</Link></Button> : null}
         </div>
       </form>
 
-      <p className="text-xs text-muted-foreground">{filtered.length} task{filtered.length === 1 ? "" : "s"}</p>
-      <TaskTable tasks={filtered} today={today} userId={user.id} perms={[...perms]} people={peopleMap} showAssignee emptyText={active ? "No tasks match these filters." : "No tasks assigned yet. Assign work from an idea or brief in Content Production."} />
+      <p className="text-xs text-muted-foreground">{t("workload.count", { count: filtered.length })}</p>
+      <TaskTable tasks={filtered} today={today} userId={user.id} perms={[...perms]} people={peopleMap} showAssignee emptyText={active ? t("workload.emptyFiltered") : t("workload.empty")} />
     </div>
   );
 }
 
-function Filter({ label, name, value, options }: { label: string; name: string; value?: string; options: { value: string; label: string }[] }) {
+function Filter({ label, allLabel, name, value, options }: { label: string; allLabel: string; name: string; value?: string; options: { value: string; label: string }[] }) {
   return (
     <label className="grid gap-1 text-xs font-medium text-muted-foreground">
       {label}
       <NativeSelect name={name} defaultValue={value ?? ""} className="h-8 text-[13px]">
-        <option value="">All</option>
+        <option value="">{allLabel}</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </NativeSelect>
     </label>

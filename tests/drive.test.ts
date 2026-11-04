@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { downloadDriveFile, driveAuthUrl, driveConfig, driveFileMeta, DRIVE_SCOPES } from "@/server/drive/google";
+import { testT } from "@/i18n/testing";
+
+const t = testT("calendar");
 
 describe("Google Drive", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
@@ -31,7 +34,7 @@ describe("Google Drive", () => {
   it("refuses malformed file ids before calling Google", async () => {
     const f = vi.fn();
     vi.stubGlobal("fetch", f);
-    await expect(driveFileMeta("t", "../../etc/passwd")).rejects.toThrow(/Invalid Drive file id/);
+    await expect(driveFileMeta("t", "../../etc/passwd", t)).rejects.toThrow(/Invalid Drive file id/);
     expect(f).not.toHaveBeenCalled();
   });
 
@@ -42,16 +45,16 @@ describe("Google Drive", () => {
       expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok");
       return new Response(big, { status: 200, headers: { "content-type": "image/jpeg" } });
     }));
-    await expect(downloadDriveFile("tok", "abcdefghijk", 1024)).rejects.toThrow(/larger than/);
-    const ok = await downloadDriveFile("tok", "abcdefghijk", 4096);
+    await expect(downloadDriveFile("tok", "abcdefghijk", 1024, t)).rejects.toThrow(/larger than/);
+    const ok = await downloadDriveFile("tok", "abcdefghijk", 4096, t);
     expect(ok.size).toBe(2048);
     expect(ok.type).toBe("image/jpeg");
   });
 
   it("reports deleted files and expired access clearly", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 404 })));
-    await expect(downloadDriveFile("tok", "abcdefghijk", 1024)).rejects.toThrow(/no longer exists/);
+    await expect(downloadDriveFile("tok", "abcdefghijk", 1024, t)).rejects.toThrow(/no longer exists/);
     vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 401 })));
-    await expect(downloadDriveFile("tok", "abcdefghijk", 1024)).rejects.toMatchObject({ kind: "auth" });
+    await expect(downloadDriveFile("tok", "abcdefghijk", 1024, t)).rejects.toMatchObject({ kind: "auth" });
   });
 });

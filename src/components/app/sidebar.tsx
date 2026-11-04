@@ -18,7 +18,9 @@ import { signOutAction } from "@/server/actions/auth";
 import { switchWorkspaceAction } from "@/server/actions/workspaces";
 import type { Workspace } from "@/types/domain";
 import { BrandMark } from "./brand";
-import { GLOBAL_NAV, projectNavSections, SETTINGS_NAV, type NavItem } from "./nav-items";
+import { globalNav, projectNavSections, settingsNav, type NavItem } from "./nav-items";
+import { LanguageSwitcher } from "./language-switcher";
+import { useT } from "@/i18n/client";
 import { ThemeSwitcher } from "./theme-switcher";
 
 type SidebarProps = {
@@ -35,6 +37,7 @@ type SidebarProps = {
 
 export function AppSidebar(props: SidebarProps) {
   const pathname = usePathname();
+  const tc = useT("common");
   // The mobile drawer is open only for the path it was opened on, so navigating closes it.
   const [openedOn, setOpenedOn] = React.useState<string | null>(null);
   const open = openedOn === pathname;
@@ -65,7 +68,7 @@ export function AppSidebar(props: SidebarProps) {
         <button
           onClick={() => setOpen(true)}
           className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label="Open navigation"
+          aria-label={tc("a11y.openNavigation")}
           aria-expanded={open}
         >
           <Menu className="size-5" />
@@ -85,7 +88,7 @@ export function AppSidebar(props: SidebarProps) {
       </header>
       {open ? <div className="fixed inset-0 z-40 bg-overlay animate-fade-in lg:hidden" onClick={() => setOpen(false)} /> : null}
       <aside
-        aria-label="Main navigation"
+        aria-label={tc("a11y.mainNavigation")}
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-[264px] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-200 ease-out lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:w-60 lg:translate-x-0 lg:self-start",
           open ? "translate-x-0 shadow-lg" : "-translate-x-full",
@@ -94,7 +97,7 @@ export function AppSidebar(props: SidebarProps) {
         <button
           onClick={() => setOpen(false)}
           className="absolute right-2 top-3 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent lg:hidden"
-          aria-label="Close navigation"
+          aria-label={tc("a11y.closeNavigation")}
         >
           <X className="size-4" />
         </button>
@@ -123,6 +126,8 @@ function SidebarContent({
 }: SidebarProps & { activeProject: { id: string; name: string } | null }) {
   const pathname = usePathname();
   const router = useRouter();
+  const t = useT("nav");
+  const td = useT("domain");
   const perms = new Set(permissions);
   const allowed = (items: NavItem[]) =>
     items
@@ -148,12 +153,12 @@ function SidebarContent({
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px] font-medium leading-tight text-foreground">{activeWorkspace.name}</span>
-              <span className="block text-[11px] capitalize leading-tight text-muted-foreground">{activeWorkspace.role}</span>
+              <span className="block text-[11px] leading-tight text-muted-foreground">{td(`role.${activeWorkspace.role}`)}</span>
             </span>
             <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-56">
-            <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+            <DropdownMenuLabel>{t("workspaces")}</DropdownMenuLabel>
             {workspaces.map((w) => (
               <DropdownMenuItem
                 key={w.id}
@@ -168,27 +173,27 @@ function SidebarContent({
             ))}
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => router.push("/settings#workspaces")}>
-              <Plus /> New workspace
+              <Plus /> {t("newWorkspace")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
       <nav className="scrollbar-thin flex-1 space-y-4 overflow-y-auto px-2.5 pb-3 pt-1">
-        <NavList items={allowed(GLOBAL_NAV)} pathname={pathname} />
+        <NavList items={allowed(globalNav(t))} pathname={pathname} />
 
         <div className="space-y-2">
-          <div className="eyebrow px-2">Project</div>
+          <div className="eyebrow px-2">{t("projectLabel")}</div>
           <DropdownMenu>
             <DropdownMenuTrigger className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/40">
               <FolderKanban className="size-4 shrink-0 text-muted-foreground" />
               <span className={cn("min-w-0 flex-1 truncate font-medium", activeProject ? "text-foreground" : "text-muted-foreground")}>
-                {activeProject?.name ?? "Select a project"}
+                {activeProject?.name ?? t("selectProject")}
               </span>
               <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-56">
-              {projects.length === 0 ? <DropdownMenuLabel>No projects yet</DropdownMenuLabel> : <DropdownMenuLabel>Switch project</DropdownMenuLabel>}
+              {projects.length === 0 ? <DropdownMenuLabel>{t("noProjects")}</DropdownMenuLabel> : <DropdownMenuLabel>{t("switchProject")}</DropdownMenuLabel>}
               {projects.map((p) => (
                 <DropdownMenuItem key={p.id} onSelect={() => router.push(`/p/${p.id}`)}>
                   <span className="flex-1 truncate">{p.name}</span>
@@ -197,14 +202,14 @@ function SidebarContent({
               ))}
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => router.push("/projects?new=1")}>
-                <Plus /> New project
+                <Plus /> {t("newProject")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
           {activeProject ? (
             <div className="ml-[15px] space-y-3 border-l border-sidebar-border pl-1.5">
-              {projectNavSections(activeProject.id).map((section) => ({ ...section, items: allowed(section.items) })).filter((section) => section.items.length).map((section, i) => (
+              {projectNavSections(activeProject.id, t).map((section) => ({ ...section, items: allowed(section.items) })).filter((section) => section.items.length).map((section, i) => (
                 <div key={section.label ?? i} className="space-y-1">
                   {section.label ? <div className="eyebrow px-2 pt-0.5">{section.label}</div> : null}
                   <NavList items={section.items} pathname={pathname} />
@@ -213,7 +218,7 @@ function SidebarContent({
             </div>
           ) : (
             <p className="px-2 text-xs leading-relaxed text-muted-foreground">
-              Open a project to work on its strategy, intelligence and calendar.
+              {t("openProjectHint")}
             </p>
           )}
         </div>
@@ -221,20 +226,21 @@ function SidebarContent({
 
       <div className="space-y-1 border-t border-sidebar-border p-2.5">
         <div className="flex items-center gap-1">
-          <div className="min-w-0 flex-1"><NavList items={[SETTINGS_NAV]} pathname={pathname} /></div>
+          <div className="min-w-0 flex-1"><NavList items={[settingsNav(t)]} pathname={pathname} /></div>
+          <LanguageSwitcher size="sm" />
           <ThemeSwitcher size="sm" />
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/40">
             <Avatar name={user.fullName || user.email} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium leading-tight text-foreground">{user.fullName || "Account"}</span>
+              <span className="block truncate text-[13px] font-medium leading-tight text-foreground">{user.fullName || t("account")}</span>
               <span className="block truncate text-[11px] leading-tight text-muted-foreground">{user.email}</span>
             </span>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" side="top" className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-56">
             <DropdownMenuItem onSelect={() => signOutAction()}>
-              <LogOut /> Sign out
+              <LogOut /> {t("signOut")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -244,10 +250,11 @@ function SidebarContent({
 }
 
 function NotificationBell({ count }: { count: number }) {
+  const t = useT("common");
   return (
     <Link
       href="/notifications"
-      aria-label={count ? `Notifications, ${count} unread` : "Notifications"}
+      aria-label={count ? t("a11y.notificationsUnread", { count }) : t("a11y.notifications")}
       className="relative inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
     >
       <Bell className="size-4" />
@@ -261,6 +268,7 @@ function NotificationBell({ count }: { count: number }) {
 }
 
 function NavList({ items, pathname }: { items: (NavItem & { count?: number })[]; pathname: string }) {
+  const t = useT("common");
   return (
     <ul className="space-y-px">
       {items.map((item) => {
@@ -281,7 +289,7 @@ function NavList({ items, pathname }: { items: (NavItem & { count?: number })[];
               />
               <span className="truncate">{item.label}</span>
               {item.count ? <span className="ml-auto rounded-full bg-primary-soft px-1.5 text-[11px] font-medium tabular-nums text-primary">{item.count}</span> : null}
-              {item.soon ? <span className="ml-auto rounded-[4px] border px-1 text-[10px] font-medium uppercase tracking-wide text-subtle-foreground">Soon</span> : null}
+              {item.soon ? <span className="ml-auto rounded-[4px] border px-1 text-[10px] font-medium uppercase tracking-wide text-subtle-foreground">{t("states.soon")}</span> : null}
             </Link>
           </li>
         );

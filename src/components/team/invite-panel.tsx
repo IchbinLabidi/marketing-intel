@@ -10,11 +10,13 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Field } from "@/components/app/form";
 import { canGrant } from "@/lib/permissions";
-import { formatDate } from "@/lib/format";
+import { useFormatter, useT } from "@/i18n/client";
 import { inviteMemberAction, revokeInvitationAction } from "@/server/actions/team";
 import type { Invitation, TeamRole } from "@/server/services/team";
 
 export function InvitePanel({ roles, invitations, perms }: { roles: TeamRole[]; invitations: Invitation[]; perms: string[] }) {
+  const t = useT("team");
+  const fmt = useFormatter();
   const mine = React.useMemo(() => new Set(perms), [perms]);
   const grantable = roles.filter((r) => canGrant(mine, r.permissions));
   const [email, setEmail] = React.useState("");
@@ -22,7 +24,7 @@ export function InvitePanel({ roles, invitations, perms }: { roles: TeamRole[]; 
   const [link, setLink] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const roleName = (id: string) => roles.find((r) => r.id === id)?.name ?? "Role";
+  const roleName = (id: string) => roles.find((r) => r.id === id)?.name ?? t("invite.roleFallback");
   const [now] = React.useState(() => Date.now());
 
   const invite = async (e: React.FormEvent) => {
@@ -38,9 +40,9 @@ export function InvitePanel({ roles, invitations, perms }: { roles: TeamRole[]; 
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success("Invitation link copied");
+      toast.success(t("invite.copied"));
     } catch {
-      toast.error("Copy failed. Select the link and copy it manually.");
+      toast.error(t("invite.copyFailed"));
     }
   };
   const revoke = async (id: string) => {
@@ -49,53 +51,53 @@ export function InvitePanel({ roles, invitations, perms }: { roles: TeamRole[]; 
     else toast.error(r.error);
   };
   const status = (i: Invitation) =>
-    i.accepted_at ? ["Accepted", "success"] as const : i.revoked_at ? ["Revoked", "outline"] as const : Date.parse(i.expires_at) < now ? ["Expired", "warning"] as const : ["Pending", "info"] as const;
+    i.accepted_at ? ["accepted", "success"] as const : i.revoked_at ? ["revoked", "outline"] as const : Date.parse(i.expires_at) < now ? ["expired", "warning"] as const : ["pending", "info"] as const;
 
   return (
     <div className="space-y-6">
       <form onSubmit={invite} className="space-y-4 rounded-xl border bg-card p-5 shadow-xs">
         <div>
-          <h3 className="text-[14px] font-semibold">Invite a team member</h3>
+          <h3 className="text-[14px] font-semibold">{t("invite.title")}</h3>
           <p className="text-[13px] text-muted-foreground">
-            Creates a single-use link valid for 14 days. Send it yourself; it only works for the email address below.
+            {t("invite.description")}
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_14rem_auto] sm:items-end">
-          <Field label="Email" htmlFor="invite-email" required>
-            <Input id="invite-email" type="email" required autoComplete="off" placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={Boolean(error)} />
+          <Field label={t("invite.email")} htmlFor="invite-email" required>
+            <Input id="invite-email" type="email" required autoComplete="off" placeholder={t("invite.emailPlaceholder")} value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={Boolean(error)} />
           </Field>
-          <Field label="Role" htmlFor="invite-role" required>
+          <Field label={t("invite.role")} htmlFor="invite-role" required>
             <NativeSelect id="invite-role" value={roleId} onChange={(e) => setRoleId(e.target.value)}>
               {grantable.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </NativeSelect>
           </Field>
           <Button type="submit" loading={busy} disabled={!email || !roleId}>
-            {busy ? null : <Send />} Create invitation
+            {busy ? null : <Send />} {t("invite.create")}
           </Button>
         </div>
         {error ? <Alert variant="destructive">{error}</Alert> : null}
         {link ? (
-          <Alert variant="success" title="Invitation ready" action={<Button size="sm" variant="outline" onClick={() => copy(link)}><Copy /> Copy link</Button>}>
+          <Alert variant="success" title={t("invite.readyTitle")} action={<Button size="sm" variant="outline" onClick={() => copy(link)}><Copy /> {t("invite.copyLink")}</Button>}>
             <span className="flex items-center gap-1.5 break-all font-mono text-xs"><Link2 className="size-3.5 shrink-0" aria-hidden />{link}</span>
-            <span className="mt-1 block text-xs">This link is shown once. If it&apos;s lost, create a new invitation (the old one is revoked automatically).</span>
+            <span className="mt-1 block text-xs">{t("invite.shownOnce")}</span>
           </Alert>
         ) : null}
       </form>
 
       <div className="space-y-3">
-        <h3 className="text-[14px] font-semibold">Invitations</h3>
+        <h3 className="text-[14px] font-semibold">{t("invite.listTitle")}</h3>
         {invitations.length ? (
           <ul className="divide-y overflow-hidden rounded-xl border bg-card shadow-xs">
             {invitations.map((i) => {
-              const [label, variant] = status(i);
+              const [state, variant] = status(i);
               return (
                 <li key={i.id} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-3 text-[13px]">
                   <span className="min-w-0 flex-1 basis-48 truncate font-medium">{i.email}</span>
                   <span className="text-muted-foreground">{roleName(i.role_id)}</span>
-                  <Badge variant={variant} dot>{label}</Badge>
-                  <span className="w-28 text-xs text-muted-foreground">Sent {formatDate(i.created_at)}</span>
-                  {label === "Pending" ? (
-                    <Button variant="ghost" size="icon-sm" aria-label={`Revoke invitation for ${i.email}`} onClick={() => revoke(i.id)}>
+                  <Badge variant={variant} dot>{t(`invite.status.${state}`)}</Badge>
+                  <span className="w-28 text-xs text-muted-foreground">{t("invite.sent", { date: fmt.date(i.created_at) })}</span>
+                  {state === "pending" ? (
+                    <Button variant="ghost" size="icon-sm" aria-label={t("invite.revoke", { email: i.email })} onClick={() => revoke(i.id)}>
                       <X />
                     </Button>
                   ) : <span className="w-8" />}
@@ -104,7 +106,7 @@ export function InvitePanel({ roles, invitations, perms }: { roles: TeamRole[]; 
             })}
           </ul>
         ) : (
-          <p className="rounded-xl border border-dashed px-4 py-6 text-center text-[13px] text-muted-foreground">No invitations yet.</p>
+          <p className="rounded-xl border border-dashed px-4 py-6 text-center text-[13px] text-muted-foreground">{t("invite.empty")}</p>
         )}
       </div>
     </div>

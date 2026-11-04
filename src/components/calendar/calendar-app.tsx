@@ -23,9 +23,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
-  CALENDAR_PLATFORMS, FUNNEL_LABELS, FUNNEL_STAGES, PLATFORM_LABELS, WORKFLOW_LABELS, WORKFLOW_STATES, type Platform, type WorkflowState,
+  CALENDAR_PLATFORMS, FUNNEL_STAGES, WORKFLOW_STATES, type Platform, type WorkflowState,
 } from "@/lib/domain/constants";
-import { PRIORITIES, PRIORITY_LABELS } from "@/lib/permissions";
+import { PRIORITIES } from "@/lib/permissions";
+import { useFormatter, useT } from "@/i18n/client";
+import type { Formatter } from "@/i18n/format";
 import { suggestedTime, type PlatformTiming } from "@/lib/calendar/insights";
 import { addDays, monthGrid, shiftView, utcToZoned, viewRange, weekDays, weekdayOf, zonedToUtc, type CalendarView } from "@/lib/calendar/time";
 import { duplicatePostAction, reschedulePostAction, setProjectTimezoneAction, type Conflict } from "@/server/actions/calendar";
@@ -35,7 +37,7 @@ import { cn } from "@/lib/utils";
 import { PostCard, type CardAction, type PillarRef } from "./post-card";
 import { PostEditor, WorkflowLegend, type EditorDefaults } from "./post-editor";
 import { pillarDotClass } from "./styles";
-import { deadlineConflicts, isOverdue, participants, type Person } from "./planning";
+import { CONTENT_TYPES, deadlineConflicts, domainLabel, isOverdue, participants, type Person } from "./planning";
 import { DetailPanel } from "./detail-panel";
 import { QuickCreate } from "./quick-create";
 import { ListView } from "./list-view";
@@ -55,11 +57,9 @@ const EMPTY_FILTERS: Omit<CalendarFilters, never> = {
 };
 const HOURS = Array.from({ length: 18 }, (_, k) => k + 6); // 06:00–23:00; earlier posts sit in the 06 row
 const TIMEZONES = ["Africa/Tunis", "Africa/Algiers", "Africa/Casablanca", "Europe/Paris", "Europe/London", "Asia/Dubai", "America/New_York", "UTC"];
-const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const TYPES = ["Social caption", "Instagram Reel", "Carousel", "Story sequence", "Facebook video", "Article"];
-const VIEW_META: { id: CalendarView; label: string; icon?: typeof List }[] = [
-  { id: "month", label: "Month" }, { id: "week", label: "Week" }, { id: "day", label: "Day" },
-  { id: "list", label: "List", icon: List }, { id: "timeline", label: "Timeline", icon: GanttChartSquare },
+const VIEW_META: { id: CalendarView; icon?: typeof List }[] = [
+  { id: "month" }, { id: "week" }, { id: "day" },
+  { id: "list", icon: List }, { id: "timeline", icon: GanttChartSquare },
 ];
 
 // The cell under the pointer wins (the drag overlay is wider than a month cell); keyboard drags fall back to overlap.
@@ -68,15 +68,13 @@ const collision: CollisionDetection = (args) => {
   return hits.length ? hits : rectIntersection(args);
 };
 
-const fmtDay = (d: string, opts: Intl.DateTimeFormatOptions) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-GB", { ...opts, timeZone: "UTC" });
-
-function periodLabel(view: CalendarView, date: string) {
-  if (view === "day") return fmtDay(date, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+function periodLabel(fmt: Formatter, view: CalendarView, date: string) {
+  if (view === "day") return fmt.day(date, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   if (view === "week") {
     const days = weekDays(date);
-    return `${fmtDay(days[0], { day: "numeric", month: "short" })} – ${fmtDay(days[6], { day: "numeric", month: "short", year: "numeric" })}`;
+    return `${fmt.day(days[0], { day: "numeric", month: "short" })} – ${fmt.day(days[6], { day: "numeric", month: "short", year: "numeric" })}`;
   }
-  return fmtDay(date, { month: "long", year: "numeric" });
+  return fmt.day(date, { month: "long", year: "numeric" });
 }
 
 /** Local date and time of a post in the project zone (exact slot when set, otherwise its date only). */
@@ -126,6 +124,10 @@ export function CalendarApp({
   timing: Promise<PlatformTiming[]>;
   insights: React.ReactNode;
 }) {
+  const t = useT("calendar");
+  const tc = useT("common");
+  const td = useT("domain");
+  const fmt = useFormatter();
   const router = useRouter();
   const pathname = usePathname();
   const [navigating, startNav] = React.useTransition();
@@ -205,7 +207,7 @@ export function CalendarApp({
     return m;
   }, [deadlines, undated, posts, extra]);
   const selectedPost = selected ? all.get(selected) ?? null : null;
-  const peopleOf = (p: ContentItem) => participants(p, tasks, people);
+  const peopleOf = (p: ContentItem) => participants(p, tasks, people, t);
   const isMine = (p: ContentItem) => peopleOf(p).some((x) => x.user_id === userId);
   // Item-level: managers move anything; others only what they lead, created, or collaborate on.
   const canMove = (p: ContentItem) => !readOnly && (perms.has("content.edit_any") || p.created_by === userId || isMine(p));
@@ -230,8 +232,8 @@ export function CalendarApp({
     setQuick({ date: d, time });
   };
   const openEditor = (post: ContentItem | null, d: string | null = null, time: string | null = null) => {
-    const t = post ? null : time ?? (d ? suggestedTime(timing.find((x) => x.platform === defaultPlatform), weekdayOf(d)) : null);
-    setEditor({ post, defaults: { date: d, time: t, platform: (post?.platform as Platform) ?? defaultPlatform } });
+    const slot = post ? null : time ?? (d ? suggestedTime(timing.find((x) => x.platform === defaultPlatform), weekdayOf(d)) : null);
+    setEditor({ post, defaults: { date: d, time: slot, platform: (post?.platform as Platform) ?? defaultPlatform } });
   };
   const upsertLocal = (p: ContentItem) => {
     setPosts((list) => [...list.filter((x) => x.id !== p.id), ...(p.scheduled_date ? [p] : [])]);
@@ -272,7 +274,7 @@ export function CalendarApp({
     if (moved) upsertLocal(moved);
     const back = previous.scheduled_date;
     toast.success(r.message, undoable && back && moved
-      ? { action: { label: "Undo", onClick: () => void move(moved, back, previous.scheduled_time?.slice(0, 5) ?? null, true, moved, false) } }
+      ? { action: { label: t("grid.undo"), onClick: () => void move(moved, back, previous.scheduled_time?.slice(0, 5) ?? null, true, moved, false) } }
       : undefined);
   };
 
@@ -331,7 +333,7 @@ export function CalendarApp({
     />
   );
   const deadlineChip = (p: ContentItem) => (
-    <Tooltip key={`dl-${p.id}`} content={`Internal deadline · ${p.title}${p.scheduled_date ? ` · publishes ${p.scheduled_date}` : ""}`}>
+    <Tooltip key={`dl-${p.id}`} content={p.scheduled_date ? t("grid.deadlineTooltipPublishes", { title: p.title, date: p.scheduled_date }) : t("grid.deadlineTooltip", { title: p.title })}>
       <button
         type="button"
         onClick={() => openDetails(p)}
@@ -341,7 +343,7 @@ export function CalendarApp({
         )}
       >
         <Flag className="size-3 shrink-0" aria-hidden />
-        <span className="sr-only">Deadline:</span>
+        <span className="sr-only">{t("grid.deadlineSr")}</span>
         <span className="truncate" dir="auto">{p.title}</span>
       </button>
     </Tooltip>
@@ -349,10 +351,10 @@ export function CalendarApp({
   const conflictMark = (d: string) => {
     const busy = conflicts.get(d);
     if (!busy) return null;
-    const names = busy.map((b) => `${people.get(b.userId)?.name ?? "Someone"} (${b.count} due)`).join(", ");
+    const names = busy.map((b) => t("grid.workloadEntry", { name: people.get(b.userId)?.name ?? t("people.someone"), count: b.count })).join(", ");
     return (
-      <Tooltip content={`Workload: ${names}`}>
-        <span className="inline-flex"><AlertTriangle className="size-3 text-warning" aria-label={`Workload conflict: ${names}`} /></span>
+      <Tooltip content={t("grid.workload", { names })}>
+        <span className="inline-flex"><AlertTriangle className="size-3 text-warning" aria-label={t("grid.workloadAria", { names })} /></span>
       </Tooltip>
     );
   };
@@ -364,7 +366,7 @@ export function CalendarApp({
   const agendaDays = view === "day" ? [date] : view === "week" ? weekDays(date) : (() => { const out: string[] = []; for (let d = range.from; d <= range.to; d = addDays(d, 1)) out.push(d); return out; })();
 
   const savePreset = () => {
-    const name = window.prompt("Name this filter preset", filters.mine ? "My work" : "My filters")?.trim();
+    const name = window.prompt(t("presets.prompt"), filters.mine ? t("presets.myWork") : t("presets.defaultName"))?.trim();
     if (!name) return;
     const q = queryOf({ view, date, ...filters });
     q.delete("view");
@@ -372,7 +374,7 @@ export function CalendarApp({
     const next = [...presets.filter((p) => p.name !== name), { name, query: q.toString() }].slice(-12);
     try { localStorage.setItem(presetKey(projectId), JSON.stringify(next)); } catch { /* private mode: keep in memory */ }
     setPresets(next);
-    toast.success(`Preset “${name}” saved on this device`);
+    toast.success(t("presets.saved", { name }));
   };
   const applyPreset = (p: Preset) => {
     const q = new URLSearchParams(p.query);
@@ -391,7 +393,7 @@ export function CalendarApp({
       {/* Toolbar ---------------------------------------------------------------------------------------- */}
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="scrollbar-thin inline-flex max-w-full overflow-x-auto rounded-lg border bg-secondary p-0.5" role="tablist" aria-label="Calendar view">
+          <div className="scrollbar-thin inline-flex max-w-full overflow-x-auto rounded-lg border bg-secondary p-0.5" role="tablist" aria-label={t("toolbar.viewTabs")}>
             {VIEW_META.map((v) => (
               <button
                 key={v.id}
@@ -401,85 +403,85 @@ export function CalendarApp({
                 className={cn("inline-flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors", view === v.id ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}
               >
                 {v.icon ? <v.icon className="size-3.5" /> : null}
-                {v.label}
+                {t(`views.${v.id}`)}
               </button>
             ))}
           </div>
           <div className="inline-flex items-center gap-0.5">
-            <Button variant="ghost" size="icon-sm" aria-label="Previous period" onClick={() => go({ date: shiftView(view, date, -1) })}><ChevronLeft /></Button>
-            <Button variant="outline" size="sm" onClick={() => go({ date: today })}>Today</Button>
-            <Button variant="ghost" size="icon-sm" aria-label="Next period" onClick={() => go({ date: shiftView(view, date, 1) })}><ChevronRight /></Button>
+            <Button variant="ghost" size="icon-sm" aria-label={t("toolbar.previous")} onClick={() => go({ date: shiftView(view, date, -1) })}><ChevronLeft /></Button>
+            <Button variant="outline" size="sm" onClick={() => go({ date: today })}>{t("toolbar.today")}</Button>
+            <Button variant="ghost" size="icon-sm" aria-label={t("toolbar.next")} onClick={() => go({ date: shiftView(view, date, 1) })}><ChevronRight /></Button>
           </div>
           <label className="relative inline-flex items-center">
-            <span className="sr-only">Go to date</span>
+            <span className="sr-only">{t("toolbar.goToDate")}</span>
             <h2 className="pointer-events-none flex items-center gap-2 text-[15px] font-semibold">
-              {periodLabel(view, date)}
+              {periodLabel(fmt, view, date)}
               {navigating ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : null}
             </h2>
-            <Input type="date" aria-label="Go to date" value={date} onChange={(e) => e.target.value && go({ date: e.target.value })} className="absolute inset-0 h-full cursor-pointer opacity-0" />
+            <Input type="date" aria-label={t("toolbar.goToDate")} value={date} onChange={(e) => e.target.value && go({ date: e.target.value })} className="absolute inset-0 h-full cursor-pointer opacity-0" />
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <AudienceFilter className="h-8 w-36 text-[13px]" value={filters.audience} onChange={(v) => go({ audience: v })} />
-          <div className="inline-flex rounded-lg border bg-secondary p-0.5" role="group" aria-label="Whose work">
-            <button type="button" aria-pressed={!filters.mine} onClick={() => go({ mine: false })} className={cn("inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[13px] font-medium", !filters.mine ? "bg-card shadow-xs" : "text-muted-foreground hover:text-foreground")}><Users className="size-3.5" /> Team</button>
-            <button type="button" aria-pressed={filters.mine} onClick={() => go({ mine: true })} className={cn("inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[13px] font-medium", filters.mine ? "bg-card shadow-xs" : "text-muted-foreground hover:text-foreground")}><User className="size-3.5" /> My work</button>
+          <div className="inline-flex rounded-lg border bg-secondary p-0.5" role="group" aria-label={t("toolbar.whoseWork")}>
+            <button type="button" aria-pressed={!filters.mine} onClick={() => go({ mine: false })} className={cn("inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[13px] font-medium", !filters.mine ? "bg-card shadow-xs" : "text-muted-foreground hover:text-foreground")}><Users className="size-3.5" /> {t("toolbar.team")}</button>
+            <button type="button" aria-pressed={filters.mine} onClick={() => go({ mine: true })} className={cn("inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[13px] font-medium", filters.mine ? "bg-card shadow-xs" : "text-muted-foreground hover:text-foreground")}><User className="size-3.5" /> {t("toolbar.myWork")}</button>
           </div>
           <label className="relative">
-            <span className="sr-only">Search content</span>
+            <span className="sr-only">{t("toolbar.searchLabel")}</span>
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search titles…" className="h-8 w-44 pl-8 text-[13px]" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("toolbar.searchPlaceholder")} className="h-8 w-44 pl-8 text-[13px]" />
           </label>
           <Button variant={showFilters || activeFilters ? "secondary" : "outline"} size="sm" onClick={() => setShowFilters((s) => !s)} aria-expanded={showFilters}>
-            <Filter /> Filters{activeFilters ? ` · ${activeFilters}` : ""}
+            <Filter /> {activeFilters ? t("toolbar.filtersCount", { count: activeFilters }) : t("toolbar.filters")}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon-sm" aria-label="Saved filter presets"><Bookmark /></Button>
+              <Button variant="outline" size="icon-sm" aria-label={t("toolbar.presets")}><Bookmark /></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-60">
-              <DropdownMenuLabel>Presets on this device</DropdownMenuLabel>
-              <DropdownMenuItem onSelect={() => go({ ...EMPTY_FILTERS, mine: true })}><User /> My work</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => go({ ...EMPTY_FILTERS, overdue: true })}><Flag /> Overdue</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => go({ ...EMPTY_FILTERS, assignee: "none" })}><Users /> Unassigned</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => go({ ...EMPTY_FILTERS, state: ["pending"] })}><Inbox /> Awaiting approval</DropdownMenuItem>
+              <DropdownMenuLabel>{t("presets.heading")}</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => go({ ...EMPTY_FILTERS, mine: true })}><User /> {t("presets.myWork")}</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => go({ ...EMPTY_FILTERS, overdue: true })}><Flag /> {t("presets.overdue")}</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => go({ ...EMPTY_FILTERS, assignee: "none" })}><Users /> {t("presets.unassigned")}</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => go({ ...EMPTY_FILTERS, state: ["pending"] })}><Inbox /> {t("presets.awaitingApproval")}</DropdownMenuItem>
               {presets.length ? <DropdownMenuSeparator /> : null}
               {presets.map((p) => (
                 <DropdownMenuItem key={p.name} onSelect={() => applyPreset(p)}>
                   <Bookmark /> <span className="flex-1 truncate">{p.name}</span>
-                  <button type="button" aria-label={`Delete preset ${p.name}`} className="rounded p-0.5 hover:bg-muted" onClick={(e) => { e.preventDefault(); e.stopPropagation(); deletePreset(p.name); }}>
+                  <button type="button" aria-label={t("presets.delete", { name: p.name })} className="rounded p-0.5 hover:bg-muted" onClick={(e) => { e.preventDefault(); e.stopPropagation(); deletePreset(p.name); }}>
                     <Trash2 className="size-3.5" />
                   </button>
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={savePreset}><Plus /> Save current filters…</DropdownMenuItem>
+              <DropdownMenuItem onSelect={savePreset}><Plus /> {t("presets.saveCurrent")}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          {!readOnly && perms.has("content.create") ? <Button size="sm" onClick={() => openQuick(view === "day" ? date : null, null)}><Plus /> New idea</Button> : null}
+          {!readOnly && perms.has("content.create") ? <Button size="sm" onClick={() => openQuick(view === "day" ? date : null, null)}><Plus /> {t("toolbar.newIdea")}</Button> : null}
         </div>
       </div>
 
       {/* Quick status line ---------------------------------------------------------------------------- */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
         <button type="button" onClick={() => go({ overdue: !filters.overdue })} className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-accent", filters.overdue && "bg-destructive/10 font-medium text-destructive")} aria-pressed={filters.overdue}>
-          <Flag className="size-3.5" /> {overdueCount} overdue
+          <Flag className="size-3.5" /> {t("statusLine.overdue", { count: overdueCount })}
         </button>
         <label className="inline-flex cursor-pointer items-center gap-1.5">
           <input type="checkbox" className="accent-[var(--primary)]" checked={showDeadlines} onChange={(e) => setShowDeadlines(e.target.checked)} />
-          Show internal deadlines
+          {t("statusLine.showDeadlines")}
         </label>
-        <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-4 rounded-sm border border-l-[3px] bg-card" /> Publication</span>
-        <span className="inline-flex items-center gap-1"><Flag className="size-3" /> Internal deadline</span>
-        <span className="inline-flex items-center gap-1"><AlertTriangle className="size-3 text-warning" /> Several deadlines for one person</span>
+        <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-4 rounded-sm border border-l-[3px] bg-card" /> {t("statusLine.publication")}</span>
+        <span className="inline-flex items-center gap-1"><Flag className="size-3" /> {t("statusLine.deadline")}</span>
+        <span className="inline-flex items-center gap-1"><AlertTriangle className="size-3 text-warning" /> {t("statusLine.workload")}</span>
         {filters.mine || activeFilters || filters.q ? (
           <button type="button" className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-foreground hover:bg-accent" onClick={() => { setSearch(""); go({ ...EMPTY_FILTERS }); }}>
-            <X className="size-3.5" /> Clear all
+            <X className="size-3.5" /> {t("statusLine.clearAll")}
           </button>
         ) : null}
         <span className="ml-auto">
           <NativeSelect
-            aria-label="Time zone"
+            aria-label={t("statusLine.timeZone")}
             value={tz}
             disabled={readOnly}
             onChange={async (e) => {
@@ -497,26 +499,26 @@ export function CalendarApp({
       {/* Filters ---------------------------------------------------------------------------------------- */}
       {showFilters ? (
         <div className="grid gap-3 rounded-xl border bg-card p-3 shadow-xs sm:grid-cols-2 lg:grid-cols-4">
-          <Select label="Assignee" value={filters.assignee} onChange={(v) => go({ assignee: v })} options={[{ value: "none", label: "Unassigned" }, ...peopleList.map((p) => ({ value: p.user_id, label: p.name || "Unnamed" }))]} />
-          <Select label="Content pillar" value={filters.pillar} onChange={(v) => go({ pillar: v })} options={[...pillars.map((p) => ({ value: p.id, label: p.name })), { value: "none", label: "No pillar" }]} />
-          <Select label="Campaign" value={filters.campaign} onChange={(v) => go({ campaign: v })} options={campaigns.map((c) => ({ value: c.id, label: c.name }))} />
-          <Select label="Plan" value={filters.plan} onChange={(v) => go({ plan: v })} options={plans.map((c) => ({ value: c.id, label: c.name }))} />
-          <FilterGroup label="Platform" className="sm:col-span-2">
-            {([...CALENDAR_PLATFORMS, "linkedin", "tiktok", "youtube"] as Platform[]).map((p) => <Chip key={p} on={filters.platform.includes(p)} onClick={() => go({ platform: toggle(filters.platform, p) })}>{PLATFORM_LABELS[p]}</Chip>)}
+          <Select label={t("filters.assignee")} allLabel={tc("states.all")} value={filters.assignee} onChange={(v) => go({ assignee: v })} options={[{ value: "none", label: t("people.unassigned") }, ...peopleList.map((p) => ({ value: p.user_id, label: p.name || t("people.unnamed") }))]} />
+          <Select label={t("filters.pillar")} allLabel={tc("states.all")} value={filters.pillar} onChange={(v) => go({ pillar: v })} options={[...pillars.map((p) => ({ value: p.id, label: p.name })), { value: "none", label: t("filters.noPillar") }]} />
+          <Select label={t("filters.campaign")} allLabel={tc("states.all")} value={filters.campaign} onChange={(v) => go({ campaign: v })} options={campaigns.map((c) => ({ value: c.id, label: c.name }))} />
+          <Select label={t("filters.plan")} allLabel={tc("states.all")} value={filters.plan} onChange={(v) => go({ plan: v })} options={plans.map((c) => ({ value: c.id, label: c.name }))} />
+          <FilterGroup label={t("filters.platform")} className="sm:col-span-2">
+            {([...CALENDAR_PLATFORMS, "linkedin", "tiktok", "youtube"] as Platform[]).map((p) => <Chip key={p} on={filters.platform.includes(p)} onClick={() => go({ platform: toggle(filters.platform, p) })}>{domainLabel(td, "platform", p)}</Chip>)}
           </FilterGroup>
-          <FilterGroup label="Status" className="sm:col-span-2">
-            {WORKFLOW_STATES.map((s) => <Chip key={s} on={filters.state.includes(s)} onClick={() => go({ state: toggle(filters.state, s) })}>{WORKFLOW_LABELS[s]}</Chip>)}
+          <FilterGroup label={t("filters.status")} className="sm:col-span-2">
+            {WORKFLOW_STATES.map((s) => <Chip key={s} on={filters.state.includes(s)} onClick={() => go({ state: toggle(filters.state, s) })}>{td(`workflow.${s}`)}</Chip>)}
           </FilterGroup>
-          <FilterGroup label="Priority">
-            {PRIORITIES.map((p) => <Chip key={p} on={filters.priority.includes(p)} onClick={() => go({ priority: toggle(filters.priority, p) })}>{PRIORITY_LABELS[p]}</Chip>)}
+          <FilterGroup label={t("filters.priority")}>
+            {PRIORITIES.map((p) => <Chip key={p} on={filters.priority.includes(p)} onClick={() => go({ priority: toggle(filters.priority, p) })}>{td(`priority.${p}`)}</Chip>)}
           </FilterGroup>
-          <FilterGroup label="Content type" className="lg:col-span-2">
-            {TYPES.map((t) => <Chip key={t} on={filters.format.includes(t)} onClick={() => go({ format: toggle(filters.format, t) })}>{t}</Chip>)}
+          <FilterGroup label={t("filters.contentType")} className="lg:col-span-2">
+            {CONTENT_TYPES.map((ct) => <Chip key={ct.value} on={filters.format.includes(ct.value)} onClick={() => go({ format: toggle(filters.format, ct.value) })}>{t(`formats.${ct.key}`)}</Chip>)}
           </FilterGroup>
-          <Select label="Funnel stage" value={filters.funnel} onChange={(v) => go({ funnel: v })} options={FUNNEL_STAGES.map((f) => ({ value: f, label: FUNNEL_LABELS[f] }))} />
+          <Select label={t("filters.funnel")} allLabel={tc("states.all")} value={filters.funnel} onChange={(v) => go({ funnel: v })} options={FUNNEL_STAGES.map((f) => ({ value: f, label: td(`funnel.${f}`) }))} />
           <div className="grid grid-cols-2 gap-2 sm:col-span-2">
-            <label className="grid gap-1 text-xs font-medium">From<Input type="date" value={filters.from} onChange={(e) => go({ from: e.target.value })} className="h-8" /></label>
-            <label className="grid gap-1 text-xs font-medium">To<Input type="date" value={filters.to} onChange={(e) => go({ to: e.target.value })} className="h-8" /></label>
+            <label className="grid gap-1 text-xs font-medium">{t("filters.from")}<Input type="date" value={filters.from} onChange={(e) => go({ from: e.target.value })} className="h-8" /></label>
+            <label className="grid gap-1 text-xs font-medium">{t("filters.to")}<Input type="date" value={filters.to} onChange={(e) => go({ to: e.target.value })} className="h-8" /></label>
           </div>
           <div className="flex items-end justify-end sm:col-span-2"><WorkflowLegend /></div>
         </div>
@@ -621,15 +623,15 @@ export function CalendarApp({
       <Dialog open={conflict !== null} onOpenChange={(o) => !o && setConflict(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><AlertTriangle className="size-4 text-warning" /> Close to another post</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><AlertTriangle className="size-4 text-warning" /> {t("conflictDialog.title")}</DialogTitle>
             <DialogDescription>
-              {conflict ? `Another ${PLATFORM_LABELS[conflict.post.platform as Platform] ?? ""} post is scheduled within an hour of ${conflict.date}${conflict.time ? ` ${conflict.time}` : ""}:` : null}
+              {conflict ? t("conflictDialog.description", { platform: conflict.post.platform && td.has(`platform.${conflict.post.platform}`) ? domainLabel(td, "platform", conflict.post.platform) : "", when: `${conflict.date}${conflict.time ? ` ${conflict.time}` : ""}` }) : null}
             </DialogDescription>
           </DialogHeader>
           <ul className="list-disc pl-5 text-[13px]">{conflict?.list.map((c) => <li key={c.id}>{c.time} · {c.title}</li>)}</ul>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConflict(null)}>Cancel</Button>
-            <Button onClick={() => { const c = conflict!; setConflict(null); void move(c.post, c.date, c.time, true, c.previous); }}>Move anyway</Button>
+            <Button variant="outline" onClick={() => setConflict(null)}>{tc("actions.cancel")}</Button>
+            <Button onClick={() => { const c = conflict!; setConflict(null); void move(c.post, c.date, c.time, true, c.previous); }}>{t("conflictDialog.moveAnyway")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -640,13 +642,14 @@ export function CalendarApp({
 const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
 function Empty({ readOnly, filtered, onCreate }: { readOnly: boolean; filtered: boolean; onCreate: () => void }) {
+  const t = useT("calendar");
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-card/60 p-8 text-center">
       <CalendarDays className="size-5 text-muted-foreground" />
       <p className="text-[13px] text-muted-foreground">
-        {filtered ? "Nothing matches these filters in this period." : readOnly ? "Nothing planned in this period." : "Nothing planned in this period yet."}
+        {filtered ? t("empty.filtered") : readOnly ? t("empty.readOnly") : t("empty.none")}
       </p>
-      {!readOnly && !filtered ? <Button size="sm" variant="outline" onClick={onCreate}><Plus /> Add an idea</Button> : null}
+      {!readOnly && !filtered ? <Button size="sm" variant="outline" onClick={onCreate}><Plus /> {t("empty.addIdea")}</Button> : null}
     </div>
   );
 }
@@ -668,12 +671,12 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
   );
 }
 
-function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
+function Select({ label, allLabel, value, onChange, options }: { label: string; allLabel: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
     <label className="grid gap-1 text-xs font-medium">
       {label}
       <NativeSelect value={value} onChange={(e) => onChange(e.target.value)} className="h-8 text-[13px]">
-        <option value="">All</option>
+        <option value="">{allLabel}</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </NativeSelect>
     </label>
@@ -703,12 +706,14 @@ function MonthGrid({ date, today, byDate, deadlinesByDate, deadlineChip, conflic
   deadlineChip: (p: ContentItem) => React.ReactNode; conflictMark: (d: string) => React.ReactNode;
   card: (e: Entry, compact?: boolean) => React.ReactNode; onCreate: (d: string) => void; onShowDay: (d: string) => void; readOnly: boolean;
 }) {
+  const t = useT("calendar");
+  const fmt = useFormatter();
   const month = date.slice(0, 7);
   return (
     <div className="scrollbar-thin overflow-x-auto rounded-xl border bg-card shadow-xs">
       <div className="min-w-[700px]">
         <div className="grid grid-cols-7 border-b bg-muted/40 text-[11px] font-medium text-muted-foreground">
-          {DOW.map((d) => <div key={d} className="px-2 py-1.5">{d}</div>)}
+          {monthGrid(date)[0].map((d) => <div key={d} className="px-2 py-1.5">{fmt.day(d, { weekday: "short" })}</div>)}
         </div>
         {monthGrid(date).map((week) => (
           <div key={week[0]} className="grid grid-cols-7 border-b last:border-b-0">
@@ -718,7 +723,7 @@ function MonthGrid({ date, today, byDate, deadlinesByDate, deadlineChip, conflic
               const other = !d.startsWith(month);
               const past = d < today;
               return (
-                <DayCell key={d} id={`day|${d}`} readOnly={readOnly} label={`Add an idea on ${d}`} onCreate={() => onCreate(d)} className={cn("group/day min-h-32 space-y-1 border-r p-1 last:border-r-0", other && "bg-muted/30", past && !other && "bg-muted/15")}>
+                <DayCell key={d} id={`day|${d}`} readOnly={readOnly} label={t("grid.addIdeaOn", { date: d })} onCreate={() => onCreate(d)} className={cn("group/day min-h-32 space-y-1 border-r p-1 last:border-r-0", other && "bg-muted/30", past && !other && "bg-muted/15")}>
                   <div className="pointer-events-none flex items-center justify-between gap-1 px-0.5">
                     <span className={cn("text-[11px] tabular-nums", other ? "text-muted-foreground/60" : "text-muted-foreground", d === today && "rounded bg-primary px-1 font-semibold text-primary-foreground")}>{Number(d.slice(8))}</span>
                     <span className="pointer-events-auto flex items-center gap-1">
@@ -730,7 +735,7 @@ function MonthGrid({ date, today, byDate, deadlinesByDate, deadlineChip, conflic
                   {entries.slice(0, 3).map((e) => card(e, true))}
                   {entries.length > 3 || dls.length > 2 ? (
                     <button type="button" onClick={() => onShowDay(d)} className="w-full rounded px-1 text-left text-[11px] text-muted-foreground hover:bg-accent">
-                      +{Math.max(0, entries.length - 3) + Math.max(0, dls.length - 2)} more
+                      {t("grid.more", { count: Math.max(0, entries.length - 3) + Math.max(0, dls.length - 2) })}
                     </button>
                   ) : null}
                 </DayCell>
@@ -748,6 +753,8 @@ function TimeGrid({ days, today, byDate, deadlinesByDate, deadlineChip, conflict
   deadlineChip: (p: ContentItem) => React.ReactNode; conflictMark: (d: string) => React.ReactNode;
   card: (e: Entry, compact?: boolean) => React.ReactNode; onCreate: (d: string, time: string | null) => void; readOnly: boolean; wide: boolean;
 }) {
+  const t = useT("calendar");
+  const fmt = useFormatter();
   const cols = wide ? "grid-cols-[3.5rem_1fr]" : "grid-cols-[3.5rem_repeat(7,minmax(0,1fr))]";
   return (
     <div className="scrollbar-thin overflow-x-auto rounded-xl border bg-card shadow-xs">
@@ -757,8 +764,8 @@ function TimeGrid({ days, today, byDate, deadlinesByDate, deadlineChip, conflict
           {days.map((d) => (
             <div key={d} className="flex items-center justify-between gap-1 border-l px-2 py-1.5 text-[12px]">
               <span>
-                <span className="text-muted-foreground">{fmtDay(d, { weekday: "short" })}</span>{" "}
-                <span className={cn("font-medium tabular-nums", d === today && "rounded bg-primary px-1 text-primary-foreground")}>{fmtDay(d, { day: "numeric", month: wide ? "long" : "short" })}</span>
+                <span className="text-muted-foreground">{fmt.day(d, { weekday: "short" })}</span>{" "}
+                <span className={cn("font-medium tabular-nums", d === today && "rounded bg-primary px-1 text-primary-foreground")}>{fmt.day(d, { day: "numeric", month: wide ? "long" : "short" })}</span>
               </span>
               {conflictMark(d)}
             </div>
@@ -766,9 +773,9 @@ function TimeGrid({ days, today, byDate, deadlinesByDate, deadlineChip, conflict
         </div>
         {/* deadlines and date-only posts (no time yet) */}
         <div className={cn("grid border-b bg-muted/20", cols)}>
-          <div className="px-1 py-1.5 text-[10px] leading-tight text-muted-foreground">All day</div>
+          <div className="px-1 py-1.5 text-[10px] leading-tight text-muted-foreground">{t("grid.allDay")}</div>
           {days.map((d) => (
-            <DayCell key={d} id={`day|${d}`} readOnly={readOnly} label={`Add an idea on ${d}`} onCreate={() => onCreate(d, null)} className="min-h-10 space-y-1 border-l p-1">
+            <DayCell key={d} id={`day|${d}`} readOnly={readOnly} label={t("grid.addIdeaOn", { date: d })} onCreate={() => onCreate(d, null)} className="min-h-10 space-y-1 border-l p-1">
               {(deadlinesByDate.get(d) ?? []).map(deadlineChip)}
               {(byDate.get(d) ?? []).filter((e) => e.time === null).map((e) => card(e, !wide))}
             </DayCell>
@@ -782,7 +789,7 @@ function TimeGrid({ days, today, byDate, deadlinesByDate, deadlineChip, conflict
                 key={d}
                 id={`slot|${d}|${h}`}
                 readOnly={readOnly}
-                label={`Add an idea on ${d} at ${String(h).padStart(2, "0")}:00`}
+                label={t("grid.addIdeaAt", { date: d, time: `${String(h).padStart(2, "0")}:00` })}
                 onCreate={() => onCreate(d, `${String(h).padStart(2, "0")}:00`)}
                 className={cn("min-h-12 space-y-1 border-l p-1", d === today && "bg-primary/[0.03]")}
               >
@@ -798,11 +805,13 @@ function TimeGrid({ days, today, byDate, deadlinesByDate, deadlineChip, conflict
 
 /** Backlog ideas aren't shown on the calendar: only a count and a link to the Backlog, where they get a date. */
 function UndatedTray({ posts, projectId }: { posts: ContentItem[]; projectId: string }) {
+  const t = useT("calendar");
+  const tc = useT("common");
   if (!posts.length) return null;
   return (
     <Link href={`/p/${projectId}/backlog`} className="flex items-center gap-1.5 rounded-xl border bg-card p-3 text-[13px] font-semibold shadow-xs hover:border-primary">
-      <Inbox className="size-4" /> Ideas Backlog <span className="text-xs font-normal text-muted-foreground">· {posts.length}{posts.length >= 200 ? "+" : ""} waiting for a date</span>
-      <span className="ml-auto text-xs font-normal text-primary">Open</span>
+      <Inbox className="size-4" /> {t("tray.title")} <span className="text-xs font-normal text-muted-foreground">{t("tray.waiting", { count: posts.length, plus: posts.length >= 200 ? "+" : "" })}</span>
+      <span className="ml-auto text-xs font-normal text-primary">{tc("actions.open")}</span>
     </Link>
   );
 }

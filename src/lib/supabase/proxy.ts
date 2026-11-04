@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { isSupabaseConfigured, supabaseKey, supabaseUrl } from "@/lib/env";
+import { isLocale, LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE } from "@/i18n/config";
 
 // Meta's server-to-server callbacks and the scheduler have no user session; they authenticate with a
 // signed_request (HMAC with the app secret) or CRON_SECRET instead.
@@ -33,6 +34,26 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  // `?lang=fr|en` (shareable links, hreflang alternates of public pages) is an explicit choice: remember it.
+  const langParam = request.nextUrl.searchParams.get("lang");
+  if (isLocale(langParam) && request.cookies.get(LOCALE_COOKIE)?.value !== langParam) {
+    request.cookies.set(LOCALE_COOKIE, langParam);
+    const forwarded = NextResponse.next({ request });
+    response.cookies.getAll().forEach((c) => forwarded.cookies.set(c));
+    response = forwarded;
+    response.cookies.set(LOCALE_COOKIE, langParam, { path: "/", sameSite: "lax", maxAge: LOCALE_COOKIE_MAX_AGE });
+  }
+
+  // Restore the language saved on the user's profile (e.g. chosen on another device) when this browser has no choice yet.
+  const savedLocale = user?.user_metadata?.locale;
+  if (!request.cookies.get(LOCALE_COOKIE) && isLocale(savedLocale)) {
+    request.cookies.set(LOCALE_COOKIE, savedLocale);
+    const forwarded = NextResponse.next({ request });
+    response.cookies.getAll().forEach((c) => forwarded.cookies.set(c));
+    response = forwarded;
+    response.cookies.set(LOCALE_COOKIE, savedLocale, { path: "/", sameSite: "lax", maxAge: LOCALE_COOKIE_MAX_AGE });
+  }
 
   const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   // Server Function calls (POST + Next-Action header) are never redirected here: a redirected call receives an HTML

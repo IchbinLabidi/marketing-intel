@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { BrandProfileInput, ChannelInput, ProjectInput } from "@/lib/validation/project";
 import type { BrandProfile, Project, ProjectChannel } from "@/types/domain";
 import type { WorkspaceRole } from "@/lib/domain/constants";
+import { getT } from "@/i18n/server";
 import { getWorkspaceRole } from "./workspaces";
 
 export async function listProjects(workspaceId: string, { includeArchived = false } = {}): Promise<Project[]> {
@@ -97,7 +98,7 @@ export async function deleteProject(projectId: string) {
   const supabase = await createClient();
   const { error, count } = await supabase.from("projects").delete({ count: "exact" }).eq("id", projectId);
   if (error) throw error;
-  if (!count) throw new Error("You don't have permission to delete this project.");
+  if (!count) throw new Error((await getT("projects"))("actions.noDeletePermission"));
 }
 
 export async function getBrandProfile(projectId: string): Promise<BrandProfile | null> {
@@ -124,7 +125,7 @@ export async function addChannel(projectId: string, input: ChannelInput) {
   const supabase = await createClient();
   const { error } = await supabase.from("project_channels").insert({ project_id: projectId, ...input });
   if (error) {
-    if (error.code === "23505") throw new Error("This channel already exists.");
+    if (error.code === "23505") throw new Error((await getT("projects"))("actions.channelExists"));
     throw error;
   }
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { testT } from "@/i18n/testing";
 import { evaluatePublished, kpiValue, learningsFrom, STAGE_KPI } from "@/lib/editorial/feedback";
 import { effortOf, optimizeCalendar, type OptItem } from "@/lib/editorial/optimizer";
 import { allocate, buildSlots, platformDates, proposePlan, spread, strategyFunnelShares, validatePlan, weekdayOf, type PlanInput } from "@/lib/editorial/plan";
@@ -30,24 +31,24 @@ describe("content plan", () => {
   });
 
   it("respects the strategy's pillar target shares and splits the rest among pillars without one", () => {
-    const plan = proposePlan(input());
+    const plan = proposePlan(input(), testT("editorial"));
     expect(plan.total).toBe(plan.platforms.reduce((t, p) => t + p.count, 0));
     const [a, b, c] = plan.pillars;
     expect(a.count).toBeGreaterThan(b.count);
     expect(c.share).toBe(20); // 100 − 50 − 30
-    expect(validatePlan(plan)).toEqual([]);
+    expect(validatePlan(plan, testT("editorial"))).toEqual([]);
   });
 
   it("uses the strategy's funnel percentages when written, else the objective's mix", () => {
     expect(strategyFunnelShares({ awareness: "40% reach new students", engagement: "30 %", conversion: "30% — sign-ups" })).toEqual({ awareness: 40, engagement: 30, conversion: 30 });
     expect(strategyFunnelShares({ awareness: "reach" })).toBeNull();
-    const plan = proposePlan(input({ strategyFunnel: { awareness: "50%", engagement: "30%", conversion: "20%" } }));
+    const plan = proposePlan(input({ strategyFunnel: { awareness: "50%", engagement: "30%", conversion: "20%" } }), testT("editorial"));
     expect(plan.funnel.map((f) => f.stage)).toEqual(["awareness", "engagement", "conversion"]);
     expect(plan.notes.some((n) => n.includes("percentages written in the strategy"))).toBe(true);
   });
 
   it("weights formats by measured performance and says when the mix is only a default", () => {
-    const plan = proposePlan(input());
+    const plan = proposePlan(input(), testT("editorial"));
     const ig = plan.formats.filter((f) => f.platform === "instagram");
     expect(ig.find((f) => f.format === "Carousel")!.basis).toBe("history");
     expect(ig.find((f) => f.format === "Carousel")!.count).toBeGreaterThan(ig.find((f) => f.format === "Reel")!.count);
@@ -57,9 +58,9 @@ describe("content plan", () => {
   });
 
   it("rejects an edited mix that doesn't add up", () => {
-    const plan = proposePlan(input());
+    const plan = proposePlan(input(), testT("editorial"));
     plan.pillars[0].count += 2;
-    expect(validatePlan(plan)[0]).toMatch(/Pillars add up/);
+    expect(validatePlan(plan, testT("editorial"))[0]).toMatch(/Pillars add up/);
   });
 
   it("spreads equal values apart and dates posts on the platform's best weekdays", () => {
@@ -71,7 +72,7 @@ describe("content plan", () => {
   });
 
   it("lays out slots that match the plan, keeping locked posts' share", () => {
-    const plan = proposePlan(input());
+    const plan = proposePlan(input(), testT("editorial"));
     const slots = buildSlots(plan);
     expect(slots.length).toBe(plan.total);
     for (const p of plan.platforms) expect(slots.filter((s) => s.platform === p.platform).length).toBe(p.count);
@@ -103,7 +104,7 @@ describe("repetition", () => {
 
 describe("optimizer", () => {
   it("warns about unbalanced pillars, missing campaign posts, same-day posts and uncovered dates", () => {
-    const plan = proposePlan(input({ platforms: [{ platform: "instagram", perWeek: 2 }] }));
+    const plan = proposePlan(input({ platforms: [{ platform: "instagram", perWeek: 2 }] }), testT("editorial"));
     const items: OptItem[] = Array.from({ length: plan.total }, (_, k) => ({ id: `i${k}`, title: `Post ${k} sujet ${k}`, date: k < 2 ? "2026-11-03" : `2026-11-${String(4 + k).padStart(2, "0")}`, platform: "instagram", pillar_id: P1, funnel_stage: "awareness", format: "Reel", campaign_id: null }));
     const checks = optimizeCalendar(items, plan, () => "Pillar", () => "Campaign");
     const by = Object.fromEntries(checks.map((c) => [c.key, c]));

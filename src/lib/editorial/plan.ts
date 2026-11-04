@@ -1,4 +1,5 @@
 import { FUNNEL_STAGES, PLATFORM_LABELS, type FunnelStage, type Platform } from "@/lib/domain/constants";
+import type { TFor } from "@/i18n/messages";
 
 // Monthly content plan (the "content mix"): calculated, not generated. Counts follow the strategy's pillar target
 // shares and funnel, the month's objective and real format performance when it exists. The user edits it before any
@@ -6,6 +7,7 @@ import { FUNNEL_STAGES, PLATFORM_LABELS, type FunnelStage, type Platform } from 
 
 export const OBJECTIVES = ["awareness", "engagement", "leads", "sales", "loyalty"] as const;
 export type Objective = (typeof OBJECTIVES)[number];
+/** English objective labels, used in AI prompts; the UI shows `editorial.objectives.<key>`. */
 export const OBJECTIVE_LABELS: Record<Objective, string> = {
   awareness: "Grow awareness", engagement: "Build engagement and community", leads: "Generate leads / sign-ups", sales: "Drive sales / enrolments", loyalty: "Retain and build loyalty",
 };
@@ -29,6 +31,15 @@ export const PLATFORM_FORMATS: Partial<Record<Platform, Record<string, number>>>
   linkedin: { "Text post": 40, "Document carousel": 30, "Image post": 30 },
 };
 const formatsOf = (p: Platform) => PLATFORM_FORMATS[p] ?? { "Image post": 100 };
+
+// Display keys of the plan's format names (the English names stay the stored values and feed the AI prompts).
+const PLAN_FORMAT_KEYS: Record<string, "reel" | "carousel" | "imagePost" | "story" | "video" | "discussionPost" | "linkPost" | "seoArticle" | "educationalResource" | "faqPage" | "landingPage" | "short" | "textPost" | "documentCarousel"> = {
+  Reel: "reel", Carousel: "carousel", "Image post": "imagePost", Story: "story", Video: "video", "Discussion post": "discussionPost", "Link post": "linkPost",
+  "SEO article": "seoArticle", "Educational resource": "educationalResource", "FAQ page": "faqPage", "Landing page": "landingPage", Short: "short",
+  "Text post": "textPost", "Document carousel": "documentCarousel",
+};
+/** Translated name of a plan format; other names are shown as written. */
+export const planFormatLabel = (t: TFor<"editorial">, format: string) => (PLAN_FORMAT_KEYS[format] ? t(`formats.${PLAN_FORMAT_KEYS[format]}`) : format);
 
 export type PlanPlatform = { platform: Platform; perWeek: number; count: number; bestDays: number[]; timingBasis: "history" | "none" };
 export type PlanPillar = { pillar_id: string; name: string; target_share: number | null; share: number; count: number };
@@ -86,7 +97,8 @@ export type PlanInput = {
   capacityPerWeek?: number | null;
 };
 
-export function proposePlan(i: PlanInput): Plan {
+/** `t` words the plan's notes (shown to the user) in their language. */
+export function proposePlan(i: PlanInput, t: TFor<"editorial">): Plan {
   const n = days(i.start, i.end);
   const weeks = Math.round((n / 7) * 10) / 10;
   const notes: string[] = [];
@@ -104,9 +116,9 @@ export function proposePlan(i: PlanInput): Plan {
   const pillarCounts = allocate(total, pillarShares.some((s) => s > 0) ? pillarShares : i.pillars.map(() => 1));
   const shareSum = pillarShares.reduce((t, s) => t + s, 0) || 1;
   const pillars = i.pillars.map((p, k) => ({ pillar_id: p.id, name: p.name, target_share: p.target_share, share: Math.round((pillarShares[k] / shareSum) * 1000) / 10, count: pillarCounts[k] }));
-  if (!i.pillars.length) notes.push("No content pillar in the strategy: posts are not balanced by pillar.");
-  else if (unset.length) notes.push(`${unset.length} pillar(s) have no target share in the strategy: they share the remaining ${Math.max(0, 100 - set)}% equally.`);
-  else notes.push("Pillar counts follow the target shares of the marketing strategy.");
+  if (!i.pillars.length) notes.push(t("plan.notes.noPillars"));
+  else if (unset.length) notes.push(t("plan.notes.unsetShares", { count: unset.length, rest: Math.max(0, 100 - set) }));
+  else notes.push(t("plan.notes.pillarShares"));
 
   // Funnel: strategy percentages when written, else the objective's mix, nudged towards active campaigns' focus
   const fromStrategy = strategyFunnelShares(i.strategyFunnel);
@@ -117,7 +129,7 @@ export function proposePlan(i: PlanInput): Plan {
   const funnelCounts = allocate(total, stages.map((s) => base[s]!));
   const fsum = stages.reduce((t, s) => t + base[s]!, 0) || 1;
   const funnel = stages.map((stage, k) => ({ stage, share: Math.round((base[stage]! / fsum) * 1000) / 10, count: funnelCounts[k] }));
-  notes.push(fromStrategy ? "Funnel shares come from the percentages written in the strategy's funnel." : `Funnel shares follow the objective "${OBJECTIVE_LABELS[i.objective]}"${active.some((c) => c.funnel_focus) ? ", weighted towards active campaigns' funnel focus" : ""} (the strategy gives no funnel percentages).`);
+  notes.push(fromStrategy ? t("plan.notes.funnelFromStrategy") : active.some((c) => c.funnel_focus) ? t("plan.notes.funnelFromObjectiveCampaigns", { objective: t(`objectives.${i.objective}`) }) : t("plan.notes.funnelFromObjective", { objective: t(`objectives.${i.objective}`) }));
 
   // Formats per platform: default mix × measured lift (clamped 0.5–2) when real data exists
   const formats: PlanFormat[] = [];
@@ -129,7 +141,7 @@ export function proposePlan(i: PlanInput): Plan {
     const counts = allocate(p.count, weights);
     const wsum = weights.reduce((t, w) => t + w, 0) || 1;
     names.forEach((format, k) => formats.push({ platform: p.platform, format, share: Math.round((weights[k] / wsum) * 1000) / 10, count: counts[k], basis: lifts[k] != null ? "history" : "default", lift: lifts[k] }));
-    if (!lifts.some((l) => l != null)) notes.push(`${p.platform === "blog" ? "Website / SEO" : PLATFORM_LABELS[p.platform]}: format mix is a default for the platform, not validated by your past performance.`);
+    if (!lifts.some((l) => l != null)) notes.push(t("plan.notes.defaultFormats", { platform: p.platform === "blog" ? t("platforms.blog") : PLATFORM_LABELS[p.platform] }));
   }
 
   // Campaigns: share of the posts falling in the campaign window (40% of them), at least 1
@@ -144,25 +156,25 @@ export function proposePlan(i: PlanInput): Plan {
     ...active.filter((c) => c.starts_on && c.starts_on >= i.start).map((c) => ({ label: `${c.name} starts`, start: c.starts_on!, end: c.starts_on!, kind: "campaign" as const })),
     ...(i.customDates ?? []),
   ];
-  if (!platforms.some((p) => p.timingBasis === "history")) notes.push("No timing data: publication days are spread evenly, not chosen from past results.");
+  if (!platforms.some((p) => p.timingBasis === "history")) notes.push(t("plan.notes.noTiming"));
   return { start: i.start, end: i.end, weeks, objective: i.objective, total, platforms, pillars, funnel, formats, campaigns, dates, capacityPerWeek: i.capacityPerWeek ?? null, notes };
 }
 
-/** Consistency of an edited plan: every distribution must add up to the total. */
-export function validatePlan(p: Plan): string[] {
+/** Consistency of an edited plan: every distribution must add up to the total. `t` words the errors. */
+export function validatePlan(p: Plan, t: TFor<"editorial">): string[] {
   const errors: string[] = [];
-  const total = p.platforms.reduce((t, x) => t + x.count, 0);
-  if (!total) errors.push("The plan has no post: set at least one post on one platform.");
-  if (total > 200) errors.push("At most 200 posts per calendar.");
-  const sum = (list: { count: number }[]) => list.reduce((t, x) => t + x.count, 0);
-  if (p.pillars.length && sum(p.pillars) !== total) errors.push(`Pillars add up to ${sum(p.pillars)} posts, platforms to ${total}.`);
-  if (sum(p.funnel) !== total) errors.push(`Funnel stages add up to ${sum(p.funnel)} posts, platforms to ${total}.`);
+  const total = p.platforms.reduce((n, x) => n + x.count, 0);
+  if (!total) errors.push(t("plan.errors.empty"));
+  if (total > 200) errors.push(t("plan.errors.tooMany"));
+  const sum = (list: { count: number }[]) => list.reduce((n, x) => n + x.count, 0);
+  if (p.pillars.length && sum(p.pillars) !== total) errors.push(t("plan.errors.pillars", { sum: sum(p.pillars), total }));
+  if (sum(p.funnel) !== total) errors.push(t("plan.errors.funnel", { sum: sum(p.funnel), total }));
   for (const pl of p.platforms) {
     const f = sum(p.formats.filter((x) => x.platform === pl.platform));
-    if (f !== pl.count) errors.push(`${pl.platform}: formats add up to ${f} posts, the platform has ${pl.count}.`);
+    if (f !== pl.count) errors.push(t("plan.errors.formats", { platform: pl.platform, sum: f, count: pl.count }));
   }
-  for (const c of p.campaigns) if (c.count > total) errors.push(`Campaign "${c.name}" has more posts than the calendar.`);
-  if ([...p.platforms, ...p.pillars, ...p.funnel, ...p.formats, ...p.campaigns].some((x) => x.count < 0 || !Number.isInteger(x.count))) errors.push("Counts must be whole numbers ≥ 0.");
+  for (const c of p.campaigns) if (c.count > total) errors.push(t("plan.errors.campaign", { name: c.name }));
+  if ([...p.platforms, ...p.pillars, ...p.funnel, ...p.formats, ...p.campaigns].some((x) => x.count < 0 || !Number.isInteger(x.count))) errors.push(t("plan.errors.integers"));
   return errors;
 }
 

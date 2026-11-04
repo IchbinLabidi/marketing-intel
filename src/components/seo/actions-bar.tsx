@@ -7,6 +7,7 @@ import { CalendarPlus, CheckCircle2, FileText, Lightbulb, Loader2, Lock, LockOpe
 const ICONS = { sparkles: Sparkles, file: FileText, lightbulb: Lightbulb, refresh: RefreshCcw, trash: Trash2, pen: PenLine, calendar: CalendarPlus, lock: Lock, unlock: LockOpen, check: CheckCircle2 };
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/client";
 
 type Result = { ok: boolean; error?: string; message?: string; data?: unknown };
 
@@ -19,6 +20,7 @@ export function ActionButton({ label, busyLabel, icon, run, href, variant = "out
   variant?: "default" | "outline" | "ghost" | "destructive"; disabled?: boolean; title?: string; confirm?: string;
 }) {
   const router = useRouter();
+  const tc = useT("common");
   const [busy, setBusy] = React.useState(false);
   const [asking, setAsking] = React.useState(false);
   const Icon = icon ? ICONS[icon] : null;
@@ -37,8 +39,8 @@ export function ActionButton({ label, busyLabel, icon, run, href, variant = "out
     return (
       <span className="inline-flex items-center gap-1 rounded-md bg-destructive/10 px-2 text-xs" role="alert">
         {confirm}
-        <Button size="sm" variant="destructive" onClick={go}>Confirm</Button>
-        <Button size="sm" variant="ghost" onClick={() => setAsking(false)}>Cancel</Button>
+        <Button size="sm" variant="destructive" onClick={go}>{tc("actions.confirm")}</Button>
+        <Button size="sm" variant="ghost" onClick={() => setAsking(false)}>{tc("actions.cancel")}</Button>
       </span>
     );
   }

@@ -11,8 +11,12 @@ import {
   BalanceSection, DefinitionsSection, InsightsSection, NoContentState, OverviewSection, ProductionSection, SocialSection, TeamSection, periodLabel,
 } from "@/components/analytics/sections";
 import { loadAnalytics } from "@/server/services/analytics";
+import { getFormatter, getT } from "@/i18n/server";
 
-export const metadata = { title: "Analytics" };
+export async function generateMetadata() {
+  const t = await getT("analytics");
+  return { title: t("meta.title") };
+}
 
 export default async function AnalyticsPage({ params, searchParams }: PageProps<"/p/[projectId]/analytics">) {
   const { projectId } = await params;
@@ -21,6 +25,7 @@ export default async function AnalyticsPage({ params, searchParams }: PageProps<
   const urlMode = typeof sp.mode === "string" ? sp.mode : null;
   const mode = (urlMode ?? (await cookies()).get(MODE_COOKIE)?.value) === "expert" ? "expert" : "ceo";
   const data = await loadAnalytics(projectId, sp);
+  const [t, fmt] = await Promise.all([getT("analytics"), getFormatter()]);
   const query = new URLSearchParams(Object.entries(sp).flatMap(([k, v]) => (typeof v === "string" ? [[k, v]] : []))).toString();
   const suffix = query ? `?${query}` : "";
   const noData = data.counts.allItems === 0 && data.counts.perfRows === 0;
@@ -28,17 +33,17 @@ export default async function AnalyticsPage({ params, searchParams }: PageProps<
   return (
     <div className="space-y-8">
       <PageHeader
-        title="Analytics"
+        title={t("meta.title")}
         description={mode === "ceo"
-          ? <>Is the marketing plan being delivered, and what needs your decision? Everything here is calculated from {data.project.name}&apos;s real content and results.</>
-          : <>All planning, production and performance metrics for {data.project.name}, with breakdowns and formulas. {periodLabel(data.params.period)}.</>}
+          ? t("page.descriptionCeo", { project: data.project.name })
+          : t("page.descriptionExpert", { project: data.project.name, period: periodLabel(data.params.period, fmt) })}
         actions={
           <>
             <ModeSwitch mode={mode} />
             {data.access.canExport ? (
-              <Button asChild variant="outline" size="sm"><a href={`/p/${projectId}/analytics/export${suffix}`} download><Download className="size-3.5" /> Export CSV</a></Button>
+              <Button asChild variant="outline" size="sm"><a href={`/p/${projectId}/analytics/export${suffix}`} download><Download className="size-3.5" /> {t("page.exportCsv")}</a></Button>
             ) : null}
-            <Button asChild variant="outline" size="sm"><Link href={`/p/${projectId}/analytics/report${suffix}`} target="_blank"><Printer className="size-3.5" /> Printable report</Link></Button>
+            <Button asChild variant="outline" size="sm"><Link href={`/p/${projectId}/analytics/report${suffix}`} target="_blank"><Printer className="size-3.5" /> {t("page.printableReport")}</Link></Button>
           </>
         }
       />
@@ -49,9 +54,9 @@ export default async function AnalyticsPage({ params, searchParams }: PageProps<
       {noData ? <NoContentState projectId={projectId} /> : (
         <>
           {data.counts.filteredItems !== data.counts.allItems ? (
-            <p className="-mt-4 text-xs text-muted-foreground">Filters match {data.counts.filteredItems} of {data.counts.allItems} content items{data.access.canSeeAllContent ? "" : " you can see"}.</p>
+            <p className="-mt-4 text-xs text-muted-foreground">{t(data.access.canSeeAllContent ? "page.filtersMatch" : "page.filtersMatchVisible", { matched: data.counts.filteredItems, total: data.counts.allItems })}</p>
           ) : !data.access.canSeeAllContent ? (
-            <p className="-mt-4 text-xs text-muted-foreground">Your role shows only content you created or are assigned to, so totals cover that content.</p>
+            <p className="-mt-4 text-xs text-muted-foreground">{t("page.limitedRole")}</p>
           ) : null}
           {mode === "ceo" ? <CeoView data={data} /> : (
             <>

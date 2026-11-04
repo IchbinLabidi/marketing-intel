@@ -1,14 +1,15 @@
 import { Stat } from "@/components/app/stat";
 import { cn } from "@/lib/utils";
+import { getFormatter, getT } from "@/i18n/server";
 
 /**
  * Horizontal bar list: one series, every bar directly labelled with its value (doubles as the table view).
  * Thin bars, rounded data-end, recessive track.
  */
-export function BarList({
+export async function BarList({
   rows,
   max,
-  empty = "No data",
+  empty,
   valueSuffix,
 }: {
   rows: { key: string; label: React.ReactNode; value: number; note?: string }[];
@@ -16,7 +17,7 @@ export function BarList({
   empty?: string;
   valueSuffix?: (row: { value: number }) => string;
 }) {
-  if (!rows.length) return <p className="text-[13px] text-muted-foreground">{empty}</p>;
+  if (!rows.length) return <p className="text-[13px] text-muted-foreground">{empty ?? (await getT("history"))("charts.noData")}</p>;
   const top = max ?? Math.max(...rows.map((r) => r.value), 1);
   return (
     <ul className="grid gap-2">
@@ -37,14 +38,15 @@ export function BarList({
 }
 
 /** Monthly volume as columns, with a hover tooltip per month and a table fallback below. */
-export function MonthColumns({ months }: { months: { month: string; count: number; published: number }[] }) {
-  if (!months.length) return <p className="text-[13px] text-muted-foreground">No dated items.</p>;
+export async function MonthColumns({ months }: { months: { month: string; count: number; published: number }[] }) {
+  const [t, fmt] = await Promise.all([getT("history"), getFormatter()]);
+  if (!months.length) return <p className="text-[13px] text-muted-foreground">{t("charts.noDatedItems")}</p>;
   const top = Math.max(...months.map((m) => m.count), 1);
-  const label = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString("en", { month: "short", year: "2-digit", timeZone: "UTC" });
+  const label = (m: string) => fmt.date(`${m}-01T00:00:00Z`, { month: "short", year: "2-digit", timeZone: "UTC" });
   const every = Math.ceil(months.length / 12);
   return (
     <div>
-      <div className="flex h-40 items-end gap-0.5 border-b border-border/70" role="img" aria-label="Posts per month">
+      <div className="flex h-40 items-end gap-0.5 border-b border-border/70" role="img" aria-label={t("charts.postsPerMonth")}>
         {months.map((m) => (
           <div key={m.month} className="group relative flex h-full min-w-0 flex-1 items-end justify-center">
             <div
@@ -53,7 +55,7 @@ export function MonthColumns({ months }: { months: { month: string; count: numbe
             />
             <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md border bg-popover px-2 py-1 text-xs shadow-md group-hover:block">
               <p className="font-medium">{label(m.month)}</p>
-              <p className="tabular-nums text-muted-foreground">{m.count} items · {m.published} marked published</p>
+              <p className="tabular-nums text-muted-foreground">{t("charts.monthTooltip", { count: m.count, published: m.published })}</p>
             </div>
           </div>
         ))}
@@ -66,9 +68,9 @@ export function MonthColumns({ months }: { months: { month: string; count: numbe
         ))}
       </div>
       <details className="mt-3 text-xs">
-        <summary className="cursor-pointer text-muted-foreground">Show as table</summary>
+        <summary className="cursor-pointer text-muted-foreground">{t("charts.showTable")}</summary>
         <table className="mt-2 w-full max-w-sm tabular-nums">
-          <thead className="text-muted-foreground"><tr><th className="text-left font-medium">Month</th><th className="text-right font-medium">Items</th><th className="text-right font-medium">Marked published</th></tr></thead>
+          <thead className="text-muted-foreground"><tr><th className="text-left font-medium">{t("charts.month")}</th><th className="text-right font-medium">{t("charts.items")}</th><th className="text-right font-medium">{t("charts.markedPublished")}</th></tr></thead>
           <tbody>{months.map((m) => <tr key={m.month}><td>{m.month}</td><td className="text-right">{m.count}</td><td className="text-right">{m.published}</td></tr>)}</tbody>
         </table>
       </details>
@@ -77,20 +79,21 @@ export function MonthColumns({ months }: { months: { month: string; count: numbe
 }
 
 /** Single-series value columns (e.g. monthly median engagement) with hover tooltip; null months are gaps. */
-export function ValueColumns({ points, unit }: { points: { key: string; label: string; value: number | null; n: number }[]; unit: string }) {
+export async function ValueColumns({ points, unit }: { points: { key: string; label: string; value: number | null; n: number }[]; unit: string }) {
+  const t = await getT("history");
   const values = points.map((p) => p.value ?? 0);
   const top = Math.max(...values, 0) || 1;
   const every = Math.ceil(points.length / 12);
-  if (!points.length) return <p className="text-[13px] text-muted-foreground">Not enough dated posts with metrics.</p>;
+  if (!points.length) return <p className="text-[13px] text-muted-foreground">{t("charts.notEnoughMetrics")}</p>;
   return (
     <div>
-      <div className="flex h-32 items-end gap-0.5 border-b border-border/70" role="img" aria-label={`Median ${unit} per month`}>
+      <div className="flex h-32 items-end gap-0.5 border-b border-border/70" role="img" aria-label={t("charts.medianPerMonth", { unit })}>
         {points.map((p) => (
           <div key={p.key} className="group relative flex h-full min-w-0 flex-1 items-end justify-center">
             <div className={cn("w-full max-w-6 rounded-t-[4px] bg-chart-b group-hover:opacity-80", p.value == null && "bg-transparent")} style={{ height: `${((p.value ?? 0) / top) * 100}%` }} />
             <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md border bg-popover px-2 py-1 text-xs shadow-md group-hover:block">
               <p className="font-medium">{p.label}</p>
-              <p className="tabular-nums text-muted-foreground">{p.value == null ? `only ${p.n} post` : `median ${p.value} ${unit} · ${p.n} posts`}</p>
+              <p className="tabular-nums text-muted-foreground">{p.value == null ? t("charts.onlyPosts", { count: p.n }) : t("charts.medianTooltip", { value: p.value, unit, count: p.n })}</p>
             </div>
           </div>
         ))}

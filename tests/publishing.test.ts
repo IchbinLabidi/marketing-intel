@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { composeCaption, validateForTarget, validateGroup, validateLocalFile } from "@/lib/publishing/rules";
 import { classifyMetaError, facebookScheduleError, publishFacebook, publishFacebookPhotos, publishInstagram, publishInstagramCarousel } from "@/server/publishing/meta";
 import { MetaApiError } from "@/server/meta/graph";
+import { testT } from "@/i18n/testing";
+
+const t = testT("calendar");
+const tp = testT("publishing");
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -12,36 +16,36 @@ describe("publishing rules", () => {
   });
 
   it("applies Instagram's documented limits", () => {
-    expect(validateForTarget("instagram", { caption: "hi", mime: null, hasMedia: false })).toMatch(/needs an image or a video/);
-    expect(validateForTarget("instagram", { caption: "hi", mime: "image/png", hasMedia: true })).toBeNull(); // converted to JPEG before sending
-    expect(validateForTarget("instagram", { caption: "hi", mime: "image/svg+xml", hasMedia: true })).toMatch(/JPEG, PNG, WebP or GIF/);
-    expect(validateForTarget("instagram", { caption: "x".repeat(2201), mime: "image/jpeg", hasMedia: true })).toMatch(/2,200/);
-    expect(validateForTarget("instagram", { caption: Array.from({ length: 31 }, (_, i) => `#t${i}`).join(" "), mime: "image/jpeg", hasMedia: true })).toMatch(/30 hashtags/);
-    expect(validateForTarget("instagram", { caption: "ok", mime: "video/mp4", hasMedia: true })).toBeNull();
-    expect(validateForTarget("facebook", { caption: "text only", mime: null, hasMedia: false })).toBeNull();
+    expect(validateForTarget("instagram", { caption: "hi", mime: null, hasMedia: false }, t)).toMatch(/needs an image or a video/);
+    expect(validateForTarget("instagram", { caption: "hi", mime: "image/png", hasMedia: true }, t)).toBeNull(); // converted to JPEG before sending
+    expect(validateForTarget("instagram", { caption: "hi", mime: "image/svg+xml", hasMedia: true }, t)).toMatch(/JPEG, PNG, WebP or GIF/);
+    expect(validateForTarget("instagram", { caption: "x".repeat(2201), mime: "image/jpeg", hasMedia: true }, t)).toMatch(/2,200/);
+    expect(validateForTarget("instagram", { caption: Array.from({ length: 31 }, (_, i) => `#t${i}`).join(" "), mime: "image/jpeg", hasMedia: true }, t)).toMatch(/30 hashtags/);
+    expect(validateForTarget("instagram", { caption: "ok", mime: "video/mp4", hasMedia: true }, t)).toBeNull();
+    expect(validateForTarget("facebook", { caption: "text only", mime: null, hasMedia: false }, t)).toBeNull();
   });
 
   it("allows several photos in one post, never videos, at most 10, JPEG on Instagram", () => {
-    expect(validateGroup("instagram", ["image/jpeg"])).toBeNull();
-    expect(validateGroup("instagram", ["image/jpeg", "image/jpeg"])).toBeNull();
-    expect(validateGroup("instagram", ["image/jpeg", "image/png"])).toBeNull();
-    expect(validateGroup("instagram", ["image/jpeg", "image/svg+xml"])).toMatch(/JPEG, PNG, WebP or GIF/);
-    expect(validateGroup("facebook", ["image/jpeg", "image/png"])).toBeNull();
-    expect(validateGroup("facebook", ["image/jpeg", "video/mp4"])).toMatch(/must all be photos/);
-    expect(validateGroup("facebook", Array(11).fill("image/jpeg"))).toMatch(/at most 10/);
+    expect(validateGroup("instagram", ["image/jpeg"], t)).toBeNull();
+    expect(validateGroup("instagram", ["image/jpeg", "image/jpeg"], t)).toBeNull();
+    expect(validateGroup("instagram", ["image/jpeg", "image/png"], t)).toBeNull();
+    expect(validateGroup("instagram", ["image/jpeg", "image/svg+xml"], t)).toMatch(/JPEG, PNG, WebP or GIF/);
+    expect(validateGroup("facebook", ["image/jpeg", "image/png"], t)).toBeNull();
+    expect(validateGroup("facebook", ["image/jpeg", "video/mp4"], t)).toMatch(/must all be photos/);
+    expect(validateGroup("facebook", Array(11).fill("image/jpeg"), t)).toMatch(/at most 10/);
   });
 
   it("checks a computer file before any upload", () => {
-    expect(validateLocalFile({ type: "image/jpeg", size: 1000 })).toBeNull();
-    expect(validateLocalFile({ type: "application/pdf", size: 1000 })).toMatch(/image or a video/);
-    expect(validateLocalFile({ type: "video/mp4", size: 60 * 1024 * 1024 })).toMatch(/50 MB/);
+    expect(validateLocalFile({ type: "image/jpeg", size: 1000 }, t)).toBeNull();
+    expect(validateLocalFile({ type: "application/pdf", size: 1000 }, t)).toMatch(/image or a video/);
+    expect(validateLocalFile({ type: "video/mp4", size: 60 * 1024 * 1024 }, t)).toMatch(/50 MB/);
   });
 
   it("enforces Facebook's scheduling window", () => {
     const now = new Date("2026-10-29T10:00:00Z");
-    expect(facebookScheduleError(new Date("2026-10-29T10:05:00Z"), now)).toMatch(/10 minutes/);
-    expect(facebookScheduleError(new Date("2026-12-15T10:00:00Z"), now)).toMatch(/30 days/);
-    expect(facebookScheduleError(new Date("2026-10-30T10:00:00Z"), now)).toBeNull();
+    expect(facebookScheduleError(tp, new Date("2026-10-29T10:05:00Z"), now)).toMatch(/10 minutes/);
+    expect(facebookScheduleError(tp, new Date("2026-12-15T10:00:00Z"), now)).toMatch(/30 days/);
+    expect(facebookScheduleError(tp, new Date("2026-10-30T10:00:00Z"), now)).toBeNull();
   });
 });
 
@@ -52,7 +56,7 @@ describe("Meta adapter", () => {
     const calls: { url: string; body: FormData | URLSearchParams }[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url: URL, init: RequestInit) => { calls.push({ url: String(url), body: init.body as FormData }); return json({ id: "photo1", post_id: "123_456" }); }));
     const at = new Date(Date.now() + 86_400_000);
-    const r = await publishFacebook({ pageId: "123", pageToken: "t", message: "hello", media: { kind: "image", bytes: new Blob(["x"], { type: "image/jpeg" }), filename: "a.jpg", mime: "image/jpeg" }, scheduleAt: at });
+    const r = await publishFacebook({ t: tp, pageId: "123", pageToken: "t", message: "hello", media: { kind: "image", bytes: new Blob(["x"], { type: "image/jpeg" }), filename: "a.jpg", mime: "image/jpeg" }, scheduleAt: at });
     expect(calls[0].url).toContain("/123/photos");
     const body = calls[0].body as FormData;
     expect(body.get("source")).toBeInstanceOf(Blob);
@@ -72,7 +76,7 @@ describe("Meta adapter", () => {
       if (u.includes("/m1?")) return json({ permalink: "https://www.instagram.com/p/abc/" });
       return json({ error: { message: "unexpected" } }, 400);
     }));
-    const r = await publishInstagram({ igUserId: "ig1", pageToken: "t", caption: "hi", media: { kind: "image", url: "https://x.test/a.jpg", mime: "image/jpeg" } });
+    const r = await publishInstagram({ t: tp, igUserId: "ig1", pageToken: "t", caption: "hi", media: { kind: "image", url: "https://x.test/a.jpg", mime: "image/jpeg" } });
     expect(r).toMatchObject({ postId: "m1", url: "https://www.instagram.com/p/abc/" });
     expect(seen.filter((u) => u.includes("media_publish"))).toHaveLength(1);
   });
@@ -83,7 +87,7 @@ describe("Meta adapter", () => {
     vi.stubGlobal("fetch", vi.fn(async (url: URL, init: RequestInit) => { calls.push({ url: String(url), body: init.body as FormData }); return json({ id: String(url).includes("/feed") ? "123_789" : `p${++n}` }); }));
     const photo = { kind: "image" as const, bytes: new Blob(["x"], { type: "image/jpeg" }), filename: "a.jpg", mime: "image/jpeg" };
     const at = new Date(Date.now() + 86_400_000);
-    const r = await publishFacebookPhotos({ pageId: "123", pageToken: "t", message: "hello", photos: [photo, photo], scheduleAt: at });
+    const r = await publishFacebookPhotos({ t: tp, pageId: "123", pageToken: "t", message: "hello", photos: [photo, photo], scheduleAt: at });
     expect(calls.map((c) => c.url.split("?")[0].split("/").slice(-1)[0])).toEqual(["photos", "photos", "feed"]);
     expect((calls[0].body as FormData).get("published")).toBe("false");
     expect((calls[0].body as FormData).get("temporary")).toBe("true");
@@ -107,7 +111,7 @@ describe("Meta adapter", () => {
       return json({ error: { message: "unexpected" } }, 400);
     }));
     const img = (k: string) => ({ kind: "image" as const, url: `https://x.test/${k}.jpg`, mime: "image/jpeg" });
-    const r = await publishInstagramCarousel({ igUserId: "ig1", pageToken: "t", caption: "hi", items: [img("a"), img("b")] });
+    const r = await publishInstagramCarousel({ t: tp, igUserId: "ig1", pageToken: "t", caption: "hi", items: [img("a"), img("b")] });
     expect(posts[0].body.get("is_carousel_item")).toBe("true");
     expect(posts[2].body.get("media_type")).toBe("CAROUSEL");
     expect(posts[2].body.get("children")).toBe("c1,c2");
@@ -117,29 +121,29 @@ describe("Meta adapter", () => {
 
   it("reports a video still processing instead of blocking past the wait time", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: URL) => (String(url).includes("/ig1/media") ? json({ id: "c2" }) : json({ status_code: "IN_PROGRESS" }))));
-    const r = await publishInstagram({ igUserId: "ig1", pageToken: "t", caption: "hi", media: { kind: "video", url: "https://x.test/v.mp4", mime: "video/mp4" }, waitMs: 0 });
+    const r = await publishInstagram({ t: tp, igUserId: "ig1", pageToken: "t", caption: "hi", media: { kind: "video", url: "https://x.test/v.mp4", mime: "video/mp4" }, waitMs: 0 });
     expect(r).toMatchObject({ processing: true, containerId: "c2" });
   });
 
   it("classifies errors so permanent ones aren't retried", () => {
-    expect(classifyMetaError(new MetaApiError("expired", 190, 463, 401)).kind).toBe("auth");
-    expect(classifyMetaError(new MetaApiError("no perm", 200, undefined, 403)).kind).toBe("auth");
-    expect(classifyMetaError(new MetaApiError("limit", 4, undefined, 400)).kind).toBe("transient");
-    expect(classifyMetaError(new MetaApiError("bad image", 100, undefined, 400)).kind).toBe("validation");
+    expect(classifyMetaError(new MetaApiError("expired", 190, 463, 401), tp).kind).toBe("auth");
+    expect(classifyMetaError(new MetaApiError("no perm", 200, undefined, 403), tp).kind).toBe("auth");
+    expect(classifyMetaError(new MetaApiError("limit", 4, undefined, 400), tp).kind).toBe("transient");
+    expect(classifyMetaError(new MetaApiError("bad image", 100, undefined, 400), tp).kind).toBe("validation");
   });
 });
 
 describe("TikTok publishing rules", () => {
   it("needs exactly one video", () => {
-    expect(validateForTarget("tiktok", { caption: "hi", mime: "image/jpeg", hasMedia: true })).toBeNull(); // photo post
-    expect(validateForTarget("tiktok", { caption: "hi", mime: "image/gif", hasMedia: true })).toMatch(/JPEG, PNG or WebP/);
-    expect(validateForTarget("tiktok", { caption: "hi", mime: null, hasMedia: false })).toMatch(/needs a video/);
-    expect(validateForTarget("tiktok", { caption: "hi", mime: "video/mp4", hasMedia: true })).toBeNull();
-    expect(validateGroup("tiktok", ["video/mp4", "video/mp4"])).toMatch(/all be photos/);
-    expect(validateGroup("tiktok", ["image/png", "image/jpeg"])).toBeNull();
+    expect(validateForTarget("tiktok", { caption: "hi", mime: "image/jpeg", hasMedia: true }, t)).toBeNull(); // photo post
+    expect(validateForTarget("tiktok", { caption: "hi", mime: "image/gif", hasMedia: true }, t)).toMatch(/JPEG, PNG or WebP/);
+    expect(validateForTarget("tiktok", { caption: "hi", mime: null, hasMedia: false }, t)).toMatch(/needs a video/);
+    expect(validateForTarget("tiktok", { caption: "hi", mime: "video/mp4", hasMedia: true }, t)).toBeNull();
+    expect(validateGroup("tiktok", ["video/mp4", "video/mp4"], t)).toMatch(/all be photos/);
+    expect(validateGroup("tiktok", ["image/png", "image/jpeg"], t)).toBeNull();
   });
   it("limits the caption to 2,200 characters", () => {
-    expect(validateForTarget("tiktok", { caption: "a".repeat(2201), mime: "video/mp4", hasMedia: true })).toMatch(/2,200/);
+    expect(validateForTarget("tiktok", { caption: "a".repeat(2201), mime: "video/mp4", hasMedia: true }, t)).toMatch(/2,200/);
   });
   it("uses the most public privacy the creator allows", async () => {
     const { chooseTikTokPrivacy } = await import("@/server/publishing/tiktok");
@@ -151,9 +155,9 @@ describe("TikTok publishing rules", () => {
 
 describe("YouTube publishing rules", () => {
   it("needs one video and keeps titles within 100 characters", async () => {
-    expect(validateForTarget("youtube", { caption: "hi", mime: "image/png", hasMedia: true })).toMatch(/needs a video/);
-    expect(validateForTarget("youtube", { caption: "hi", mime: "video/mp4", hasMedia: true })).toBeNull();
-    expect(validateGroup("youtube", ["video/mp4", "video/mp4"])).toMatch(/single video/);
+    expect(validateForTarget("youtube", { caption: "hi", mime: "image/png", hasMedia: true }, t)).toMatch(/needs a video/);
+    expect(validateForTarget("youtube", { caption: "hi", mime: "video/mp4", hasMedia: true }, t)).toBeNull();
+    expect(validateGroup("youtube", ["video/mp4", "video/mp4"], t)).toMatch(/single video/);
     const { youtubeTitle } = await import("@/server/publishing/youtube");
     expect(youtubeTitle("A <b>title</b>", "")).toBe("A btitle/b");
     expect(youtubeTitle(null, "\nFirst line\nsecond")).toBe("First line");

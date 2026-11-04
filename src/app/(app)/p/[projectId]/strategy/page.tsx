@@ -14,11 +14,16 @@ import { canEdit } from "@/lib/domain/constants";
 import { getProjectContext } from "@/server/services/projects";
 import { getStrategyBundle, strategyCompleteness } from "@/server/services/strategy";
 import { isAIConfigured } from "@/server/ai/client";
+import { getT } from "@/i18n/server";
 
-export const metadata = { title: "Marketing strategy" };
+export async function generateMetadata() {
+  const t = await getT("strategy");
+  return { title: t("meta.title") };
+}
 
 export default async function StrategyPage({ params }: PageProps<"/p/[projectId]/strategy">) {
   const { projectId } = await params;
+  const t = await getT("strategy");
   const { project, role } = await getProjectContext(projectId);
   const bundle = await getStrategyBundle(projectId);
   const completeness = strategyCompleteness(bundle);
@@ -28,19 +33,19 @@ export default async function StrategyPage({ params }: PageProps<"/p/[projectId]
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow={`${project.name} · ${completeness.percent}% complete`}
-        title="Marketing strategy"
-        description="Your goals, audiences, content themes (pillars) and targets. Everything else, including Analytics, is measured against it, so review it each quarter."
+        eyebrow={t("page.eyebrow", { project: project.name, percent: completeness.percent })}
+        title={t("page.title")}
+        description={t("page.description")}
       />
       <Tabs defaultValue="foundations">
         <TabsList>
-            <TabsTrigger value="foundations">Foundations</TabsTrigger>
-            <TabsTrigger value="personas">Personas <Count n={bundle.personas.length} /></TabsTrigger>
-            <TabsTrigger value="journey">Journey & funnel</TabsTrigger>
-            <TabsTrigger value="pillars">Content pillars <Count n={bundle.pillars.length} /></TabsTrigger>
-            <TabsTrigger value="voice">Brand voice</TabsTrigger>
-            <TabsTrigger value="campaigns">Campaigns <Count n={bundle.campaigns.length} /></TabsTrigger>
-            <TabsTrigger value="kpis">KPIs <Count n={bundle.kpis.length} /></TabsTrigger>
+            <TabsTrigger value="foundations">{t("page.tabs.foundations")}</TabsTrigger>
+            <TabsTrigger value="personas">{t("page.tabs.personas")} <Count n={bundle.personas.length} /></TabsTrigger>
+            <TabsTrigger value="journey">{t("page.tabs.journey")}</TabsTrigger>
+            <TabsTrigger value="pillars">{t("page.tabs.pillars")} <Count n={bundle.pillars.length} /></TabsTrigger>
+            <TabsTrigger value="voice">{t("page.tabs.voice")}</TabsTrigger>
+            <TabsTrigger value="campaigns">{t("page.tabs.campaigns")} <Count n={bundle.campaigns.length} /></TabsTrigger>
+            <TabsTrigger value="kpis">{t("page.tabs.kpis")} <Count n={bundle.kpis.length} /></TabsTrigger>
           </TabsList>
         <TabsContent value="foundations">
           <FoundationsSection {...common} strategy={s} />
@@ -50,11 +55,11 @@ export default async function StrategyPage({ params }: PageProps<"/p/[projectId]
         </TabsContent>
         <TabsContent value="journey" className="space-y-10">
           <section className="space-y-3">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Customer journey</h2>
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{t("page.journeyTitle")}</h2>
             <JourneyEditor {...common} initial={s?.customer_journey ?? []} />
           </section>
           <section className="space-y-3">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">Marketing funnel</h2>
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{t("page.funnelTitle")}</h2>
             <FunnelSection {...common} strategy={s} />
           </section>
         </TabsContent>
