@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import {
   Archive, ArchiveRestore, Bookmark, CalendarPlus, Columns3, Copy, Eye, Filter, LayoutGrid, List, Loader2, MoreHorizontal, Plus, Search,
-  Send, SlidersHorizontal, Sparkles, Tag, Trash2, Undo2, UserRound, X,
+  Send, SlidersHorizontal, Sparkles, Tag, Trash2, Undo2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/app/page-header";
@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { PlatformIcon } from "@/components/calendar/platform-icon";
 import { PLATFORM_LABELS, type Platform } from "@/lib/domain/constants";
-import { ideaCreator } from "@/lib/backlog/creator";
+import { CreatedBy } from "@/components/backlog/created-by";
 import { CRITERIA, impactEffort, normalizeWeights, scoreBand, type Weights } from "@/lib/backlog/score";
 import { ALL_CONVERSIONS, AUDIENCES, goalsFor, SEGMENTS, type Audience, type AudienceMix, type Side } from "@/lib/backlog/audience";
 import { useFormatter, useT } from "@/i18n/client";
@@ -355,14 +355,6 @@ function RowMenu({ idea, canEdit, a }: { idea: Idea; canEdit: boolean; a: Acts }
   );
 }
 
-function CreatedBy({ idea, members }: { idea: Idea; members?: Record<string, string> }) {
-  const t = useT("backlog");
-  const c = ideaCreator(idea);
-  if (c === "ai") return <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-medium text-primary" title={t("row.creatorAiHint")}><Sparkles className="size-3" /> {t("row.creatorAi")}</span>;
-  const name = members?.[c.userId] || t("row.creatorMember");
-  return <span className="ml-auto inline-flex min-w-0 max-w-[50%] shrink items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground" title={t("row.creatorHint", { name })}><UserRound className="size-3 shrink-0" /> <span className="truncate">{name}</span></span>;
-}
-
 function IdeaCard({ idea, members, pillar, canEdit, selected, onToggle, a, onAudience, compact }: { idea: Idea; members?: Record<string, string>; pillar: string | null; canEdit: boolean; selected: boolean; onToggle: () => void; a: Acts; onAudience: (a: Audience) => void; compact?: boolean }) {
   const t = useT("backlog");
   const td = useT("domain");
@@ -389,7 +381,7 @@ function IdeaCard({ idea, members, pillar, canEdit, selected, onToggle, a, onAud
           <Button size="sm" variant="outline" onClick={a.place}><CalendarPlus /> {t("row.addToCalendar")}</Button>
           {idea.production_stage === "idea" ? <Button size="sm" variant="ghost" onClick={a.production}><Send /> {t("row.production")}</Button> : null}
         </> : null}
-        <CreatedBy idea={idea} members={members} />
+        <CreatedBy item={idea} name={(id) => members?.[id]} className="ml-auto" />
       </div>
     </article>
   );
