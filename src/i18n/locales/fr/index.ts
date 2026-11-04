@@ -25,6 +25,7 @@ import production from "./production";
 import publishing from "./publishing";
 import integrations from "./integrations";
 import analytics from "./analytics";
+import changeLog from "./changeLog";
 
 const fr: Translation<Messages> = {
   common,
@@ -52,6 +53,7 @@ const fr: Translation<Messages> = {
   publishing,
   integrations,
   analytics,
+  changeLog,
 };
 
 export default fr;

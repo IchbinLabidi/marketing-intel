@@ -13,6 +13,7 @@ const nav = {
     backlog: { label: "Ideas Backlog", hint: "Every idea, scored and waiting for a date" },
     calendar: { label: "Calendar", hint: "What gets published, when and where" },
     production: { label: "Production", hint: "Content being written, reviewed and approved" },
+    changeLog: { label: "Change log", hint: "Who changed what in the strategy and content" },
     analytics: { label: "Analytics", hint: "Is the plan delivered, and what needs your attention" },
   },
   workspaces: "Workspaces",

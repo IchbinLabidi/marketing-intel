@@ -12,6 +12,7 @@ import {
   Plug,
   PenSquare,
   Search,
+  ScrollText,
   Settings,
   Swords,
   Target,
@@ -64,7 +65,10 @@ export function projectNavSections(projectId: string, t: TFor<"nav">): NavSectio
     },
     {
       label: t("sections.results"),
-      items: [{ label: t("project.analytics.label"), hint: t("project.analytics.hint"), href: `${base}/analytics`, icon: BarChart3, permission: "calendar.view" }],
+      items: [
+        { label: t("project.analytics.label"), hint: t("project.analytics.hint"), href: `${base}/analytics`, icon: BarChart3, permission: "calendar.view" },
+        { label: t("project.changeLog.label"), hint: t("project.changeLog.hint"), href: `${base}/activity`, icon: ScrollText },
+      ],
     },
   ];
 }

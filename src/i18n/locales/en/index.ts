@@ -23,6 +23,7 @@ import production from "./production";
 import publishing from "./publishing";
 import integrations from "./integrations";
 import analytics from "./analytics";
+import changeLog from "./changeLog";
 
 /** Every namespace of the English (source) dictionary. */
 const en = {
@@ -51,6 +52,7 @@ const en = {
   publishing,
   integrations,
   analytics,
+  changeLog,
 };
 
 export type Messages = typeof en;

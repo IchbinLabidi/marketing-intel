@@ -15,6 +15,7 @@ const nav: Translation<typeof en> = {
     backlog: { label: "Banque d’idées", hint: "Toutes les idées, notées et en attente d’une date" },
     calendar: { label: "Calendrier", hint: "Ce qui est publié, quand et où" },
     production: { label: "Production", hint: "Contenus en rédaction, en relecture et approuvés" },
+    changeLog: { label: "Journal", hint: "Qui a modifié quoi dans la stratégie et les contenus" },
     analytics: { label: "Analyses", hint: "Le plan est-il tenu, et qu’est-ce qui demande votre attention" },
   },
   workspaces: "Espaces de travail",
