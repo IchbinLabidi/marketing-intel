@@ -303,7 +303,7 @@ export async function addBriefToCalendarAction(projectId: string, briefId: strin
       title: b.brief.seo_title.slice(0, 300), platform: p.platform, format: p.format, pillar_id: p.pillar_id, campaign_id: p.campaign_id, funnel_stage: funnel,
       hook: b.brief.meta_description, cta: b.brief.cta, creative_brief: briefMarkdown(b.brief).slice(0, 10000), main_content: b.draft,
       language: (LANGUAGES as readonly string[]).includes(b.language) ? (b.language as Language) : undefined,
-      scheduled_date: p.date ?? null, status: "planned", opportunity_id: linkOpp,
+      scheduled_date: p.date ?? null, status: "planned", opportunity_id: linkOpp, idea_source: "ai",
     });
     const db = await createClient();
     await db.from("seo_briefs").update({ content_item_id: post.id }).eq("project_id", projectId).eq("id", briefId);

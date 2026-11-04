@@ -9,6 +9,7 @@ import { listIdeas, listTags, type BacklogFilters } from "@/server/services/back
 import { getProjectContext } from "@/server/services/projects";
 import { getStrategyBundle } from "@/server/services/strategy";
 import { hasPermission } from "@/server/services/team";
+import { listMembers } from "@/server/services/workspaces";
 import { getT } from "@/i18n/server";
 
 export async function generateMetadata() {
@@ -20,13 +21,14 @@ export default async function Page({ params }: { params: Promise<{ projectId: st
   const { projectId } = await params;
   const { project, role } = await getProjectContext(projectId);
   const defaultSort = (project.backlog_sort ?? "score") as NonNullable<BacklogFilters["sort"]>;
-  const [initial, bundle, tags, presets, create, manage] = await Promise.all([
+  const [initial, bundle, tags, presets, create, manage, members] = await Promise.all([
     listIdeas(projectId, { planning: "backlog", sort: defaultSort }),
     getStrategyBundle(projectId),
     listTags(projectId),
     listPresetsAction(projectId),
     hasPermission(project.workspace_id, "content.create"),
     hasPermission(project.workspace_id, "projects.manage"),
+    listMembers(project.workspace_id).catch(() => []),
   ]);
   return (
     <BacklogApp
@@ -34,7 +36,7 @@ export default async function Page({ params }: { params: Promise<{ projectId: st
       canEdit={canEdit(role) && create} canAdmin={canAdmin(role) || manage}
       initial={initial} pillars={bundle.pillars.map((p) => ({ id: p.id, name: p.name, segment: p.audience_segment, target_share: p.target_share }))} audienceMix={normalizeMix(project.audience_mix)} tags={tags}
       presets={presets.ok ? presets.data ?? [] : []} weights={normalizeWeights(project.idea_score_weights as Record<string, unknown> | null)}
-      aiEnabled={isAIConfigured()} defaultSort={defaultSort} today={todayInZone(project.timezone || "Africa/Tunis")}
+      aiEnabled={isAIConfigured()} defaultSort={defaultSort} members={Object.fromEntries(members.filter((m) => m.full_name).map((m) => [m.user_id, m.full_name as string]))} today={todayInZone(project.timezone || "Africa/Tunis")}
     />
   );
 }

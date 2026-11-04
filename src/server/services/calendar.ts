@@ -42,7 +42,7 @@ export async function createCalendarWithItems(
     .select("id")
     .single();
   if (error) throw error;
-  const rows = (await withAudience(projectId, userId, items)).map((i, position) => ({ ...i, project_id: projectId, calendar_id: data.id, status: "planned", position, created_by: userId }));
+  const rows = (await withAudience(projectId, userId, items)).map((i, position) => ({ ...i, project_id: projectId, calendar_id: data.id, status: "planned", position, created_by: userId, idea_source: "ai" }));
   const ins = await supabase.from("content_items").insert(rows);
   if (ins.error) {
     await supabase.from("editorial_calendars").delete().eq("id", data.id);
