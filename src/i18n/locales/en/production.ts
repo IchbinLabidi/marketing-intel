@@ -354,6 +354,7 @@ const production = {
     invalidWorkflow: "Invalid workflow request.",
     decisionRecorded: "Review decision recorded",
     stageUpdated: "Stage updated",
+    backToBacklog: "Moved back to the Backlog",
     commentAdded: "Comment added",
     restored: "Revision restored as a new version",
     opportunityNotFound: "Opportunity not found.",

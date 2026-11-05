@@ -109,7 +109,16 @@ export async function transitionProductionAction(projectId: string, id: string, 
     const { db, t } = await access(projectId);
     const { data, error } = await db.rpc("production_transition", { p_project: projectId, p_id: id, p_revision: revision, p_stage: stage, p_decision: decision ?? null, p_comment: comment });
     if (error) throw error;
-    refresh(projectId); return { ok: true, data: data as ProductionItem, message: decision ? t("actions.decisionRecorded") : t("actions.stageUpdated") };
+    const row = data as ProductionItem;
+    // Moving a card back to Idea sends it back to the Backlog, so its calendar date is dropped (as "Back to Backlog" does).
+    if (stage === "idea" && !decision && row.status !== "published" && row.status !== "scheduled"
+      && (row.scheduled_date || row.scheduled_time || row.scheduled_at || row.status !== "idea")) {
+      const { data: fresh, error: clearError } = await db.from("content_items").update({ scheduled_date: null, scheduled_time: null, scheduled_at: null, status: "idea" })
+        .eq("project_id", projectId).eq("id", id).eq("revision", row.revision).select("*").maybeSingle();
+      if (clearError) throw clearError;
+      refresh(projectId); return { ok: true, data: (fresh ?? row) as ProductionItem, message: t("actions.backToBacklog") };
+    }
+    refresh(projectId); return { ok: true, data: row, message: decision ? t("actions.decisionRecorded") : t("actions.stageUpdated") };
   } catch (e) { return failure(e); }
 }
 export async function productionDetailsAction(projectId: string, id: string): Promise<ActionResult<ProductionDetails>> {
