@@ -8,14 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { createClient } from "@/lib/supabase/client";
+import { useMediaUpload } from "@/components/media/use-media-upload";
+import { needsCompression } from "@/lib/media/compress-video";
 import { composeCaption, validateLocalFile, type PublishTarget } from "@/lib/publishing/rules";
 import { utcToZoned, zonedToUtc } from "@/lib/calendar/time";
 import { cn } from "@/lib/utils";
 import { COPY_PLATFORM_LABELS, defaultYouTubeVariant, publicationCopy, readCaptions } from "@/lib/production/platform-copy";
 import { cancelScheduledAction, checkPublicationAction, publishContextAction, publishPostAction, unpublishPublicationAction, type Publication, type PublishContext } from "@/server/actions/publishing";
 import { confirm } from "@/components/ui/confirm";
-import { finishMediaUploadAction, mediaUploadTicketAction } from "@/server/actions/production";
 import type { ContentItem } from "@/types/domain";
 import { DrivePicker } from "./drive-picker";
 import { DeleteMediaDialog, Maximize2, MediaLightbox, MediaPreview, TileButton, Trash2, type TileAsset } from "./media-tile";
@@ -42,6 +42,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
   const [tab, setTab] = React.useState<"post" | "computer" | "drive">("post");
   const [assetIds, setAssetIds] = React.useState<string[] | null>(null); // selection order = carousel order
   const [local, setLocal] = React.useState<{ file: File; url: string; error: string | null } | null>(null);
+  const { upload: uploadMedia } = useMediaUpload(projectId);
   const [targets, setTargets] = React.useState<PublishTarget[]>(post.platform === "instagram" ? ["instagram"] : post.platform === "tiktok" ? ["tiktok"] : post.platform === "youtube" ? ["youtube"] : ["facebook"]);
   const [when, setWhen] = React.useState<"now" | "schedule">("now");
   const [youtubeVariant, setYoutubeVariant] = React.useState<"shorts" | "video">(() => defaultYouTubeVariant(readCaptions(post.platform_captions), post.format));
@@ -77,18 +78,14 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
   const pick = (file: File | undefined) => {
     if (!file) return;
     if (local) URL.revokeObjectURL(local.url);
-    setLocal({ file, url: URL.createObjectURL(file), error: validateLocalFile(file, t) });
+    // oversized videos are compressed before upload, so only the format is checked for them here
+    setLocal({ file, url: URL.createObjectURL(file), error: validateLocalFile(needsCompression(file) ? { type: file.type, size: 1 } : file, t) });
   };
   const keep = async () => {
     if (!local || local.error) return;
     setBusy("keep");
     try {
-      const ticket = await mediaUploadTicketAction(projectId, post.id, local.file.name, local.file.type, local.file.size);
-      if (!ticket.ok || !ticket.data) throw new Error(ticket.ok ? t("publish.prepareFailed") : ticket.error);
-      const { error } = await createClient().storage.from("production-media").uploadToSignedUrl(ticket.data.path, ticket.data.token, local.file, { contentType: local.file.type });
-      if (error) throw error;
-      const done = await finishMediaUploadAction(projectId, post.id, ticket.data.path, local.file.name, local.file.type);
-      if (!done.ok) throw new Error(done.error);
+      await uploadMedia(post.id, local.file); // videos over 50 MB are compressed in the browser first
       toast.success(t("publish.kept"));
       URL.revokeObjectURL(local.url);
       setLocal(null);

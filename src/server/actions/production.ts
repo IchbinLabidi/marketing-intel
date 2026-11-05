@@ -253,15 +253,15 @@ export async function mediaUploadTicketAction(projectId: string, id: string, nam
     return { ok: true, data: { path, token: data.token } };
   } catch (e) { return failure(e); }
 }
-export async function finishMediaUploadAction(projectId: string, id: string, path: string, name: string, mime: string): Promise<ActionResult> {
+export async function finishMediaUploadAction(projectId: string, id: string, path: string, name: string, mime: string): Promise<ActionResult<{ id: string }>> {
   try {
     const { db, item, user, t } = await editable(projectId, id);
     if (!path.startsWith(`${projectId}/${id}/`) || name.length > 200) throw new Error(t("actions.invalidUpload"));
     const { data: files, error: listError } = await db.storage.from("production-media").list(`${projectId}/${id}`, { search: path.split("/").pop() });
     if (listError || !files?.some((file) => file.name === path.split("/").pop())) throw new Error(t("actions.uploadIncomplete"));
-    const { error } = await db.from("content_assets").insert({ project_id: projectId, content_item_id: id, kind: "media", language: item.language || "fr", body: { path, name, mime }, created_by: user.id });
+    const { data: row, error } = await db.from("content_assets").insert({ project_id: projectId, content_item_id: id, kind: "media", language: item.language || "fr", body: { path, name, mime }, created_by: user.id }).select("id").single();
     if (error) { await db.storage.from("production-media").remove([path]); throw error; }
-    refresh(projectId); return { ok: true, message: t("actions.fileAttached") };
+    refresh(projectId); return { ok: true, data: { id: row.id as string }, message: t("actions.fileAttached") };
   } catch (e) { return failure(e); }
 }
 export async function removeMediaAction(projectId: string, id: string, assetId: string): Promise<ActionResult> {

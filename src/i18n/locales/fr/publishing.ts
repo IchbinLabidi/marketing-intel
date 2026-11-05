@@ -102,6 +102,15 @@ const publishing: Translation<typeof en> = {
     noThumbnail: "Pas de miniature",
     noFile: "Le média n’a pas de fichier",
   },
+  compress: {
+    downloading: "Téléchargement de {name} depuis Google Drive…",
+    working: "Compression de {name} pour passer sous 50 Mo… {percent} %",
+    uploading: "Envoi de {name}…",
+    done: "{name} compressée de {from} Mo à {to} Mo",
+    tooLong: "{name} est trop longue pour tenir sous 50 Mo avec une bonne qualité. Coupez-la ou divisez-la en plusieurs parties.",
+    failed: "{name} n’a pas pu être compressée dans ce navigateur ({error}). Essayez Chrome ou Edge, ou exportez-la sous 50 Mo.",
+    downloadFailed: "{name} n’a pas pu être téléchargée depuis Google Drive.",
+  },
 };
 
 export default publishing;

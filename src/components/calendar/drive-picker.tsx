@@ -7,9 +7,11 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { attachDriveFileAction, drivePickerAction, type DrivePickerState } from "@/server/actions/drive";
 import { useT } from "@/i18n/client";
+import { useMediaUpload } from "@/components/media/use-media-upload";
+import { needsCompression } from "@/lib/media/compress-video";
 
 // Minimal typing of the official Google Picker (https://developers.google.com/drive/picker).
-type PickerDoc = { id: string; name: string; mimeType: string };
+type PickerDoc = { id: string; name: string; mimeType: string; sizeBytes?: number | string };
 type PickerData = { action: string; docs?: PickerDoc[] };
 type GoogleNS = {
   picker: {
@@ -52,6 +54,7 @@ export function DrivePicker({ projectId, itemId, onPicking, onAttached, back = "
   const [state, setState] = React.useState<DrivePickerState | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const { uploadFromDrive } = useMediaUpload(projectId);
   React.useEffect(() => {
     let alive = true;
     drivePickerAction(projectId).then((r) => { if (!alive) return; if (r.ok) setState(r.data ?? null); else setError(r.error); });
@@ -78,6 +81,12 @@ export function DrivePicker({ projectId, itemId, onPicking, onAttached, back = "
           onPicking(false);
           const ids: string[] = [];
           for (const doc of data.docs.slice(0, 10)) {
+            // a video over the 50 MB publishing limit is downloaded, compressed in the browser and stored instead
+            if (needsCompression({ type: doc.mimeType, size: Number(doc.sizeBytes ?? 0) })) {
+              try { ids.push(await uploadFromDrive(itemId, doc, state.picker!.accessToken)); }
+              catch (e) { toast.error(t("drive.fileError", { name: doc.name, error: e instanceof Error ? e.message : String(e) })); }
+              continue;
+            }
             const r = await attachDriveFileAction(projectId, itemId, doc.id);
             if (!r.ok) toast.error(t("drive.fileError", { name: doc.name, error: r.error }));
             else if (r.data) ids.push(r.data.id);

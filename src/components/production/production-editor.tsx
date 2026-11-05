@@ -7,6 +7,7 @@ import { CalendarDays, Check, CheckCircle2, FileText, HardDrive, Laptop, History
 import { toast } from "sonner";
 import { MediaLightbox, MediaPreview, TileButton, Trash2, type TileAsset } from "@/components/calendar/media-tile";
 import { DrivePicker, isDrivePickerOpen } from "@/components/calendar/drive-picker";
+import { useMediaUpload } from "@/components/media/use-media-upload";
 import { Alert } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -20,8 +21,7 @@ import { BOARD, canWriteItem, changedFields, columnOf, FORMATS, isRTL, writingOf
 import { AI_OPERATIONS, CAPTION_OPERATIONS, type CaptionOperation, type ProductionInput } from "@/lib/validation/production";
 import { applyGenerated, AUTO_SETTINGS, COPY_PLATFORM_LABELS, COPY_PLATFORMS, effectiveSettings, readCaptions, type CopyPlatform, type CopySettings } from "@/lib/production/platform-copy";
 import { CaptionDraftDialog, draftFrom, PlatformCaptionsSection, visiblePlatforms, type CaptionDraftState } from "@/components/production/platform-captions";
-import { createClient } from "@/lib/supabase/client";
-import { addMediaLinkAction, commentProductionAction, finishMediaUploadAction, generateCaptionsAction, generateProductionAction, mediaUploadTicketAction, planProductionSlotAction, productionDetailsAction, removeMediaAction, restoreProductionAction, saveProductionAction, saveTemplateAction, scheduleProductionAction, transitionProductionAction } from "@/server/actions/production";
+import { addMediaLinkAction, commentProductionAction, generateCaptionsAction, generateProductionAction, planProductionSlotAction, productionDetailsAction, removeMediaAction, restoreProductionAction, saveProductionAction, saveTemplateAction, scheduleProductionAction, transitionProductionAction } from "@/server/actions/production";
 import type { ProductionDetails } from "@/server/services/production";
 import type { ProductionDraft } from "@/server/ai/production";
 import type { WorkspaceMember } from "@/server/services/workspaces";
@@ -45,6 +45,7 @@ function tabOf(platform: Platform | null | undefined, format: string | null | un
 }
 export function ProductionEditor(props: Props) {
   const { projectId, role, userId, members, tz, workflow } = props;
+  const { upload: uploadMedia } = useMediaUpload(projectId);
   const t = useT("production"); const td = useT("domain");
   // domain.platform has an "other" key, which the key type reads as a plural leaf: look platform names up by string
   const platformName = (p: string) => (td as (key: string) => string)(`platform.${p}`); const tc = useT("common"); const fmt = useFormatter();
@@ -138,13 +139,8 @@ export function ProductionEditor(props: Props) {
   });
   const upload = (file: File) => run("upload", async () => {
     if (!item || dirty) throw new Error(t("editor.errors.saveBeforeMedia"));
-    const ticket = await mediaUploadTicketAction(projectId, item.id, file.name, file.type, file.size);
-    if (!ticket.ok || !ticket.data) throw new Error(ticket.ok ? t("editor.errors.prepareUpload") : ticket.error);
-    const db = createClient();
-    const { error: uploadError } = await db.storage.from("production-media").uploadToSignedUrl(ticket.data.path, ticket.data.token, file, { contentType: file.type });
-    if (uploadError) throw uploadError;
-    const r = await finishMediaUploadAction(projectId, item.id, ticket.data.path, file.name, file.type);
-    if (!r.ok) throw new Error(r.error); await loadDetails(item.id, true); toast.success(r.message);
+    await uploadMedia(item.id, file); // videos over 50 MB are compressed in the browser first
+    await loadDetails(item.id, true); toast.success(t("actions.fileAttached"));
   });
   const applyDraft = () => {
     if (!draft) return;

@@ -100,6 +100,15 @@ const publishing = {
     noThumbnail: "No thumbnail",
     noFile: "Media has no file",
   },
+  compress: {
+    downloading: "Downloading {name} from Google Drive…",
+    working: "Compressing {name} to fit the 50 MB limit… {percent}%",
+    uploading: "Uploading {name}…",
+    done: "{name} compressed from {from} MB to {to} MB",
+    tooLong: "{name} is too long to fit under 50 MB at good quality. Trim it or split it into parts.",
+    failed: "{name} couldn't be compressed in this browser ({error}). Try Chrome or Edge, or export it under 50 MB.",
+    downloadFailed: "{name} couldn't be downloaded from Google Drive.",
+  },
 };
 
 export default publishing;
