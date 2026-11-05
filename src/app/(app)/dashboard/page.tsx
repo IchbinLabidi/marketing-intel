@@ -15,6 +15,8 @@ import { listChannels, listProjects } from "@/server/services/projects";
 import { getStrategyBundle, strategyCompleteness } from "@/server/services/strategy";
 import { isAIConfigured } from "@/server/ai/client";
 import { getT } from "@/i18n/server";
+import { StoragePanel } from "@/components/dashboard/storage-panel";
+import { getStorageUsage } from "@/server/services/storage-usage";
 
 export async function generateMetadata() {
   const t = await getT("dashboard");
@@ -35,6 +37,7 @@ export default async function DashboardPage() {
   );
   const firstName = user.fullName.split(" ")[0];
   const isAdmin = canAdmin(workspace.role);
+  const usage = isAdmin ? await getStorageUsage(workspace.id).catch(() => null) : null;
   // An empty workspace while the person belongs to a team that has projects: point them there.
   const otherWithProjects =
     projects.length === 0
@@ -163,6 +166,8 @@ export default async function DashboardPage() {
           </div>
         </section>
       )}
+
+      {usage ? <StoragePanel usage={usage} /> : null}
     </div>
   );
 }

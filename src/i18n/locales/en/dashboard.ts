@@ -61,6 +61,22 @@ const dashboard = {
     renamed: "Workspace renamed",
     renameFailed: "Could not rename workspace",
   },
+  storage: {
+    title: "Storage",
+    description: "How much of your Supabase Pro plan the platform uses. Visible to owners and admins.",
+    database: "Database",
+    databaseNote: "Strategy, content, history and settings of all workspaces",
+    files: "Files",
+    filesNote: "{count} uploaded files in total · {workspace} in this workspace",
+    ofPlan: "of {limit} included · {percent}%",
+    biggestTables: "Largest tables",
+    byKind: "By kind",
+    bucket: { media: "Content media", imports: "Imported calendars" },
+    fileCount: { one: "{count} file", other: "{count} files" },
+    noFiles: "No files yet",
+    footnote: "Videos over 50 MB are compressed before upload, and the spend cap stops usage at the plan limits instead of billing extra.",
+    units: { B: "B", KB: "KB", MB: "MB", GB: "GB" },
+  },
 };
 
 export default dashboard;

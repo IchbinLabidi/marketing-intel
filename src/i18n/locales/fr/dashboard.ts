@@ -62,6 +62,22 @@ const dashboard: Translation<typeof en> = {
     renamed: "Espace de travail renommé",
     renameFailed: "Impossible de renommer l’espace de travail",
   },
+  storage: {
+    title: "Stockage",
+    description: "La part de votre plan Supabase Pro utilisée par la plateforme. Visible par les propriétaires et administrateurs.",
+    database: "Base de données",
+    databaseNote: "Stratégie, contenus, historique et réglages de tous les espaces",
+    files: "Fichiers",
+    filesNote: "{count} fichiers envoyés au total · {workspace} dans cet espace",
+    ofPlan: "sur {limit} inclus · {percent} %",
+    biggestTables: "Tables les plus lourdes",
+    byKind: "Par type",
+    bucket: { media: "Médias des contenus", imports: "Calendriers importés" },
+    fileCount: { one: "{count} fichier", other: "{count} fichiers" },
+    noFiles: "Aucun fichier pour l’instant",
+    footnote: "Les vidéos de plus de 50 Mo sont compressées avant l’envoi, et le plafond de dépenses arrête l’usage aux limites du plan au lieu de facturer en plus.",
+    units: { B: "o", KB: "Ko", MB: "Mo", GB: "Go" },
+  },
 };
 
 export default dashboard;
