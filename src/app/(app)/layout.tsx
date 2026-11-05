@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app/sidebar";
 import { LanguageSwitcher } from "@/components/app/language-switcher";
 import { ThemeSwitcher } from "@/components/app/theme-switcher";
+import { LiveNotifications } from "@/components/team/live-notifications";
 import { ACTIVE_PROJECT_COOKIE } from "@/lib/supabase/proxy";
 import { requireUser } from "@/server/services/session";
 import { getActiveWorkspace, listWorkspaces } from "@/server/services/workspaces";
@@ -28,6 +29,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
+      <LiveNotifications userId={user.id} />
       <div className="contents print:hidden">
       <AppSidebar
         user={user}

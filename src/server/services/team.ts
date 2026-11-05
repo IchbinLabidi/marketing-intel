@@ -185,16 +185,21 @@ export async function countOpenTasks(projectIds: string[], userId: string): Prom
 // ---------------------------------------------------------------------------
 export type Notification = {
   id: string; kind: string; project_id: string | null; content_item_id: string | null; actor_id: string | null; body: string; read_at: string | null; created_at: string;
+  /** Card title, who acted and what changed (migration 0031), so the text can be shown in the reader's language. */
+  meta?: Record<string, unknown> | null;
 };
 
 export async function listNotifications(workspaceId: string, limit = 50): Promise<Notification[]> {
   const db = await createClient();
-  const { data, error } = await db.from("notifications").select("id, kind, project_id, content_item_id, actor_id, body, read_at, created_at").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(limit);
+  const query = (columns: string) => db.from("notifications").select(columns).eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(limit);
+  let { data, error } = await query("id, kind, project_id, content_item_id, actor_id, body, meta, read_at, created_at");
+  // Before migration 0031 there is no meta column: show the stored text instead.
+  if (error && /meta/.test(error.message)) ({ data, error } = await query("id, kind, project_id, content_item_id, actor_id, body, read_at, created_at"));
   if (error) {
     if (isMissingTeamSchema(error)) return [];
     throw error;
   }
-  return data as Notification[];
+  return data as unknown as Notification[];
 }
 
 export const unreadNotificationCount = cache(async (workspaceId: string): Promise<number> => {
