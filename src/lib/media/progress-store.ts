@@ -47,3 +47,13 @@ export function useMediaJob() {
     () => null,
   );
 }
+
+/**
+ * Dialogs underneath treat clicks on the progress window as "outside" and would close. Radix handles that after the
+ * click, when the clicked button may already be gone (minimize swaps the window for the card), so the window marks
+ * its own pointer presses and dialogs check the mark.
+ */
+let lastPress = 0;
+export const markMediaPress = () => { lastPress = Date.now(); };
+export const isMediaPress = (target: EventTarget | null) =>
+  (target instanceof Element && Boolean(target.closest("[data-media-progress]"))) || Date.now() - lastPress < 1500;

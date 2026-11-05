@@ -5,12 +5,13 @@ import { Dialog as DialogPrimitive } from "radix-ui";
 import { X } from "lucide-react";
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
+import { isMediaPress } from "@/lib/media/progress-store";
 
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
 const DialogClose = DialogPrimitive.Close;
 
-function DialogContent({ className, children, ...props }: React.ComponentProps<typeof DialogPrimitive.Content>) {
+function DialogContent({ className, children, onInteractOutside, ...props }: React.ComponentProps<typeof DialogPrimitive.Content>) {
   const t = useT("common");
   return (
     <DialogPrimitive.Portal>
@@ -21,6 +22,11 @@ function DialogContent({ className, children, ...props }: React.ComponentProps<t
           className,
         )}
         {...props}
+        onInteractOutside={(e) => {
+          // clicks on the media progress window/card (outside every dialog) must not close the dialog underneath
+          if (isMediaPress(e.target)) e.preventDefault();
+          else onInteractOutside?.(e);
+        }}
       >
         {children}
         <DialogPrimitive.Close className="absolute right-3.5 top-3.5 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">

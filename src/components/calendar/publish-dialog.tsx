@@ -83,6 +83,17 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
   };
   const keep = async () => {
     if (!local || local.error) return;
+    if (needsCompression(local.file)) {
+      // compression runs in the background (progress window): the dialog stays usable meanwhile
+      const chosen = local;
+      setLocal(null);
+      setTab("post");
+      uploadMedia(post.id, chosen.file)
+        .then(async () => { toast.success(t("publish.kept")); setAssetIds(null); await load(); })
+        .catch((e) => toast.error(e instanceof Error ? e.message : t("publish.uploadFailed")))
+        .finally(() => URL.revokeObjectURL(chosen.url));
+      return;
+    }
     setBusy("keep");
     try {
       await uploadMedia(post.id, local.file); // videos over 50 MB are compressed in the browser first

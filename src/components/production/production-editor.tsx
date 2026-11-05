@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { MediaLightbox, MediaPreview, TileButton, Trash2, type TileAsset } from "@/components/calendar/media-tile";
 import { DrivePicker, isDrivePickerOpen } from "@/components/calendar/drive-picker";
 import { useMediaUpload } from "@/components/media/use-media-upload";
+import { needsCompression } from "@/lib/media/compress-video";
 import { Alert } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -137,11 +138,20 @@ export function ProductionEditor(props: Props) {
     const r = await transitionProductionAction(projectId, item.id, item.revision, stage, decision, reviewNote);
     if (!r.ok) throw new Error(r.error); if (r.data) accept(r.data); setReviewNote(""); toast.success(r.message);
   });
-  const upload = (file: File) => run("upload", async () => {
-    if (!item || dirty) throw new Error(t("editor.errors.saveBeforeMedia"));
-    await uploadMedia(item.id, file); // videos over 50 MB are compressed in the browser first
-    await loadDetails(item.id, true); toast.success(t("actions.fileAttached"));
-  });
+  const upload = (file: File) => {
+    // videos over 50 MB are compressed in the browser first; that runs in the background (progress window) so the
+    // editor stays usable and can even be closed meanwhile
+    if (item && !dirty && needsCompression(file)) {
+      const id = item.id;
+      uploadMedia(id, file).then(() => loadDetails(id, true)).then(() => toast.success(t("actions.fileAttached")), (e) => toast.error(e instanceof Error ? e.message : t("editor.errors.requestFailed")));
+      return;
+    }
+    return run("upload", async () => {
+      if (!item || dirty) throw new Error(t("editor.errors.saveBeforeMedia"));
+      await uploadMedia(item.id, file);
+      await loadDetails(item.id, true); toast.success(t("actions.fileAttached"));
+    });
+  };
   const applyDraft = () => {
     if (!draft) return;
     const variants = { ...form.language_variants, [form.language]: writingOf(form) };

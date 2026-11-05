@@ -6,7 +6,7 @@ import { Check, CloudDownload, CloudUpload, Film, Loader2, Maximize2, Minimize2,
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { mediaJob, useMediaJob, type MediaJob } from "@/lib/media/progress-store";
+import { markMediaPress, mediaJob, useMediaJob, type MediaJob } from "@/lib/media/progress-store";
 import { MAX_FILE_BYTES } from "@/lib/publishing/rules";
 import { useT } from "@/i18n/client";
 
@@ -59,9 +59,11 @@ export function MediaProgressOverlay() {
   if (job.minimized) {
     return createPortal(
       <div
+        data-media-progress=""
+        onPointerDownCapture={markMediaPress}
         role="status"
         aria-live="polite"
-        className="fixed bottom-4 right-4 z-[100] w-[min(360px,calc(100vw-32px))] rounded-xl border bg-card p-3 text-card-foreground shadow-xl"
+        className="pointer-events-auto fixed bottom-4 right-4 z-[100] w-[min(360px,calc(100vw-32px))] rounded-xl border bg-card p-3 text-card-foreground shadow-xl"
       >
         <div className="flex items-center gap-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -90,7 +92,7 @@ export function MediaProgressOverlay() {
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="media-job-title">
+    <div className="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="media-job-title" data-media-progress="" onPointerDownCapture={markMediaPress}>
       <div className="w-full max-w-md rounded-2xl border bg-card p-6 text-card-foreground shadow-2xl">
         <div className="flex items-start gap-4">
           <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
