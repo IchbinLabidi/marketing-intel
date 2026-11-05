@@ -35,8 +35,9 @@ export async function listIdeas(projectId: string, f: BacklogFilters, page = 0):
   let q = db.from("content_items").select("*", { count: "exact" }).eq("project_id", projectId);
   q = f.archived ? q.not("archived_at", "is", null) : q.is("archived_at", null);
   const planning = f.planning ?? "backlog";
-  // the Backlog = ideas not yet dated nor sent to Production; they show nowhere else
-  if (planning === "backlog") q = q.is("scheduled_date", null).or("production_stage.is.null,production_stage.eq.idea");
+  // the Backlog = ideas not yet dated nor sent to Production; they show nowhere else (cards moved back to Idea on
+  // the board stay on the board: on_board)
+  if (planning === "backlog") q = q.is("scheduled_date", null).eq("on_board", false).or("production_stage.is.null,production_stage.eq.idea");
   if (planning === "planned") q = q.not("scheduled_date", "is", null).neq("status", "published");
   if (planning === "all") q = q.neq("status", "published");
   if (planning === "published") q = q.eq("status", "published");

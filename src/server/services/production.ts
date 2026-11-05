@@ -8,9 +8,10 @@ export async function listProduction(projectId: string): Promise<ProductionItem[
   const rows: ProductionItem[] = [];
   // Fetch every page: Supabase's default 1,000-row cap must not hide assigned tasks.
   for (let from = 0; ; from += 500) {
-    // Backlog ideas (Idea stage, no calendar date) and archived ideas live in the Ideas Backlog, not on the board
+    // Backlog ideas (Idea stage, no calendar date, never on the board) and archived ideas live in the Ideas Backlog;
+    // a card moved back to Idea from the board stays on the board (on_board)
     const { data, error } = await db.from("content_items").select("*").eq("project_id", projectId).is("archived_at", null)
-      .or("production_stage.neq.idea,scheduled_date.not.is.null").order("created_at", { ascending: false }).order("id").range(from, from + 499);
+      .or("production_stage.neq.idea,scheduled_date.not.is.null,on_board.is.true").order("created_at", { ascending: false }).order("id").range(from, from + 499);
     if (error) throw error;
     rows.push(...data as ProductionItem[]);
     if (data.length < 500) break;

@@ -278,7 +278,7 @@ export async function unplanIdeasAction(projectId: string, ids: string[]): Promi
   let moved = 0;
   for (let k = 0; k < list.length; k += BULK_MAX) {
     const batch = list.slice(k, k + BULK_MAX);
-    const { error, count } = await db.from("content_items").update({ scheduled_date: null, scheduled_time: null, scheduled_at: null, production_stage: "idea", status: "idea" }, { count: "exact" })
+    const { error, count } = await db.from("content_items").update({ scheduled_date: null, scheduled_time: null, scheduled_at: null, production_stage: "idea", status: "idea", on_board: false }, { count: "exact" })
       .eq("project_id", projectId).in("id", batch).not("status", "in", "(published,scheduled)");
     if (error) return fail(error, t("actions.unplanFailed"));
     moved += count ?? 0;

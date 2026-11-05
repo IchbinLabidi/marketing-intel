@@ -110,16 +110,7 @@ export async function transitionProductionAction(projectId: string, id: string, 
     const { db, t } = await access(projectId);
     const { data, error } = await db.rpc("production_transition", { p_project: projectId, p_id: id, p_revision: revision, p_stage: stage, p_decision: decision ?? null, p_comment: comment });
     if (error) throw error;
-    const row = data as ProductionItem;
-    // Moving a card back to Idea sends it back to the Backlog, so its calendar date is dropped (as "Back to Backlog" does).
-    if (stage === "idea" && !decision && row.status !== "published" && row.status !== "scheduled"
-      && (row.scheduled_date || row.scheduled_time || row.scheduled_at || row.status !== "idea")) {
-      const { data: fresh, error: clearError } = await db.from("content_items").update({ scheduled_date: null, scheduled_time: null, scheduled_at: null, status: "idea" })
-        .eq("project_id", projectId).eq("id", id).eq("revision", row.revision).select("*").maybeSingle();
-      if (clearError) throw clearError;
-      refresh(projectId); return { ok: true, data: (fresh ?? row) as ProductionItem, message: t("actions.backToBacklog") };
-    }
-    refresh(projectId); return { ok: true, data: row, message: decision ? t("actions.decisionRecorded") : t("actions.stageUpdated") };
+    refresh(projectId); return { ok: true, data: data as ProductionItem, message: decision ? t("actions.decisionRecorded") : t("actions.stageUpdated") };
   } catch (e) { return failure(e); }
 }
 export async function productionDetailsAction(projectId: string, id: string): Promise<ActionResult<ProductionDetails>> {
@@ -164,7 +155,7 @@ export async function opportunityToProductionAction(projectId: string, opportuni
     const item = await insertPost(projectId, user.id, {
       title: (opp.title || opp.idea).slice(0, 300), platform: opp.platform ?? "instagram", format: opp.format ?? "Social caption",
       pillar_id: opp.pillar_id, funnel_stage: opp.funnel_stage, hook: opp.hook, cta: opp.cta, opportunity_id: opp.id,
-      marketing_objective: opp.marketing_objective, status: "idea", idea_source: "opportunity",
+      marketing_objective: opp.marketing_objective, status: "idea", idea_source: "opportunity", on_board: true,
       creative_brief: [t("opportunityBrief.rationale", { text: opp.rationale }), t("opportunityBrief.angle", { text: opp.creative_angle ?? "" }), t("opportunityBrief.audience", { text: opp.target_audience ?? "" }), t("opportunityBrief.evidence"), ...evidenceLines(t, opp.evidence)].join("\n").slice(0, 10000),
       ...{ target_audience: opp.target_audience, language: project.default_language, assignee_id: user.id },
     });

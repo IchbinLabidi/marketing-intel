@@ -50,7 +50,7 @@ export function ProductionApp(props: Props) {
   // ideas and briefs placed on the calendar can go back to the Backlog (scheduled and published posts can't)
   // Same rule as the editor and the database: "edit any content" lets editors move cards they don't own.
   const canWrite = (i: ProductionItem) => canWriteItem(role, userId, i, { editAny: props.perms.includes("content.edit_any") });
-  const canUnplan = (i: ProductionItem) => Boolean(i.scheduled_date) && !["published", "scheduled"].includes(i.status) && canWrite(i);
+  const canUnplan = (i: ProductionItem) => (Boolean(i.scheduled_date) || i.production_stage === "idea") && !["published", "scheduled"].includes(i.status) && canWrite(i);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor));
   const label = (s: ProductionStage) => workflow.labels[s] || t(`stage.${s}`);
   const name = (id: string | null) => members.find((m) => m.user_id === id)?.full_name || (id ? t("people.teamMember") : t("people.unassigned"));
