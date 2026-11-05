@@ -2,14 +2,16 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Check, LogOut, Pencil, UserMinus, X } from "lucide-react";
+import { Check, KeyRound, LogOut, Pencil, UserMinus, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { confirm } from "@/components/ui/confirm";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { canGrant } from "@/lib/permissions";
-import { removeMemberAction, renameMemberAction, setMemberRoleAction } from "@/server/actions/team";
+import { removeMemberAction, renameMemberAction, setMemberRoleAction, updateMemberCredentialsAction } from "@/server/actions/team";
 import type { TeamMember, TeamRole } from "@/server/services/team";
 import { PersonChip } from "./task-badges";
 import { useT } from "@/i18n/client";
@@ -22,6 +24,7 @@ export function MembersTable({ members, roles, perms, userId }: { members: TeamM
   const [busy, setBusy] = React.useState<string | null>(null);
   const [editing, setEditing] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState("");
+  const [credentialsFor, setCredentialsFor] = React.useState<TeamMember | null>(null);
   const roleOf = (m: TeamMember) => roles.find((r) => r.id === m.role_id);
 
   const startRename = (m: TeamMember) => {
@@ -133,6 +136,13 @@ export function MembersTable({ members, roles, perms, userId }: { members: TeamM
                 )}
               </div>
               <div className="w-8">
+                {editable ? (
+                  <Button variant="ghost" size="icon-sm" aria-label={t("members.credentials", { name: m.full_name || t("members.memberFallback") })} title={t("members.credentialsShort")} disabled={busy === m.user_id} onClick={() => setCredentialsFor(m)}>
+                    <KeyRound />
+                  </Button>
+                ) : null}
+              </div>
+              <div className="w-8">
                 {editable || (self && !owner) ? (
                   <Button variant="ghost" size="icon-sm" aria-label={self ? t("members.leave") : t("members.remove")} disabled={busy === m.user_id} onClick={() => remove(m)}>
                     {self ? <LogOut /> : <UserMinus />}
@@ -143,6 +153,76 @@ export function MembersTable({ members, roles, perms, userId }: { members: TeamM
           );
         })}
       </ul>
+      <CredentialsDialog member={credentialsFor} onClose={() => setCredentialsFor(null)} />
     </div>
+  );
+}
+
+function CredentialsDialog({ member, onClose }: { member: TeamMember | null; onClose: () => void }) {
+  return (
+    <Dialog open={Boolean(member)} onOpenChange={(open) => (!open ? onClose() : null)}>
+      <DialogContent>{member ? <CredentialsForm key={member.user_id} member={member} onClose={onClose} /> : null}</DialogContent>
+    </Dialog>
+  );
+}
+
+function CredentialsForm({ member, onClose }: { member: TeamMember; onClose: () => void }) {
+  const t = useT("team");
+  const [email, setEmail] = React.useState(member.email ?? "");
+  const [password, setPassword] = React.useState("");
+  const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [errors, setErrors] = React.useState<{ email?: string; password?: string; confirm?: string }>({});
+  const [saving, setSaving] = React.useState(false);
+
+  const name = member.full_name || member.email || t("members.memberFallback");
+  const emailChanged = email.trim().toLowerCase() !== (member.email ?? "").toLowerCase();
+  const canSave = !saving && (emailChanged || password.length > 0);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password && password !== confirmPassword) return setErrors({ confirm: t("errors.passwordMismatch") });
+    setSaving(true);
+    const r = await updateMemberCredentialsAction(member.user_id, { email: emailChanged ? email.trim() : "", password });
+    setSaving(false);
+    if (r.ok) {
+      toast.success(r.message);
+      onClose();
+    } else if (r.fieldErrors?.email || r.fieldErrors?.password) {
+      setErrors({ email: r.fieldErrors.email, password: r.fieldErrors.password });
+    } else toast.error(r.error);
+  };
+
+  return (
+    <form className="grid gap-5" onSubmit={save}>
+      <DialogHeader>
+        <DialogTitle>{t("credentials.title", { name })}</DialogTitle>
+        <DialogDescription>{t("credentials.description")}</DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-2">
+        <Label htmlFor="member-email">{t("credentials.email")}</Label>
+        <Input id="member-email" type="email" autoComplete="off" value={email} disabled={saving} onChange={(e) => setEmail(e.target.value)} aria-invalid={Boolean(errors.email)} />
+        {errors.email ? <p className="text-xs text-destructive">{errors.email}</p> : <p className="text-xs text-muted-foreground">{t("credentials.emailHint")}</p>}
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="member-password">{t("credentials.password")}</Label>
+        <Input id="member-password" type="password" autoComplete="new-password" placeholder={t("credentials.passwordPlaceholder")} value={password} maxLength={72} disabled={saving} onChange={(e) => setPassword(e.target.value)} aria-invalid={Boolean(errors.password)} />
+        {errors.password ? <p className="text-xs text-destructive">{errors.password}</p> : <p className="text-xs text-muted-foreground">{t("credentials.passwordHint")}</p>}
+      </div>
+      {password ? (
+        <div className="grid gap-2">
+          <Label htmlFor="member-password-confirm">{t("credentials.confirmPassword")}</Label>
+          <Input id="member-password-confirm" type="password" autoComplete="new-password" value={confirmPassword} maxLength={72} disabled={saving} onChange={(e) => setConfirmPassword(e.target.value)} aria-invalid={Boolean(errors.confirm)} />
+          {errors.confirm ? <p className="text-xs text-destructive">{errors.confirm}</p> : null}
+        </div>
+      ) : null}
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+          {t("members.cancel")}
+        </Button>
+        <Button type="submit" disabled={!canSave}>
+          {t("credentials.save")}
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }
