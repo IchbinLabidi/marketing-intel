@@ -23,7 +23,10 @@ export function describeSocialError(e: unknown) {
     if (e.kind === "rate_limit") return `${e.provider}: rate limit reached. The next sync will continue.`;
     return `${e.provider}: ${e.message}`;
   }
-  return e instanceof Error ? e.message : "Unknown error";
+  if (e instanceof Error) return e.message;
+  // Supabase/PostgREST errors are plain objects, not Error instances: show their message instead of hiding it.
+  if (e && typeof e === "object" && "message" in e && typeof e.message === "string" && e.message) return e.message;
+  return "Unknown error";
 }
 
 /**

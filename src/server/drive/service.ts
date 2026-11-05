@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { readSocialTokens, storeSocialTokens } from "@/server/services/social";
 import { SocialApiError } from "@/server/social/http";
 import { driveT, refreshDriveToken } from "./google";
@@ -22,12 +23,17 @@ export async function getDriveConnection(projectId: string): Promise<DriveConnec
  * never leaves the server; only short-lived access tokens are used.
  */
 export async function driveAccessToken(db: SupabaseClient, conn: DriveConnection, translator?: TFor<"calendar">): Promise<string> {
-  const tokens = await readSocialTokens(db, conn.id);
+  // Callers have already checked the user's access (the connection was read with their session, and attaching
+  // needs calendar.edit). The token RPCs require intelligence.edit, which editors don't have, so tokens are read
+  // and refreshed with the service role. Only a short-lived access token ever leaves the server.
+  const admin = createAdminClient();
+  const store = admin ?? db;
+  const tokens = await readSocialTokens(store, conn.id, Boolean(admin));
   const fresh = conn.token_expires_at && Date.parse(conn.token_expires_at) > Date.now() + 5 * 60_000;
   if (tokens.access && fresh) return tokens.access;
   if (!tokens.refresh) throw new SocialApiError(driveT(translator)("driveApi.expired"), 401, "Google Drive", "auth");
   const t = await refreshDriveToken(tokens.refresh);
-  await storeSocialTokens(db, conn.id, { access: t.access, refresh: t.refresh, refreshExpiresAt: null });
-  await db.from("social_connections").update({ token_expires_at: t.expiresAt, status: "connected", last_error: null }).eq("id", conn.id);
+  await storeSocialTokens(store, conn.id, { access: t.access, refresh: t.refresh, refreshExpiresAt: null }, Boolean(admin));
+  await store.from("social_connections").update({ token_expires_at: t.expiresAt, status: "connected", last_error: null }).eq("id", conn.id);
   return t.access;
 }
