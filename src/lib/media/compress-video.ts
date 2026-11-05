@@ -20,11 +20,24 @@ export const needsCompression = (file: { type: string; size: number }) => file.t
  * Nothing leaves the computer until the smaller file is ready. Resolves with an MP4 File.
  */
 export async function compressVideo(file: Blob, name: string, onProgress?: (share: number) => void, onCancelable?: (cancel: () => void) => void): Promise<File> {
+  // cancelable from the start: preparing the encoder can take a while before the first frame
   let canceled = false;
+  let current: Conversion | null = null;
+  let stop: (e: Error) => void = () => {};
+  const stopped = new Promise<never>((_, reject) => { stop = reject; });
+  stopped.catch(() => {});
+  // every wait races the cancel button, so Cancel answers at once even while the encoder is being prepared
+  const orCancel = <T,>(p: Promise<T>) => Promise.race([p, stopped]);
+  onCancelable?.(() => {
+    canceled = true;
+    if (current) void current.cancel();
+    stop(new CompressionCanceledError());
+  });
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
-  const duration = await input.computeDuration();
+  const duration = await orCancel(input.computeDuration());
+  if (canceled) throw new CompressionCanceledError();
   if (!duration || !Number.isFinite(duration)) throw new Error("Unreadable video");
-  const track = await input.getPrimaryVideoTrack();
+  const track = await orCancel(input.getPrimaryVideoTrack());
   const w = track?.displayWidth ?? 0;
   const h = track?.displayHeight ?? 0;
   const scale = Math.max(w, h) > LONG_SIDE ? LONG_SIDE / Math.max(w, h) : 1;
@@ -34,17 +47,18 @@ export async function compressVideo(file: Blob, name: string, onProgress?: (shar
   for (let attempt = 0; attempt < 3; attempt++) {
     if (videoBps < MIN_VIDEO_BPS) throw new VideoTooLongError();
     const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target: new BufferTarget() });
-    const conversion = await Conversion.init({
+    const conversion = await orCancel(Conversion.init({
       input: attempt === 0 ? input : new Input({ source: new BlobSource(file), formats: ALL_FORMATS }),
       output,
       video: { codec: "avc", quality: new Quality({ bitrate: videoBps, bitrateMode: "constant" }), ...size },
       audio: { codec: "aac", quality: new Quality({ bitrate: AUDIO_BPS }) },
-    });
+    }));
     if (!conversion.isValid) throw new Error("This video can't be converted in this browser");
+    if (canceled) throw new CompressionCanceledError();
+    current = conversion;
     conversion.onProgress = (p) => onProgress?.(Math.min(1, p));
-    onCancelable?.(() => { canceled = true; void conversion.cancel(); });
     try {
-      await conversion.execute();
+      await orCancel(conversion.execute());
     } catch (e) {
       if (canceled) throw new CompressionCanceledError();
       throw e;
