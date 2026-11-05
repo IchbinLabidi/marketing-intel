@@ -161,7 +161,8 @@ export function MembersTable({ members, roles, perms, userId }: { members: TeamM
 function CredentialsDialog({ member, onClose }: { member: TeamMember | null; onClose: () => void }) {
   return (
     <Dialog open={Boolean(member)} onOpenChange={(open) => (!open ? onClose() : null)}>
-      <DialogContent>{member ? <CredentialsForm key={member.user_id} member={member} onClose={onClose} /> : null}</DialogContent>
+      {/* Clicking a toast (outside the dialog) must not close it and hide the result. */}
+      <DialogContent onInteractOutside={(e) => (e.target instanceof Element && e.target.closest("[data-sonner-toaster]") ? e.preventDefault() : undefined)}>{member ? <CredentialsForm key={member.user_id} member={member} onClose={onClose} /> : null}</DialogContent>
     </Dialog>
   );
 }
@@ -171,7 +172,7 @@ function CredentialsForm({ member, onClose }: { member: TeamMember; onClose: () 
   const [email, setEmail] = React.useState(member.email ?? "");
   const [password, setPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
-  const [errors, setErrors] = React.useState<{ email?: string; password?: string; confirm?: string }>({});
+  const [errors, setErrors] = React.useState<{ email?: string; password?: string; confirm?: string; form?: string }>({});
   const [saving, setSaving] = React.useState(false);
 
   const name = member.full_name || member.email || t("members.memberFallback");
@@ -182,14 +183,21 @@ function CredentialsForm({ member, onClose }: { member: TeamMember; onClose: () 
     e.preventDefault();
     if (password && password !== confirmPassword) return setErrors({ confirm: t("errors.passwordMismatch") });
     setSaving(true);
-    const r = await updateMemberCredentialsAction(member.user_id, { email: emailChanged ? email.trim() : "", password });
+    setErrors({});
+    let r: Awaited<ReturnType<typeof updateMemberCredentialsAction>>;
+    try {
+      r = await updateMemberCredentialsAction(member.user_id, { email: emailChanged ? email.trim() : "", password });
+    } catch {
+      r = { ok: false, error: t("errors.generic") };
+    }
     setSaving(false);
+    // Only a successful save closes the dialog; every refusal stays visible inside it.
     if (r.ok) {
       toast.success(r.message);
       onClose();
-    } else if (r.fieldErrors?.email || r.fieldErrors?.password) {
-      setErrors({ email: r.fieldErrors.email, password: r.fieldErrors.password });
-    } else toast.error(r.error);
+      return;
+    }
+    setErrors({ email: r.fieldErrors?.email, password: r.fieldErrors?.password, form: r.fieldErrors?.email || r.fieldErrors?.password ? undefined : r.error });
   };
 
   return (
@@ -214,6 +222,11 @@ function CredentialsForm({ member, onClose }: { member: TeamMember; onClose: () 
           <Input id="member-password-confirm" type="password" autoComplete="new-password" value={confirmPassword} maxLength={72} disabled={saving} onChange={(e) => setConfirmPassword(e.target.value)} aria-invalid={Boolean(errors.confirm)} />
           {errors.confirm ? <p className="text-xs text-destructive">{errors.confirm}</p> : null}
         </div>
+      ) : null}
+      {errors.form ? (
+        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
+          {errors.form}
+        </p>
       ) : null}
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onClose} disabled={saving}>

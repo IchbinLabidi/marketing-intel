@@ -167,7 +167,16 @@ export async function updateMemberCredentialsAction(userId: string, input: { ema
     const { data: memberships, error: mErr } = await admin.from("workspace_members").select("workspace_id").eq("user_id", userId);
     if (mErr) throw mErr;
     const others = (memberships ?? []).map((m) => m.workspace_id as string).filter((id) => id !== ws.id);
-    const managed = await Promise.all(others.map((id) => hasPermission(id, "team.manage")));
+    // A workspace where the person is the only member gives nobody else's access away (invited sign-ups
+    // used to get an empty one of their own), so only shared workspaces you don't manage block the change.
+    const { data: otherRows, error: oErr } = others.length
+      ? await admin.from("workspace_members").select("workspace_id").in("workspace_id", others)
+      : { data: [], error: null };
+    if (oErr) throw oErr;
+    const counts = new Map<string, number>();
+    for (const r of otherRows ?? []) counts.set(r.workspace_id as string, (counts.get(r.workspace_id as string) ?? 0) + 1);
+    const shared = others.filter((id) => (counts.get(id) ?? 0) > 1);
+    const managed = await Promise.all(shared.map((id) => hasPermission(id, "team.manage")));
     if (managed.some((ok) => !ok)) return { ok: false, error: t("errors.otherWorkspaces") };
 
     const email = parsed.data.email || undefined;
