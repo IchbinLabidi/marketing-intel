@@ -114,6 +114,7 @@ const publishing: Translation<typeof en> = {
     cancel: "Annuler",
     background: "Continuer en arrière-plan",
     expand: "Afficher le détail",
+    minimize: "Réduire",
     canceled: "La compression de {name} a été annulée.",
     done: "{name} compressée de {from} Mo à {to} Mo",
     tooLong: "{name} est trop longue pour tenir sous 50 Mo avec une bonne qualité. Coupez-la ou divisez-la en plusieurs parties.",

@@ -112,6 +112,7 @@ const publishing = {
     cancel: "Cancel",
     background: "Continue in background",
     expand: "Show details",
+    minimize: "Minimize",
     canceled: "Compression of {name} was canceled.",
     done: "{name} compressed from {from} MB to {to} MB",
     tooLong: "{name} is too long to fit under 50 MB at good quality. Trim it or split it into parts.",

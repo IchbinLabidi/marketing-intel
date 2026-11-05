@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { Check, CloudDownload, CloudUpload, Film, Loader2, Maximize2, Minimize2, PanelBottomClose, X } from "lucide-react";
+import { Check, CloudDownload, CloudUpload, Film, Loader2, Maximize2, Minimize2, Minus, PanelBottomClose, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
@@ -103,6 +103,9 @@ export function MediaProgressOverlay() {
               <span className="truncate">{job.name}</span>
             </p>
           </div>
+          <Button size="icon-sm" variant="ghost" className="-mr-2 -mt-1 shrink-0" aria-label={t("compress.minimize")} title={t("compress.minimize")} onClick={() => mediaJob.update({ minimized: true })}>
+            <Minus />
+          </Button>
         </div>
 
         <div className="mt-6 flex items-end justify-between gap-3">
