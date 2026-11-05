@@ -143,6 +143,29 @@ export async function publishInstagram(opts: { t: T; igUserId: string; pageToken
   return { postId: published.id, url: info.permalink ?? null, scheduledFor: null, containerId };
 }
 
+/**
+ * Whether a post Facebook was asked to schedule is live now, and its link. Facebook publishes scheduled posts itself
+ * and never tells us, so this asks. The id is a feed post, a video (Reels included) or a photo, depending on the media.
+ */
+export async function facebookPostStatus(opts: { t: T; postId: string; pageToken: string }): Promise<{ published: boolean; url: string | null }> {
+  const { t, postId, pageToken } = opts;
+  const absolute = (u: string | undefined) => (u ? (u.startsWith("http") ? u : `https://www.facebook.com${u.startsWith("/") ? "" : "/"}${u}`) : null);
+  const unknownField = (e: unknown) => e instanceof MetaApiError && e.code === 100;
+  try {
+    const p = await graphGetJson<{ is_published?: boolean; permalink_url?: string }>(t, postId, { fields: "is_published,permalink_url" }, pageToken);
+    return { published: p.is_published === true, url: absolute(p.permalink_url) };
+  } catch (e) { if (!unknownField(e)) throw e; }
+  try {
+    const v = await graphGetJson<{ published?: boolean; permalink_url?: string }>(t, postId, { fields: "published,permalink_url" }, pageToken);
+    return { published: v.published === true, url: absolute(v.permalink_url) };
+  } catch (e) { if (!unknownField(e)) throw e; }
+  // a photo: its feed post says whether it is out
+  const ph = await graphGetJson<{ page_story_id?: string }>(t, postId, { fields: "page_story_id" }, pageToken);
+  if (!ph.page_story_id) return { published: false, url: null };
+  const p = await graphGetJson<{ is_published?: boolean; permalink_url?: string }>(t, ph.page_story_id, { fields: "is_published,permalink_url" }, pageToken);
+  return { published: p.is_published === true, url: absolute(p.permalink_url) };
+}
+
 /** permanent errors aren't retried automatically; transient ones can be retried with backoff. */
 export function classifyMetaError(e: unknown, t: T): { kind: "auth" | "permanent" | "transient" | "validation"; message: string } {
   if (e instanceof MetaApiError) {

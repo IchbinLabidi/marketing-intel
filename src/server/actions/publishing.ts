@@ -5,19 +5,16 @@ import { createClient } from "@/lib/supabase/server";
 import { canEdit } from "@/lib/domain/constants";
 import type { PublishTarget } from "@/lib/publishing/rules";
 import type { ActionResult } from "@/lib/validation/common";
-import { classifyMetaError, facebookScheduleError, publishInstagram, PUBLISH_SCOPES } from "@/server/publishing/meta";
-import { describeSocialError } from "@/server/social/sync";
-import { checkTikTok } from "@/server/publishing/tiktok";
+import { facebookScheduleError, PUBLISH_SCOPES } from "@/server/publishing/meta";
 import { YOUTUBE_UPLOAD_SCOPE } from "@/server/publishing/youtube";
-import { getAccess } from "@/server/services/social";
 import { getPost } from "@/server/services/calendar";
-import { getMetaConnection, readMetaTokens } from "@/server/services/meta";
+import { getMetaConnection } from "@/server/services/meta";
 import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
 import { hasPermission } from "@/server/services/team";
 import {
-  accountOf, checkTargets, cleanup, guessMime, loadAssets, prepareSenders, sendClaimed, syncItemStatus, tiktokConnection, youtubeConnection,
-  type Asset, type Env, type Publication,
+  accountOf, checkTargets, followUp, guessMime, loadAssets, prepareSenders, sendClaimed, syncItemStatus, tiktokConnection, youtubeConnection,
+  type Asset, type Env, type PendingPublication, type Publication,
 } from "@/server/publishing/core";
 
 import { getFormatter, getT } from "@/i18n/server";
@@ -143,7 +140,7 @@ export async function cancelScheduledAction(projectId: string, publicationId: st
   return { ok: true, message: t("actions.scheduleCancelled") };
 }
 
-/** Resumes an Instagram video still being processed by Meta. */
+/** Asks the network about a waiting publication: a video still processing, or a Facebook post whose time has come. */
 export async function checkPublicationAction(projectId: string, publicationId: string): Promise<ActionResult<{ publication: Publication }>> {
   const { allowed } = await guard(projectId);
   const t = await getT("publishing");
@@ -151,39 +148,14 @@ export async function checkPublicationAction(projectId: string, publicationId: s
   const db = await createClient();
   const { data: pub } = await db.from("content_publications").select("*").eq("project_id", projectId).eq("id", publicationId).maybeSingle();
   if (!pub) return { ok: false, error: t("actions.publicationNotFound") };
-  if (pub.status !== "processing" || !pub.container_id) return { ok: true, data: { publication: pub as Publication } };
-  if (pub.provider === "tiktok") {
-    const tt = await tiktokConnection(db, projectId);
-    if (!tt) return { ok: false, error: t("actions.reconnectTikTok") };
-    try {
-      const r = await checkTikTok({ t, token: (await getAccess(db, tt)).token!, publishId: pub.container_id, username: tt.account_handle, waitMs: 20_000 });
-      const { data: row } = await db.from("content_publications").update(r.processing ? { updated_at: new Date().toISOString() } : { status: "published", platform_post_id: r.postId, platform_url: r.url }).eq("id", pub.id).select("*").single();
-      await syncItemStatus(db, projectId, pub.content_item_id, [row as Publication]);
-      refresh(projectId);
-      return { ok: true, data: { publication: row as Publication }, message: r.processing ? t("actions.tiktokProcessing") : t("actions.publishedTikTok") };
-    } catch (e) {
-      const { data: row } = await db.from("content_publications").update({ status: "failed", error: describeSocialError(e).slice(0, 1000), error_kind: "permanent" }).eq("id", pub.id).select("*").single();
-      refresh(projectId);
-      return { ok: false, error: describeSocialError(e), data: { publication: row as Publication } } as ActionResult<{ publication: Publication }>;
-    }
+  const r = await followUp({ db, admin: false, t }, pub as PendingPublication, 60_000);
+  if (r.changed) {
+    const { data: all } = await db.from("content_publications").select("*").eq("content_item_id", pub.content_item_id);
+    await syncItemStatus(db, projectId, pub.content_item_id, (all ?? []) as Publication[]);
   }
-  const conn = await getMetaConnection(projectId);
-  const { page } = conn ? await readMetaTokens(conn.id) : { page: null };
-  if (!conn || !page) return { ok: false, error: t("actions.reconnectMeta") };
-  try {
-    const r = await publishInstagram({ t, igUserId: pub.account_ref, pageToken: page, caption: "", media: { kind: "video", url: "", mime: "video/mp4" }, containerId: pub.container_id, waitMs: 60_000 });
-    const { data: row } = await db.from("content_publications").update(r.processing ? { updated_at: new Date().toISOString() } : { status: "published", platform_post_id: r.postId, platform_url: r.url, temp_media_path: null }).eq("id", pub.id).select("*").single();
-    if (!r.processing) await cleanup(db, pub.temp_media_path);
-    await syncItemStatus(db, projectId, pub.content_item_id, [row as Publication]);
-    refresh(projectId);
-    return { ok: true, data: { publication: row as Publication }, message: r.processing ? t("actions.instagramProcessing") : t("actions.publishedInstagram") };
-  } catch (e) {
-    const c = classifyMetaError(e, t);
-    const { data: row } = await db.from("content_publications").update({ status: "failed", error: c.message.slice(0, 1000), error_kind: c.kind, temp_media_path: null }).eq("id", pub.id).select("*").single();
-    await cleanup(db, pub.temp_media_path);
-    refresh(projectId);
-    return { ok: false, error: c.message, data: { publication: row as Publication } } as ActionResult<{ publication: Publication }>;
-  }
+  refresh(projectId);
+  if (r.error) return { ok: false, error: r.message ?? t("actions.publicationNotFound"), data: { publication: r.publication } } as ActionResult<{ publication: Publication }>;
+  return { ok: true, data: { publication: r.publication }, message: r.message ?? undefined };
 }
 
 /** The post was deleted on the network: mark that publication as not published (history kept) so it can be published

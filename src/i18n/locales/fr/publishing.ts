@@ -19,6 +19,8 @@ const publishing: Translation<typeof en> = {
     publishedTikTok: "Publié sur TikTok",
     instagramProcessing: "Instagram traite encore la vidéo. Revérifiez dans une minute.",
     publishedInstagram: "Publié sur Instagram",
+    facebookNotYet: "Facebook n’a pas encore publié cette publication. Revérifiez dans quelques minutes.",
+    publishedFacebook: "Publié sur Facebook",
     unpublished: "Marquée comme non publiée. Vous pouvez la publier à nouveau.",
     unpublishedOn: "Marquée comme non publiée sur {provider}. Vous pouvez la publier à nouveau.",
   },

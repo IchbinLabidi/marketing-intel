@@ -17,6 +17,8 @@ const publishing = {
     publishedTikTok: "Published on TikTok",
     instagramProcessing: "Instagram is still processing the video. Check again in a minute.",
     publishedInstagram: "Published on Instagram",
+    facebookNotYet: "Facebook has not published this post yet. Check again in a few minutes.",
+    publishedFacebook: "Published on Facebook",
     unpublished: "Marked as not published. You can publish it again.",
     unpublishedOn: "Marked as not published on {provider}. You can publish it again.",
   },

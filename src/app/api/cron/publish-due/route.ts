@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { PublishTarget } from "@/lib/publishing/rules";
-import { loadAssets, prepareSenders, sendClaimed, syncItemStatus, type Env, type Publication } from "@/server/publishing/core";
+import { followUp, loadAssets, prepareSenders, sendClaimed, syncItemStatus, type Env, type PendingPublication, type Publication } from "@/server/publishing/core";
 import type { ContentItem } from "@/types/domain";
 import { translatorFor } from "@/i18n/server";
 
@@ -12,7 +12,8 @@ const MAX_ATTEMPTS = 5;
 
 /**
  * Scheduled publishing: sends the Instagram, TikTok and YouTube posts queued for a time that has come (those APIs can't
- * schedule themselves). Called every 5 minutes by a Supabase pg_cron job. It takes no input and only ever sends posts
+ * schedule themselves), then follows up on posts the networks are still finishing: Instagram and TikTok videos still
+ * processing are published once ready, and Facebook posts scheduled on Facebook are marked published once live. Called every 5 minutes by a Supabase pg_cron job. It takes no input and only ever sends posts
  * the team already scheduled, at or after their time, each row claimed once; so calling it early or twice is harmless.
  * Runs with the service-role key because nobody is signed in.
  */
@@ -58,5 +59,20 @@ export async function GET() {
     const { data: all } = await admin.from("content_publications").select("*").eq("content_item_id", row.content_item_id);
     await syncItemStatus(admin, row.project_id, row.content_item_id, (all ?? []) as Publication[]);
   }
-  return NextResponse.json({ sent: results.length, results });
+
+  // follow-ups: nothing else would ever look at these rows again (Facebook asked about up to 3 days after its time)
+  const since = new Date(Date.now() - 3 * 86_400_000).toISOString();
+  const { data: pending } = await admin.from("content_publications").select("*")
+    .or(`and(status.eq.processing,container_id.not.is.null,provider.in.(instagram,tiktok)),and(status.eq.scheduled,provider.eq.facebook,platform_post_id.not.is.null,scheduled_for.lte.${now},scheduled_for.gte.${since})`)
+    .order("updated_at").limit(10);
+  const followed: { id: string; provider: string; status: string }[] = [];
+  for (const row of (pending ?? []) as PendingPublication[]) {
+    if (Date.now() - started > 240_000) break;
+    const r = await followUp(env, row, 15_000);
+    followed.push({ id: row.id, provider: row.provider, status: r.publication.status });
+    if (!r.changed) continue;
+    const { data: all } = await admin.from("content_publications").select("*").eq("content_item_id", row.content_item_id);
+    await syncItemStatus(admin, row.project_id, row.content_item_id, (all ?? []) as Publication[]);
+  }
+  return NextResponse.json({ sent: results.length, results, followed });
 }

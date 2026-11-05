@@ -53,11 +53,13 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
   const [busy, setBusy] = React.useState<string | null>(null);
   const [picking, setPicking] = React.useState(false);
   const [zoom, setZoom] = React.useState<{ list: TileAsset[]; index: number } | null>(null);
+  const [now, setNow] = React.useState(() => Date.now()); // render must stay pure: refreshed whenever the publications reload
   const [toDelete, setToDelete] = React.useState<TileAsset | null>(null); // Google's Picker opens over the page: the dialog stops trapping focus meanwhile
 
   const load = React.useCallback(async () => {
     const r = await publishContextAction(projectId, post.id);
     if (r.ok && r.data) {
+      setNow(Date.now());
       setCtx(r.data);
       setAssetIds((cur) => cur ?? (r.data!.assets[0] ? [r.data!.assets[0].id] : []));
     }
@@ -66,6 +68,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
     let alive = true;
     publishContextAction(projectId, post.id).then((r) => {
       if (!alive || !r.ok || !r.data) return;
+      setNow(Date.now());
       setCtx(r.data);
       setAssetIds((cur) => cur ?? (r.data!.assets[0] ? [r.data!.assets[0].id] : []));
     });
@@ -322,7 +325,7 @@ export function PublishDialog({ projectId, post, tz, onClose, onPublished }: { p
                       {p.status === "queued" && p.scheduled_for ? <Badge variant="info" dot>{t("publish.scheduledInApp")}</Badge> : <Badge variant={STATUS[p.status]?.tone ?? "outline"} dot>{STATUS[p.status] ? t(`publish.status.${STATUS[p.status].key}`) : p.status}</Badge>}
                       {p.scheduled_for ? <span className="text-xs text-muted-foreground">{new Date(p.scheduled_for).toLocaleString(fmt.intl, { timeZone: tz })}</span> : null}
                       {p.platform_url ? <a href={p.platform_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">{t("publish.viewPost")} <ExternalLink className="size-3" /></a> : null}
-                      {p.status === "processing" ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => check(p)}><RefreshCcw /> {t("publish.checkAgain")}</Button> : null}
+                      {p.status === "processing" || (p.status === "scheduled" && p.provider === "facebook" && p.scheduled_for && Date.parse(p.scheduled_for) <= now) ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => check(p)}><RefreshCcw /> {t("publish.checkAgain")}</Button> : null}
                       {p.status === "queued" && p.scheduled_for ? <Button size="sm" variant="ghost" className="ml-auto text-xs" disabled={busy !== null} onClick={() => void cancelSchedule(p)}>{busy === `cancel-${p.id}` ? <Loader2 className="animate-spin" /> : <X />} {t("publish.cancelSchedule")}</Button> : null}
                       {p.status === "published" || p.status === "scheduled" ? <Button size="sm" variant="ghost" className="ml-auto text-xs" disabled={busy !== null} onClick={() => void unpublish(p)}>{busy === `un-${p.id}` ? <Loader2 className="animate-spin" /> : <Undo2 />} {t("publish.unpublish")}</Button> : null}
                       {p.error ? <p className="basis-full text-xs text-destructive"><CircleAlert className="mr-1 inline size-3" />{p.error}{p.error_kind === "transient" ? t("publish.tryAgain") : ""}</p> : null}

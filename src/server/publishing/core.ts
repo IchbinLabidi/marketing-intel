@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { defaultYouTubeVariant, publicationCopy, readCaptions } from "@/lib/production/platform-copy";
 import { composeCaption, MAX_FILE_BYTES, MAX_GROUP, mediaKindOf, validateForTarget, validateGroup, type PublishTarget } from "@/lib/publishing/rules";
-import { classifyMetaError, publishFacebook, publishFacebookPhotos, publishInstagram, publishInstagramCarousel, PUBLISH_SCOPES, type MediaInput, type PublishResult } from "@/server/publishing/meta";
+import { classifyMetaError, facebookPostStatus, publishFacebook, publishFacebookPhotos, publishInstagram, publishInstagramCarousel, PUBLISH_SCOPES, type MediaInput, type PublishResult } from "@/server/publishing/meta";
 import { MetaApiError } from "@/server/meta/graph";
 import { metaConfig } from "@/server/meta/config";
 import { decryptToken } from "@/server/meta/crypto";
@@ -10,7 +10,7 @@ import { downloadDriveFile, refreshDriveToken } from "@/server/drive/google";
 import { SocialApiError } from "@/server/social/http";
 import { describeSocialError } from "@/server/social/sync";
 import { isJpeg, toInstagramJpeg } from "@/server/publishing/convert";
-import { publishTikTokPhotos, publishTikTokVideo } from "@/server/publishing/tiktok";
+import { checkTikTok, publishTikTokPhotos, publishTikTokVideo } from "@/server/publishing/tiktok";
 import { tiktokMediaUrl } from "@/server/publishing/tiktok-media";
 import { publishYouTubeVideo, YOUTUBE_UPLOAD_SCOPE, youtubeTitle } from "@/server/publishing/youtube";
 import { getAccess, readSocialTokens, storeSocialTokens, type SocialConnection } from "@/server/services/social";
@@ -305,6 +305,61 @@ export async function sendClaimed(env: Env, s: Senders, args: {
       next_attempt_at: c.kind === "transient" ? new Date(Date.now() + 2 ** Math.min(claimed.attempts, 6) * 60_000).toISOString() : null,
     }).eq("id", claimed.id).select("*").single();
     return row as Publication;
+  }
+}
+
+/** A publication row with the columns the follow-up needs. */
+export type PendingPublication = Publication & { project_id: string; container_id: string | null; temp_media_path: string | null };
+
+/** Rows still waiting on the network: a video still processing, or a Facebook post whose scheduled time has passed. */
+export const needsFollowUp = (p: Pick<PendingPublication, "status" | "provider" | "scheduled_for" | "container_id" | "platform_post_id">, now = Date.now()) =>
+  (p.status === "processing" && Boolean(p.container_id) && (p.provider === "instagram" || p.provider === "tiktok"))
+  || (p.status === "scheduled" && p.provider === "facebook" && Boolean(p.platform_post_id) && Boolean(p.scheduled_for) && Date.parse(p.scheduled_for!) <= now);
+
+/**
+ * Asks the network how a waiting publication is doing and records it: an Instagram or TikTok video still processing
+ * is published once ready; a Facebook post scheduled on Facebook is marked published once its time has come and it is
+ * live. Used by "Check again" and by the scheduled-publishing job, so nobody has to come back and click.
+ * `changed` is false when the network is still not done (the caller can try again later).
+ */
+export async function followUp(env: Env, pub: PendingPublication, waitMs = 20_000): Promise<{ publication: Publication; changed: boolean; message: string | null; error?: boolean }> {
+  const { db, t } = env;
+  const save = async (values: Record<string, unknown>) => {
+    const { data } = await db.from("content_publications").update(values).eq("id", pub.id).select("*").single();
+    return (data ?? pub) as Publication;
+  };
+  const waiting = async () => ({ publication: await save({ updated_at: new Date().toISOString() }), changed: false, message: null });
+  if (!needsFollowUp(pub)) return { publication: pub, changed: false, message: null };
+  try {
+    if (pub.provider === "tiktok") {
+      const tt = await tiktokConnection(db, pub.project_id);
+      if (!tt) return { publication: pub, changed: false, message: t("actions.reconnectTikTok"), error: true };
+      const r = await checkTikTok({ t, token: (await getAccess(db, tt, env.admin)).token!, publishId: pub.container_id!, username: tt.account_handle, waitMs });
+      if (r.processing) return { ...(await waiting()), message: t("actions.tiktokProcessing") };
+      return { publication: await save({ status: "published", platform_post_id: r.postId, platform_url: r.url }), changed: true, message: t("actions.publishedTikTok") };
+    }
+    const { data: meta } = await db.from("meta_connections").select("id").eq("project_id", pub.project_id).maybeSingle();
+    const token = meta ? await metaPageToken(env, meta.id) : null;
+    if (!token) return { publication: pub, changed: false, message: t("actions.reconnectMeta"), error: true };
+    if (pub.provider === "facebook") {
+      const s = await facebookPostStatus({ t, postId: pub.platform_post_id!, pageToken: token });
+      if (!s.published) return { ...(await waiting()), message: t("actions.facebookNotYet") };
+      return { publication: await save({ status: "published", platform_url: s.url ?? `https://www.facebook.com/${pub.platform_post_id}` }), changed: true, message: t("actions.publishedFacebook") };
+    }
+    const r = await publishInstagram({ t, igUserId: pub.account_ref, pageToken: token, caption: "", media: { kind: "video", url: "", mime: "video/mp4" }, containerId: pub.container_id!, waitMs });
+    if (r.processing) return { ...(await waiting()), message: t("actions.instagramProcessing") };
+    const row = await save({ status: "published", platform_post_id: r.postId, platform_url: r.url, temp_media_path: null });
+    await cleanup(db, pub.temp_media_path);
+    return { publication: row, changed: true, message: t("actions.publishedInstagram") };
+  } catch (e) {
+    const c = e instanceof MetaApiError ? classifyMetaError(e, t)
+      : e instanceof SocialApiError ? { kind: (e.isAuth || e.isPermission ? "auth" : e.kind === "server" || e.kind === "network" || e.kind === "rate_limit" ? "transient" : "permanent") as string, message: describeSocialError(e) }
+      : { kind: "transient", message: e instanceof Error ? e.message : t("core.unknownError") };
+    // a network hiccup, or Facebook not finding a post it holds, is not a verdict: ask again on the next run
+    if (c.kind === "transient" || c.kind === "auth" || pub.provider === "facebook") return { publication: pub, changed: false, message: c.message, error: true };
+    const row = await save({ status: "failed", error: c.message.slice(0, 1000), error_kind: c.kind, temp_media_path: null });
+    await cleanup(db, pub.temp_media_path);
+    return { publication: row, changed: true, message: c.message, error: true };
   }
 }
 
