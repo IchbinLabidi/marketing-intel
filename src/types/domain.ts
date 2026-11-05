@@ -312,6 +312,8 @@ export type ContentItem = MetricValues & {
   opportunity_id: string | null;
   historical_source_id: string | null;
   scheduled_date: string | null;
+  /** True once the card has been on the Production board; a board card moved back to Idea stays on the board. */
+  on_board?: boolean;
   platform: Platform | null;
   title: string;
   format: string | null;

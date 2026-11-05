@@ -356,7 +356,6 @@ const production: Translation<typeof en> = {
     invalidWorkflow: "Demande de workflow invalide.",
     decisionRecorded: "Décision de relecture enregistrée",
     stageUpdated: "Étape mise à jour",
-    backToBacklog: "Renvoyée dans le Backlog",
     commentAdded: "Commentaire ajouté",
     restored: "Révision restaurée dans une nouvelle version",
     opportunityNotFound: "Opportunité introuvable.",
