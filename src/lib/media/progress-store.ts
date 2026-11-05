@@ -14,6 +14,8 @@ export type MediaJob = {
   /** when the compression stage started (ms), for the time-left estimate */
   compressStartedAt: number | null;
   cancel: (() => void) | null;
+  /** shown as a small card in the bottom-right corner instead of the centered window */
+  minimized: boolean;
 };
 
 let job: MediaJob | null = null;
@@ -22,7 +24,7 @@ const emit = () => listeners.forEach((l) => l());
 
 export const mediaJob = {
   start(init: Pick<MediaJob, "name" | "fromBytes" | "fromDrive" | "stage">) {
-    job = { ...init, percent: init.stage === "compress" ? 0 : null, compressStartedAt: init.stage === "compress" ? Date.now() : null, cancel: null };
+    job = { ...init, percent: init.stage === "compress" ? 0 : null, compressStartedAt: init.stage === "compress" ? Date.now() : null, cancel: null, minimized: false };
     emit();
   },
   update(patch: Partial<MediaJob>) {

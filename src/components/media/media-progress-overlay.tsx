@@ -2,11 +2,11 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { Check, CloudDownload, CloudUpload, Film, Loader2, Minimize2 } from "lucide-react";
+import { Check, CloudDownload, CloudUpload, Film, Loader2, Maximize2, Minimize2, PanelBottomClose, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { useMediaJob, type MediaJob } from "@/lib/media/progress-store";
+import { mediaJob, useMediaJob, type MediaJob } from "@/lib/media/progress-store";
 import { MAX_FILE_BYTES } from "@/lib/publishing/rules";
 import { useT } from "@/i18n/client";
 
@@ -46,6 +46,48 @@ export function MediaProgressOverlay() {
   }
   const label = (s: MediaJob["stage"]) => (s === "download" ? t("compress.stepDownload") : s === "compress" ? t("compress.stepCompress") : t("compress.stepUpload"));
   const Icon = job.stage === "download" ? CloudDownload : job.stage === "upload" ? CloudUpload : Minimize2;
+  const bar = (className: string) =>
+    percent === null ? (
+      <div className={cn("w-full overflow-hidden rounded-full bg-secondary", className)}>
+        <div className="h-full w-1/3 animate-[media-indeterminate_1.2s_ease-in-out_infinite] rounded-full bg-primary" />
+      </div>
+    ) : (
+      <Progress className={className} value={percent} label={t(`compress.title.${job.stage}`)} />
+    );
+  const keyframes = <style>{`@keyframes media-indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }`}</style>;
+
+  if (job.minimized) {
+    return createPortal(
+      <div
+        role="status"
+        aria-live="polite"
+        className="fixed bottom-4 right-4 z-[100] w-[min(360px,calc(100vw-32px))] rounded-xl border bg-card p-3 text-card-foreground shadow-xl"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Icon className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13px] font-medium">{t(`compress.title.${job.stage}`)}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {percent === null ? job.name : `${percent}%${eta ? ` · ${eta}` : ""}`}
+            </p>
+          </div>
+          <Button size="icon-sm" variant="ghost" aria-label={t("compress.expand")} title={t("compress.expand")} onClick={() => mediaJob.update({ minimized: false })}>
+            <Maximize2 />
+          </Button>
+          {job.cancel ? (
+            <Button size="icon-sm" variant="ghost" aria-label={t("compress.cancel")} title={t("compress.cancel")} onClick={() => job.cancel?.()}>
+              <X />
+            </Button>
+          ) : null}
+        </div>
+        {bar("mt-2.5 h-1.5")}
+        {keyframes}
+      </div>,
+      document.body,
+    );
+  }
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="media-job-title">
@@ -72,13 +114,7 @@ export function MediaProgressOverlay() {
             {eta ? <><br />{eta}</> : null}
           </span>
         </div>
-        {percent === null ? (
-          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-            <div className="h-full w-1/3 animate-[media-indeterminate_1.2s_ease-in-out_infinite] rounded-full bg-primary" />
-          </div>
-        ) : (
-          <Progress className="mt-3 h-2" value={percent} label={t(`compress.title.${job.stage}`)} />
-        )}
+        {bar("mt-3 h-2")}
 
         <ol className="mt-6 space-y-2.5">
           {steps.map((s, i) => {
@@ -95,16 +131,21 @@ export function MediaProgressOverlay() {
           })}
         </ol>
 
-        <div className="mt-6 flex items-center justify-between gap-3 border-t pt-4">
+        <div className="mt-6 space-y-3 border-t pt-4">
           <p className="text-xs text-muted-foreground">{t("compress.keepOpen")}</p>
-          {job.cancel ? (
-            <Button size="sm" variant="outline" onClick={() => job.cancel?.()}>
-              {t("compress.cancel")}
+          <div className="flex items-center justify-end gap-2">
+            {job.cancel ? (
+              <Button size="sm" variant="ghost" onClick={() => job.cancel?.()}>
+                {t("compress.cancel")}
+              </Button>
+            ) : null}
+            <Button size="sm" onClick={() => mediaJob.update({ minimized: true })}>
+              <PanelBottomClose /> {t("compress.background")}
             </Button>
-          ) : null}
+          </div>
         </div>
       </div>
-      <style>{`@keyframes media-indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }`}</style>
+      {keyframes}
     </div>,
     document.body,
   );
