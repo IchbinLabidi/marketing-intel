@@ -1,6 +1,7 @@
 "use server";
 
 import { tagUntagged } from "@/server/ai/audience";
+import { friendlyError } from "@/server/permission-errors";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
@@ -63,7 +64,7 @@ export async function scheduleProductionAction(projectId: string, id: string, re
 }
 async function failure(e: unknown): Promise<ActionResult<never>> {
   const t = await getT("production");
-  const message = e && typeof e === "object" && "message" in e ? String(e.message) : t("actions.generic");
+  const message = await friendlyError(e, t("actions.generic"));
   return { ok: false, error: /schema cache|does not exist/.test(message) ? t("actions.migration") : message };
 }
 async function access(projectId: string, write = true) {

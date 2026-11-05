@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { friendlyError } from "@/server/permission-errors";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
@@ -18,8 +19,7 @@ import { getT } from "@/i18n/server";
 async function failure(e: unknown): Promise<ActionResult<never>> {
   const t = await getT("team");
   if (isMissingTeamSchema(e)) return { ok: false, error: t("errors.migration") };
-  const message = e && typeof e === "object" && "message" in e ? String(e.message) : t("errors.generic");
-  return { ok: false, error: message };
+  return { ok: false, error: await friendlyError(e, t("errors.generic")) };
 }
 
 /** zodErrorToResult, with this module's own schema messages ("team:<key>") translated from the team namespace. */

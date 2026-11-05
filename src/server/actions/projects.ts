@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { friendlyError } from "@/server/permission-errors";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { canAdmin, canEdit } from "@/lib/domain/constants";
@@ -24,7 +25,7 @@ import {
 } from "@/server/services/projects";
 
 type ActionKey = Parameters<TFor<"projects">>[0];
-const fail = async (e: unknown, fallback: ActionKey): Promise<ActionResult> => ({ ok: false, error: e instanceof Error ? e.message : (await getT("projects"))(fallback) });
+const fail = async (e: unknown, fallback: ActionKey): Promise<ActionResult> => ({ ok: false, error: await friendlyError(e, (await getT("projects"))(fallback)) });
 const noEdit = async (): Promise<ActionResult> => ({ ok: false, error: (await getT("projects"))("actions.readOnly") });
 const tr = async (key: ActionKey) => (await getT("projects"))(key);
 

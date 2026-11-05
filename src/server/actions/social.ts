@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { isRawPermissionError, permissionMessage } from "@/server/permission-errors";
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/lib/validation/common";
 import { getT } from "@/i18n/server";
@@ -44,7 +45,7 @@ export async function addYouTubeChannelAction(projectId: string, input: string):
     refresh(projectId);
     return { ok: true, message: channel.name ? t("actions.channelAdded", { name: channel.name }) : t("actions.channelAddedUnnamed") };
   } catch (e) {
-    return { ok: false, error: describeSocialError(e) };
+    return { ok: false, error: isRawPermissionError(e) ? await permissionMessage() : describeSocialError(e) };
   }
 }
 
@@ -88,7 +89,7 @@ export async function disconnectSocialAction(projectId: string, connectionId: st
     refresh(projectId);
     return { ok: true, message: deletePosts ? t("actions.disconnectedDeleted") : t("actions.disconnectedKept") };
   } catch (e) {
-    return { ok: false, error: describeSocialError(e) };
+    return { ok: false, error: isRawPermissionError(e) ? await permissionMessage() : describeSocialError(e) };
   }
 }
 

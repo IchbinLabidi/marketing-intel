@@ -1,6 +1,7 @@
 "use server";
 
 import { segmentForAudience } from "@/lib/backlog/audience";
+import { friendlyError } from "@/server/permission-errors";
 import { revalidatePath } from "next/cache";
 import { canEdit, type Platform } from "@/lib/domain/constants";
 import { bestPublicationTimes } from "@/lib/calendar/insights";
@@ -28,7 +29,7 @@ import { getT } from "@/i18n/server";
 import type { TFor } from "@/i18n/messages";
 
 const noEdit = (t: TFor<"calendar">): ActionResult<never> => ({ ok: false, error: t("actions.noEdit") });
-const fail = (e: unknown, fallback: string): ActionResult<never> => ({ ok: false, error: e instanceof Error ? e.message : fallback });
+const fail = async (e: unknown, fallback: string): Promise<ActionResult<never>> => ({ ok: false, error: await friendlyError(e, fallback) });
 
 async function guard(projectId: string) {
   const user = await requireUser();

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { friendlyError } from "@/server/permission-errors";
 import { z } from "zod";
 import { canEdit } from "@/lib/domain/constants";
 import { formToObject, type ActionResult } from "@/lib/validation/common";
@@ -35,7 +36,7 @@ import {
 
 type ActionKey = Parameters<TFor<"strategy">>[0];
 const noEdit = async (): Promise<ActionResult> => ({ ok: false, error: (await getT("strategy"))("actions.readOnly") });
-const fail = async (e: unknown, fallback: ActionKey): Promise<ActionResult> => ({ ok: false, error: e instanceof Error ? e.message : (await getT("strategy"))(fallback) });
+const fail = async (e: unknown, fallback: ActionKey): Promise<ActionResult> => ({ ok: false, error: await friendlyError(e, (await getT("strategy"))(fallback)) });
 
 async function guard(projectId: string) {
   const user = await requireUser();

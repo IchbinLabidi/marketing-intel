@@ -1,6 +1,7 @@
 "use server";
 
 import { parseAudience } from "@/lib/backlog/audience";
+import { friendlyError } from "@/server/permission-errors";
 import { withAudience } from "@/server/ai/audience";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -35,7 +36,7 @@ import { getFormatter, getT } from "@/i18n/server";
 // (edited by the user) → slots (calculated) → content per week (AI) → repetition + optimizer → approval.
 
 const noEdit = async (): Promise<ActionResult<never>> => ({ ok: false, error: (await getT("editorial"))("actions.readOnly") });
-const fail = (e: unknown, fallback: string): ActionResult<never> => ({ ok: false, error: e instanceof Error ? e.message : fallback });
+const fail = async (e: unknown, fallback: string): Promise<ActionResult<never>> => ({ ok: false, error: await friendlyError(e, fallback) });
 const refresh = (projectId: string) => revalidatePath(`/p/${projectId}`, "layout");
 
 async function guard(projectId: string) {

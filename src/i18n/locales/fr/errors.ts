@@ -55,6 +55,11 @@ const errors: Translation<typeof en> = {
     attempts: " {count} tentatives.",
     seconds: " {seconds} s.",
   },
+  permission: {
+    missing: "Vous n’avez pas la permission de faire cela.",
+    missingNamed: "Vous n’avez pas la permission de faire cela. Il vous faut la permission « {permission} ».",
+    need: "Il vous faut la permission « {permission} ».",
+  },
 };
 
 export default errors;

@@ -5,6 +5,7 @@ import { legacyPermissions, type Permission, type Priority, type TaskStatus, typ
 import type { WorkspaceRole } from "@/lib/domain/constants";
 import { getWorkspaceRole } from "./workspaces";
 import { getT } from "@/i18n/server";
+import { PermissionError, permissionHint, permissionMessage } from "@/server/permission-errors";
 
 /** True when migration 0013 has not been applied yet (team tables/functions missing). */
 export function isMissingTeamSchema(error: unknown) {
@@ -35,7 +36,9 @@ export async function hasPermission(workspaceId: string, permission: Permission)
 
 /** For server actions: throws a readable error when the permission is missing. */
 export async function assertPermission(workspaceId: string, permission: Permission, message?: string) {
-  if (!(await hasPermission(workspaceId, permission))) throw new Error(message ?? (await getT("team"))("errors.noPermission"));
+  if (await hasPermission(workspaceId, permission)) return;
+  // Name the missing permission (as labelled in the roles editor), after the caller's own explanation if it gave one.
+  throw new PermissionError(message ? `${message} ${await permissionHint(permission)}` : await permissionMessage(permission), permission);
 }
 
 export const teamSchemaReady = cache(async (): Promise<boolean> => {

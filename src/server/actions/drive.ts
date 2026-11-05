@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { isRawPermissionError, permissionMessage } from "@/server/permission-errors";
 import { createClient } from "@/lib/supabase/server";
 import { MAX_FILE_BYTES, mediaKindOf } from "@/lib/publishing/rules";
 import type { ActionResult } from "@/lib/validation/common";
@@ -37,7 +38,7 @@ export async function drivePickerAction(projectId: string): Promise<ActionResult
     const accessToken = await driveAccessToken(await createClient(), conn, t);
     return { ok: true, data: { configured: true, missing: [], email: conn.account_name, picker: { accessToken, apiKey: c.apiKey, appId: c.appId, clientId: c.clientId } } };
   } catch (e) {
-    return { ok: false, error: describeSocialError(e) };
+    return { ok: false, error: isRawPermissionError(e) ? await permissionMessage() : describeSocialError(e) };
   }
 }
 
@@ -75,7 +76,7 @@ export async function attachDriveFileAction(projectId: string, itemId: string, f
     return { ok: true, data: { id: row.id }, message: t("driveActions.attached", { name: meta.name }) };
   } catch (e) {
     if (e instanceof SocialApiError && e.kind === "not_found") return { ok: false, error: t("driveActions.notFound") };
-    return { ok: false, error: describeSocialError(e) };
+    return { ok: false, error: isRawPermissionError(e) ? await permissionMessage() : describeSocialError(e) };
   }
 }
 

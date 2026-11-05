@@ -1,6 +1,7 @@
 "use server";
 
 import { createHash } from "node:crypto";
+import { friendlyError } from "@/server/permission-errors";
 import { revalidatePath } from "next/cache";
 import { canEdit, METRICS } from "@/lib/domain/constants";
 import { autoMapColumns, TARGET_FIELD_KEYS, type ColumnMapping } from "@/lib/history/fields";
@@ -33,7 +34,7 @@ import { getStrategyBundle } from "@/server/services/strategy";
 import { getT } from "@/i18n/server";
 
 const noEdit = async (): Promise<ActionResult<never>> => ({ ok: false, error: (await getT("history"))("actions.readOnly") });
-const fail = (e: unknown, fallback: string): ActionResult<never> => ({ ok: false, error: e instanceof Error ? e.message : fallback });
+const fail = async (e: unknown, fallback: string): Promise<ActionResult<never>> => ({ ok: false, error: await friendlyError(e, fallback) });
 
 async function guard(projectId: string) {
   const user = await requireUser();

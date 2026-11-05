@@ -55,6 +55,11 @@ const errors = {
     attempts: " {count} attempts.",
     seconds: " {seconds} s.",
   },
+  permission: {
+    missing: "You don't have permission to do this.",
+    missingNamed: "You don't have permission to do this. You need the “{permission}” permission.",
+    need: "You need the “{permission}” permission.",
+  },
 };
 
 export default errors;
