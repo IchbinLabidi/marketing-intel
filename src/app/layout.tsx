@@ -1,3 +1,4 @@
+import { MediaProgressOverlay } from "@/components/media/media-progress-overlay";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
@@ -37,6 +38,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           <TooltipProvider>{children}</TooltipProvider>
           <ConfirmHost />
           <Toaster />
+          <MediaProgressOverlay />
         </I18nProvider>
       </body>
     </html>

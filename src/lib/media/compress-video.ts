@@ -10,6 +10,7 @@ const MIN_VIDEO_BPS = 600_000; // below this a 1080p video looks bad: refuse ins
 const LONG_SIDE = 1920;
 
 export class VideoTooLongError extends Error {}
+export class CompressionCanceledError extends Error {}
 
 export const needsCompression = (file: { type: string; size: number }) => file.type.startsWith("video/") && file.size > MAX_FILE_BYTES;
 
@@ -18,7 +19,8 @@ export const needsCompression = (file: { type: string; size: number }) => file.t
  * storage limit: same frame rate, at most 1920 px on the long side, bitrate chosen from the duration, AAC audio.
  * Nothing leaves the computer until the smaller file is ready. Resolves with an MP4 File.
  */
-export async function compressVideo(file: Blob, name: string, onProgress?: (share: number) => void): Promise<File> {
+export async function compressVideo(file: Blob, name: string, onProgress?: (share: number) => void, onCancelable?: (cancel: () => void) => void): Promise<File> {
+  let canceled = false;
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const duration = await input.computeDuration();
   if (!duration || !Number.isFinite(duration)) throw new Error("Unreadable video");
@@ -40,7 +42,14 @@ export async function compressVideo(file: Blob, name: string, onProgress?: (shar
     });
     if (!conversion.isValid) throw new Error("This video can't be converted in this browser");
     conversion.onProgress = (p) => onProgress?.(Math.min(1, p));
-    await conversion.execute();
+    onCancelable?.(() => { canceled = true; void conversion.cancel(); });
+    try {
+      await conversion.execute();
+    } catch (e) {
+      if (canceled) throw new CompressionCanceledError();
+      throw e;
+    }
+    if (canceled) throw new CompressionCanceledError();
     const buffer = output.target.buffer;
     if (buffer && buffer.byteLength <= MAX_FILE_BYTES) {
       return new File([buffer], name.replace(/\.[^.]+$/, "") + ".mp4", { type: "video/mp4" });
