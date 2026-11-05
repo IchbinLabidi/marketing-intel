@@ -31,7 +31,7 @@ export function NotificationList({ items }: { items: Notification[] }) {
     router.refresh();
   };
   const open = (n: Notification) => {
-    if (!n.read_at) void markNotificationsReadAction([n.id]);
+    if (!n.read_at) void markNotificationsReadAction([n.id]).then(() => router.refresh());
   };
 
   return (
