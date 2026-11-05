@@ -10,7 +10,7 @@ import { zodErrorToResult } from "@/lib/validation/errors";
 import { getProjectContext } from "@/server/services/projects";
 import { requireUser } from "@/server/services/session";
 import { ACTIVE_WORKSPACE_COOKIE, getActiveWorkspace } from "@/server/services/workspaces";
-import { assertPermission, getPermissions, isMissingTeamSchema, listItemTasks, listRoles, listTeam, type Task } from "@/server/services/team";
+import { assertPermission, getPermissions, hasPermission, isMissingTeamSchema, listItemTasks, listRoles, listTeam, type Task } from "@/server/services/team";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { appUrl } from "@/server/meta/config";
 import { getT } from "@/i18n/server";
@@ -127,6 +127,75 @@ export async function renameMemberAction(userId: string, name: string): Promise<
     if (error) throw error;
     refreshTeam();
     return { ok: true, message: t("messages.memberRenamed") };
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+const credentialsSchema = z
+  .object({
+    email: z.union([z.email("team:errors.validEmail").trim().toLowerCase(), z.literal("")]).optional(),
+    password: z.union([z.string().min(8, "team:errors.passwordLength").max(72, "team:errors.passwordLength"), z.literal("")]).optional(),
+  })
+  .refine((v) => Boolean(v.email || v.password), { message: "team:errors.nothingToChange", path: ["email"] });
+
+/**
+ * Lets a team manager set another member's login email and/or password (Supabase auth admin API).
+ * Same rule as role changes: not yourself (use Settings), not the owner, not someone whose role holds
+ * permissions you don't have. Because a login is shared across workspaces, the person must also not
+ * belong to any workspace where you aren't a team manager, so this can't be used to take over an
+ * account that has access elsewhere.
+ */
+export async function updateMemberCredentialsAction(userId: string, input: { email?: string; password?: string }): Promise<ActionResult> {
+  const t = await getT("team");
+  if (!z.uuid().safeParse(userId).success) return { ok: false, error: t("errors.invalidMember") };
+  const parsed = credentialsSchema.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error);
+  try {
+    const user = await requireUser();
+    const ws = await workspace();
+    await assertPermission(ws.id, "team.manage", t("errors.onlyManagersCredentials"));
+    if (userId === user.id) return { ok: false, error: t("errors.ownCredentials") };
+    const [team, roles, mine] = await Promise.all([listTeam(ws.id), listRoles(ws.id), getPermissions(ws.id)]);
+    const target = team.find((m) => m.user_id === userId);
+    if (!target) return { ok: false, error: t("errors.invalidMember") };
+    const role = roles.find((r) => r.id === target.role_id);
+    if (target.role === "owner" || (role && !canGrant(mine, role.permissions))) return { ok: false, error: t("errors.noPermission") };
+
+    const admin = createAdminClient();
+    if (!admin) throw new Error(t("errors.generic"));
+    const { data: memberships, error: mErr } = await admin.from("workspace_members").select("workspace_id").eq("user_id", userId);
+    if (mErr) throw mErr;
+    const others = (memberships ?? []).map((m) => m.workspace_id as string).filter((id) => id !== ws.id);
+    const managed = await Promise.all(others.map((id) => hasPermission(id, "team.manage")));
+    if (managed.some((ok) => !ok)) return { ok: false, error: t("errors.otherWorkspaces") };
+
+    const email = parsed.data.email || undefined;
+    const password = parsed.data.password || undefined;
+    const changeEmail = Boolean(email && email !== (target.email ?? "").toLowerCase());
+    if (!changeEmail && !password) return { ok: false, error: t("errors.nothingToChange") };
+
+    const { error } = await admin.auth.admin.updateUserById(userId, {
+      ...(changeEmail ? { email, email_confirm: true } : {}),
+      ...(password ? { password } : {}),
+    });
+    if (error) {
+      const msg = error.message.toLowerCase();
+      if (error.code === "email_exists" || msg.includes("already been registered") || msg.includes("already registered")) return { ok: false, error: t("errors.emailTaken") };
+      if (error.code === "weak_password" || msg.includes("password")) return { ok: false, error: t("errors.weakPassword") };
+      throw error;
+    }
+
+    // Log the change in the team activity feed (never the password itself).
+    const entries = [
+      ...(changeEmail ? [{ workspace_id: ws.id, actor_id: user.id, action: "member.email_changed", target_user: userId, details: { email } }] : []),
+      ...(password ? [{ workspace_id: ws.id, actor_id: user.id, action: "member.password_changed", target_user: userId, details: {} }] : []),
+    ];
+    await admin.from("workspace_audit_log").insert(entries);
+
+    refreshTeam();
+    const message = changeEmail && password ? t("messages.credentialsUpdated") : changeEmail ? t("messages.emailUpdated") : t("messages.passwordUpdated");
+    return { ok: true, message };
   } catch (e) {
     return failure(e);
   }
