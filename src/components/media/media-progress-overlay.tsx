@@ -21,6 +21,8 @@ export function MediaProgressOverlay() {
   const job = useMediaJob();
   const t = useT("publishing");
   const [now, setNow] = React.useState(0);
+  // "stop?" is asked for one job; a new job never starts in that state
+  const [confirmFor, setConfirmFor] = React.useState<string | null>(null);
   React.useEffect(() => {
     if (!job) return;
     const id = window.setInterval(() => setNow(Date.now()), 1000);
@@ -34,6 +36,20 @@ export function MediaProgressOverlay() {
     return () => window.removeEventListener("beforeunload", stop);
   }, [job]);
   if (!job || typeof document === "undefined") return null;
+  const confirming = confirmFor === job.name;
+  const setConfirming = (on: boolean) => setConfirmFor(on ? job.name : null);
+  const askStop = (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+      <p className="text-[13px]">
+        <span className="font-medium">{t("compress.confirmTitle")}</span>{" "}
+        <span className="text-muted-foreground">{t("compress.confirmBody")}</span>
+      </p>
+      <div className="ml-auto flex items-center gap-2">
+        <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>{t("compress.keepGoing")}</Button>
+        <Button size="sm" variant="destructive" onClick={() => { setConfirming(false); job.cancel?.(); }}>{t("compress.stop")}</Button>
+      </div>
+    </div>
+  );
 
   const steps = ORDER.filter((s) => s !== "download" || job.fromDrive);
   const current = steps.indexOf(job.stage);
@@ -79,12 +95,13 @@ export function MediaProgressOverlay() {
             <Maximize2 />
           </Button>
           {job.cancel ? (
-            <Button size="icon-sm" variant="ghost" aria-label={t("compress.cancel")} title={t("compress.cancel")} onClick={() => job.cancel?.()}>
+            <Button size="icon-sm" variant="ghost" aria-label={t("compress.cancel")} title={t("compress.cancel")} onClick={() => setConfirming(true)}>
               <X />
             </Button>
           ) : null}
         </div>
         {bar("mt-2.5 h-1.5")}
+        {confirming && job.cancel ? <div className="mt-3">{askStop}</div> : null}
         {keyframes}
       </div>,
       document.body,
@@ -138,9 +155,10 @@ export function MediaProgressOverlay() {
 
         <div className="mt-6 space-y-3 border-t pt-4">
           <p className="text-xs text-muted-foreground">{t("compress.keepOpen")}</p>
+          {confirming && job.cancel ? askStop : (
           <div className="flex items-center justify-end gap-2">
             {job.cancel ? (
-              <Button size="sm" variant="ghost" onClick={() => job.cancel?.()}>
+              <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
                 {t("compress.cancel")}
               </Button>
             ) : null}
@@ -148,6 +166,7 @@ export function MediaProgressOverlay() {
               <PanelBottomClose /> {t("compress.background")}
             </Button>
           </div>
+          )}
         </div>
       </div>
       {keyframes}
