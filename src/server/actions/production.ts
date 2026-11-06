@@ -113,6 +113,28 @@ export async function transitionProductionAction(projectId: string, id: string, 
     refresh(projectId); return { ok: true, data: data as ProductionItem, message: decision ? t("actions.decisionRecorded") : t("actions.stageUpdated") };
   } catch (e) { return failure(e); }
 }
+/**
+ * Drops a board card at a position: changes its stage first when it moved column (same rules as transitionProductionAction),
+ * then saves its place between `after` and `before` (the cards above and below it in the column's manual order).
+ * Positions are kept out of content_items (see migration 0034), so a reorder never bumps the revision or the history.
+ */
+export async function moveOnBoardAction(projectId: string, id: string, revision: number, stage: ProductionStage | null, after: string | null, before: string | null): Promise<ActionResult<{ item: ProductionItem | null; position: number | null; message?: string }>> {
+  const uuid = z.string().uuid().nullable();
+  if (!uuid.safeParse(after).success || !uuid.safeParse(before).success || !z.string().uuid().safeParse(id).success || (stage !== null && !stageSchema.safeParse(stage).success)) return { ok: false, error: (await getT("production"))("actions.invalidWorkflow") };
+  let item: ProductionItem | null = null; let message: string | undefined;
+  if (stage) {
+    const moved = await transitionProductionAction(projectId, id, revision, stage);
+    if (!moved.ok) return moved;
+    item = moved.data ?? null; message = moved.message;
+  }
+  try {
+    const { db } = await access(projectId);
+    const { data, error } = await db.rpc("production_reorder", { p_project: projectId, p_id: id, p_after: after, p_before: before });
+    if (error) throw error;
+    refresh(projectId);
+    return { ok: true, data: { item, position: data as number, message }, message };
+  } catch (e) { if (stage) refresh(projectId); return failure(e); }
+}
 export async function productionDetailsAction(projectId: string, id: string): Promise<ActionResult<ProductionDetails>> {
   try { await access(projectId, false); return { ok: true, data: await productionDetails(projectId, id) }; } catch (e) { return failure(e); }
 }

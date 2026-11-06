@@ -16,7 +16,15 @@ export async function listProduction(projectId: string): Promise<ProductionItem[
     rows.push(...data as ProductionItem[]);
     if (data.length < 500) break;
   }
-  return rows;
+  // Manual board order. Read separately (not embedded) so the board still loads if the table is missing.
+  const positions = new Map<string, { board_column: string; position: number }>();
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from("content_board_positions").select("content_item_id,board_column,position").eq("project_id", projectId).order("content_item_id").range(from, from + 999);
+    if (error) { console.error("board positions", error.message); break; }
+    for (const r of data as { content_item_id: string; board_column: string; position: number }[]) positions.set(r.content_item_id, r);
+    if (data.length < 1000) break;
+  }
+  return rows.map((r) => { const p = positions.get(r.id); return p ? { ...r, board_column: p.board_column, board_position: p.position } : r; });
 }
 export async function listTemplates(projectId: string): Promise<ContentTemplate[]> {
   const db = await createClient();

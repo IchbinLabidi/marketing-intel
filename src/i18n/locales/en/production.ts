@@ -24,7 +24,8 @@ const production = {
     searchLabel: "Search content",
     searchPlaceholder: "Search titles, hooks and captions…",
     sortLabel: "Sort content",
-    sort: { deadline: "Deadline first", updated: "Recently updated", title: "Title A–Z" },
+    sort: { manual: "Manual order", deadline: "Deadline first", updated: "Recently updated", title: "Title A–Z" },
+    order: { switched: "Switched to Manual order: cards keep the place you drop them.", picked: "Picked up {title}.", over: "{title} is over {target}.", dropped: "Dropped {title}.", cancelled: "Moving {title} was cancelled." },
     filters: {
       platform: "Platform", pillar: "Content pillar", noPillar: "No pillar", funnel: "Funnel stage", assignee: "Assignee", deadline: "Deadline",
       overdue: "Overdue", nextWeek: "Next 7 days", noDeadline: "No deadline", status: "Status", language: "Language",

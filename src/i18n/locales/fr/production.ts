@@ -26,7 +26,8 @@ const production: Translation<typeof en> = {
     searchLabel: "Rechercher un contenu",
     searchPlaceholder: "Rechercher titres, accroches et légendes…",
     sortLabel: "Trier les contenus",
-    sort: { deadline: "Échéance d’abord", updated: "Modifiés récemment", title: "Titre A–Z" },
+    sort: { manual: "Ordre manuel", deadline: "Échéance d’abord", updated: "Modifiés récemment", title: "Titre A–Z" },
+    order: { switched: "Tri passé en ordre manuel : les cartes gardent la place où vous les déposez.", picked: "{title} saisi.", over: "{title} est au-dessus de {target}.", dropped: "{title} déposé.", cancelled: "Déplacement de {title} annulé." },
     filters: {
       platform: "Plateforme", pillar: "Pilier de contenu", noPillar: "Sans pilier", funnel: "Étape de l’entonnoir", assignee: "Responsable", deadline: "Échéance",
       overdue: "En retard", nextWeek: "7 prochains jours", noDeadline: "Sans échéance", status: "Statut", language: "Langue",
