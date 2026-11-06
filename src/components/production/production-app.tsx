@@ -4,7 +4,7 @@ import { AudienceBadge, AudienceFilter } from "@/components/app/audience-badge";
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { DndContext, DragOverlay, PointerSensor, KeyboardSensor, closestCorners, useSensor, useSensors, useDroppable, type Announcements, type DragEndEvent, type DragOverEvent, type DragStartEvent } from "@dnd-kit/core";
+import { DndContext, DragOverlay, PointerSensor, KeyboardSensor, closestCorners, useSensor, useSensors, useDroppable, type Announcements, type DragEndEvent, type DragOverEvent, type DragStartEvent, type KeyboardCoordinateGetter } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { CalendarDays, CheckCheck, CheckCircle2, Clock, FileText, GripVertical, LayoutGrid, List, Plus, Search, Send, Settings2, UserRound } from "lucide-react";
@@ -64,7 +64,7 @@ export function ProductionApp(props: Props) {
   // Same rule as the editor and the database: "edit any content" lets editors move cards they don't own.
   const canWrite = (i: ProductionItem) => canWriteItem(role, userId, i, { editAny: props.perms.includes("content.edit_any") });
   const canUnplan = (i: ProductionItem) => (Boolean(i.scheduled_date) || i.production_stage === "idea") && !["published", "scheduled"].includes(i.status) && canWrite(i);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: boardKeyboardCoordinates }));
   const label = (s: ProductionStage) => workflow.labels[s] || t(`stage.${s}`);
   const name = (id: string | null) => members.find((m) => m.user_id === id)?.full_name || (id ? t("people.teamMember") : t("people.unassigned"));
   const overdue = (item: ProductionItem) => Boolean(item.due_date && item.due_date < today && !["published", "ready"].includes(item.production_stage));
@@ -167,6 +167,23 @@ export function ProductionApp(props: Props) {
     {removeTemplate && <Dialog open onOpenChange={() => setRemoveTemplate(null)}><DialogContent><DialogHeader><DialogTitle>{t("app.deleteTemplate.title", { name: removeTemplate.name })}</DialogTitle><DialogDescription>{t("app.deleteTemplate.description")}</DialogDescription></DialogHeader><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setRemoveTemplate(null)}>{tc("actions.cancel")}</Button><Button variant="destructive" onClick={async () => { const r = await deleteTemplateAction(projectId, removeTemplate.id); if (!r.ok) toast.error(r.error); else { setRemoveTemplate(null); router.refresh(); } }}>{t("app.deleteTemplate.confirm")}</Button></div></DialogContent></Dialog>}
   </div>;
 }
+/**
+ * Keyboard dragging: Up/Down move within the card's column, Left/Right go to the neighbouring column. The default getter
+ * picks the nearest card in that direction anywhere on the board, so Down in a short column could jump to another one.
+ */
+const boardKeyboardCoordinates: KeyboardCoordinateGetter = (event, args) => {
+  const { active, droppableContainers } = args.context;
+  if (!active) return sortableKeyboardCoordinates(event, args);
+  const columnOfEntry = (id: string | number) => (BOARD as readonly string[]).includes(String(id)) ? String(id) : (droppableContainers.get(id)?.data.current as { sortable?: { containerId?: string } } | undefined)?.sortable?.containerId;
+  const here = columnOfEntry(active.id); const index = BOARD.indexOf(here as BoardStage);
+  const vertical = event.code === "ArrowUp" || event.code === "ArrowDown";
+  const target = vertical ? here : BOARD[index + (event.code === "ArrowLeft" ? -1 : 1)];
+  if (!here || index < 0 || !target) return sortableKeyboardCoordinates(event, args);
+  const allowed = droppableContainers.getEnabled().filter((entry) => columnOfEntry(entry.id) === target && (!vertical || entry.id !== target));
+  // The default getter only reads getEnabled() and get() from this map.
+  const filtered = { getEnabled: () => allowed, get: (id: string | number) => droppableContainers.get(id) } as unknown as typeof droppableContainers;
+  return sortableKeyboardCoordinates(event, { ...args, context: { ...args.context, droppableContainers: filtered } });
+};
 const sortListeners = new Set<() => void>();
 /** The sort choice, remembered per project in this browser (the manual order itself is saved in the database). */
 function useStoredSort(key: string): [Sort, (value: Sort) => void] {
